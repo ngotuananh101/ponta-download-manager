@@ -10,8 +10,7 @@ Future<void> main(List<String> arguments) async {
     case 'version':
       stdout.writeln('pdm engine 0.1.0');
     case 'serve':
-      stdout.writeln('Engine daemon is not implemented yet (IPC, M3).');
-      exitCode = 2;
+      exitCode = await runServe(result);
     case 'download':
       exitCode = await runDownload(result);
   }

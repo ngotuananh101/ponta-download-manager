@@ -11,7 +11,9 @@ Commands:
     --connections <n>   Max connections per download (default: 8).
     --db <path>         Database path (default: ~/.local/share/pdm/pdm.db).
     --limit <bytes/s>   Global bandwidth limit in bytes per second.
-  serve            Run the engine daemon (not implemented yet, IPC comes later).
+  serve            Run the engine daemon.
+    --socket <path>     IPC socket path (default: \$XDG_RUNTIME_DIR/pdm/engine.sock).
+    --db <path>         Database path (default: ~/.local/share/pdm/pdm.db).
 
 Options:
   -h, --help       Show usage.
@@ -27,6 +29,7 @@ class CliResult {
     this.maxConnections,
     this.databasePath,
     this.globalLimitBytesPerSecond,
+    this.socketPath,
   });
 
   /// One of 'help', 'version', 'download', 'serve'.
@@ -36,6 +39,7 @@ class CliResult {
   final int? maxConnections;
   final String? databasePath;
   final int? globalLimitBytesPerSecond;
+  final String? socketPath;
 }
 
 /// Parses [args] for `bin/engine.dart`. Never prints; callers decide output.
@@ -45,11 +49,14 @@ CliResult parseCliArgs(List<String> args) {
     ..addOption('connections', help: 'Max connections per download.')
     ..addOption('db', help: 'Database path.')
     ..addOption('limit', help: 'Global bandwidth limit in bytes per second.');
+  final serveParser = ArgParser()
+    ..addOption('socket', help: 'IPC socket path.')
+    ..addOption('db', help: 'Database path.');
   final parser = ArgParser()
     ..addFlag('help', abbr: 'h', negatable: false, help: 'Show usage.')
     ..addFlag('version', negatable: false, help: 'Show the engine version.')
     ..addCommand('download', downloadParser)
-    ..addCommand('serve');
+    ..addCommand('serve', serveParser);
   final results = parser.parse(args);
   if (results.flag('version')) {
     return const CliResult(command: 'version');
@@ -72,6 +79,13 @@ CliResult parseCliArgs(List<String> args) {
       globalLimitBytesPerSecond: int.tryParse(
         command['limit'] as String? ?? '',
       ),
+    );
+  }
+  if (command.name == 'serve') {
+    return CliResult(
+      command: 'serve',
+      socketPath: command['socket'] as String?,
+      databasePath: command['db'] as String?,
     );
   }
   return CliResult(command: command.name!);
