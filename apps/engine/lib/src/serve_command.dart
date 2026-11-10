@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:download_ipc/download_ipc.dart';
+import 'package:path/path.dart' as p;
 
 import 'cli.dart';
 import 'engine_config.dart';
@@ -18,6 +19,10 @@ String _randomToken() {
 /// it to the owner on POSIX systems (best effort).
 Future<String> writeTokenFile(String socketPath, String token) async {
   final tokenPath = '$socketPath.token';
+  // The socket's parent directory may not exist yet on a first run
+  // (the transport creates it only when it binds, which happens
+  // after the token is written).
+  await Directory(p.dirname(tokenPath)).create(recursive: true);
   await File(tokenPath).writeAsString(token);
   if (Platform.isLinux || Platform.isMacOS) {
     try {

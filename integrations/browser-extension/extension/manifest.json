@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Ponta Download Manager",
+  "version": "0.1.0",
+  "description": "Send downloads to the PDM desktop engine.",
+  "permissions": ["contextMenus", "nativeMessaging", "notifications"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Ponta Download Manager"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pdm@ponta.dev",
+      "strict_min_version": "109.0"
+    }
+  }
+}

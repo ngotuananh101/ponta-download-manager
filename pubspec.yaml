@@ -20,3 +20,4 @@ workspace:
   - packages/download_database
   - packages/download_ipc
   - packages/download_platform
+  - integrations/browser-extension/host
