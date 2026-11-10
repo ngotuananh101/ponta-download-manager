@@ -36,8 +36,8 @@ Future<void> main(List<String> args) async {
       window.isWindowControlButtonsVisible = false;
     }
     window.title = 'Ponta Download Manager';
-    window.setSize(const Size(1280, 720).toNative(), false);
-    window.minimumSize = const Size(960, 540).toNative();
+    window.setSize(const Size(950, 650).toNative(), false);
+    window.minimumSize = const Size(950, 650).toNative();
     window.backgroundColor = Colors.transparent.toNative();
     window.center();
     if (!isMinimized) {
