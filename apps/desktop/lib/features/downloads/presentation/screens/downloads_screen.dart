@@ -82,6 +82,24 @@ class _DownloadRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A total of -1 means the server never sent a Content-Length, so
+    // there is no percentage to show: an indeterminate bar while it
+    // runs, a full bar once it completed, and no "-1 B (0%)" text.
+    final hasTotal = item.totalBytes > 0;
+    final double? barValue = hasTotal
+        ? item.progress
+        : item.state == DownloadState.completed
+            ? 1
+            : item.state == DownloadState.downloading ||
+                    item.state == DownloadState.queued
+                ? null
+                : 0;
+    final status = hasTotal
+        ? '${_formatBytes(item.downloadedBytes)} / '
+            '${_formatBytes(item.totalBytes)} '
+            '(${(item.progress * 100).round()}%) · ${item.state.name}'
+        : '${_formatBytes(item.downloadedBytes)} (total unknown) · '
+            '${item.state.name}';
     return ListTile(
       title: Text(item.fileName),
       subtitle: Column(
@@ -89,13 +107,9 @@ class _DownloadRow extends ConsumerWidget {
         children: [
           Text(item.url),
           const SizedBox(height: 4),
-          LinearProgressIndicator(value: item.progress),
+          LinearProgressIndicator(value: barValue),
           const SizedBox(height: 4),
-          Text(
-            '${_formatBytes(item.downloadedBytes)} / '
-            '${_formatBytes(item.totalBytes)} '
-            '(${(item.progress * 100).round()}%) · ${item.state.name}',
-          ),
+          Text(status),
         ],
       ),
       trailing: Row(

@@ -57,4 +57,48 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No downloads yet.'), findsOneWidget);
   });
+
+  testWidgets('an unknown total is shown as unknown, not -1 B (0%)',
+      (tester) async {
+    const unknownTotal = Download(
+      id: 'dl-2',
+      url: 'https://examplefile.com/file-download/203',
+      fileName: '203',
+      state: DownloadState.completed,
+      downloadedBytes: 159641,
+      totalBytes: -1,
+    );
+    await tester.pumpWidget(app(downloads: const [unknownTotal]));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('155.9 KiB'), findsOneWidget);
+    expect(find.textContaining('total unknown'), findsOneWidget);
+    expect(find.textContaining('-1 B'), findsNothing);
+    expect(find.textContaining('(0%)'), findsNothing);
+    expect(find.textContaining('completed'), findsOneWidget);
+    final bar = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(bar.value, 1);
+  });
+
+  testWidgets('a downloading unknown total shows an indeterminate bar',
+      (tester) async {
+    const downloading = Download(
+      id: 'dl-3',
+      url: 'https://examplefile.com/file-download/203',
+      fileName: '203',
+      state: DownloadState.downloading,
+      downloadedBytes: 1024,
+      totalBytes: -1,
+    );
+    await tester.pumpWidget(app(downloads: const [downloading]));
+    // No pumpAndSettle here: an indeterminate LinearProgressIndicator
+    // animates forever, so the tester would never settle.
+    await tester.pump();
+    expect(find.textContaining('total unknown'), findsOneWidget);
+    final bar = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(bar.value, isNull);
+  });
 }
