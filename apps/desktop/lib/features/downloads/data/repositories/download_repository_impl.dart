@@ -1,15 +1,18 @@
+import 'package:download_api/download_api.dart';
+import 'package:download_ipc/download_ipc.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pdm/core/error/failures.dart';
-import 'package:pdm/features/downloads/data/datasources/in_memory_download_datasource.dart';
+import 'package:pdm/features/downloads/data/datasources/ipc_download_datasource.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
-import 'package:uuid/uuid.dart';
 
+/// The repository over the engine IPC datasource. The engine is the
+/// source of truth: no state is flipped locally, and a download
+/// created here comes back with the engine's id.
 class DownloadRepositoryImpl implements DownloadRepository {
   DownloadRepositoryImpl(this._datasource);
 
-  final InMemoryDownloadDatasource _datasource;
-  final _uuid = const Uuid();
+  final IpcDownloadDatasource _datasource;
 
   @override
   Stream<List<Download>> watchDownloads() => _datasource.watchDownloads();
@@ -24,46 +27,43 @@ class DownloadRepositoryImpl implements DownloadRepository {
         ValidationFailure('URL must start with http:// or https://'),
       );
     }
-    final segments = uri.pathSegments;
-    final fileName = segments.isNotEmpty && segments.last.isNotEmpty
-        ? segments.last
-        : 'download';
-    final download = Download(
-      id: _uuid.v4(),
-      url: url,
-      fileName: fileName,
-      state: DownloadState.queued,
-      totalBytes: 0,
-    );
-    _datasource.addDownload(download);
-    return Right(download);
-  }
-
-  @override
-  Future<Either<Failure, Unit>> pauseDownload(String id) async {
-    return _updateState(id, DownloadState.paused);
-  }
-
-  @override
-  Future<Either<Failure, Unit>> resumeDownload(String id) async {
-    return _updateState(id, DownloadState.downloading);
-  }
-
-  @override
-  Future<Either<Failure, Unit>> cancelDownload(String id) async {
-    return _updateState(id, DownloadState.cancelled);
-  }
-
-  Future<Either<Failure, Unit>> _updateState(
-    String id,
-    DownloadState state,
-  ) async {
-    final downloads = await _datasource.watchDownloads().first;
-    final index = downloads.indexWhere((item) => item.id == id);
-    if (index == -1) {
-      return const Left(ValidationFailure('Download not found'));
+    try {
+      final info = await _datasource.addDownload(url);
+      return Right(downloadFromInfo(info));
+    } on DownloadError catch (e) {
+      return Left(_toFailure(e));
     }
-    _datasource.updateDownload(downloads[index].copyWith(state: state));
-    return const Right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> pauseDownload(String id) =>
+      _act(() => _datasource.pauseDownload(id));
+
+  @override
+  Future<Either<Failure, Unit>> resumeDownload(String id) =>
+      _act(() => _datasource.resumeDownload(id));
+
+  @override
+  Future<Either<Failure, Unit>> cancelDownload(String id) =>
+      _act(() => _datasource.cancelDownload(id));
+
+  @override
+  Future<Either<Failure, Unit>> retryDownload(String id) =>
+      _act(() => _datasource.retryDownload(id));
+
+  Future<Either<Failure, Unit>> _act(Future<void> Function() call) async {
+    try {
+      await call();
+      return const Right(unit);
+    } on DownloadError catch (e) {
+      return Left(_toFailure(e));
+    }
+  }
+
+  Failure _toFailure(DownloadError error) {
+    if (error.code == IpcErrorCode.notFound) {
+      return const ValidationFailure('Download not found');
+    }
+    return UnexpectedFailure(error.message);
   }
 }

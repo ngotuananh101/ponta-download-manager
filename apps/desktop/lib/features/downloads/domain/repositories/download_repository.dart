@@ -8,4 +8,5 @@ abstract interface class DownloadRepository {
   Future<Either<Failure, Unit>> pauseDownload(String id);
   Future<Either<Failure, Unit>> resumeDownload(String id);
   Future<Either<Failure, Unit>> cancelDownload(String id);
+  Future<Either<Failure, Unit>> retryDownload(String id);
 }

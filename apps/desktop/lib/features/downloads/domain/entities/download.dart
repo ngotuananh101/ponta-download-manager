@@ -12,6 +12,7 @@ class Download extends Equatable {
     required this.state,
     this.downloadedBytes = 0,
     required this.totalBytes,
+    this.bytesPerSecond = 0,
   });
 
   final String id;
@@ -20,6 +21,7 @@ class Download extends Equatable {
   final DownloadState state;
   final int downloadedBytes;
   final int totalBytes;
+  final int bytesPerSecond;
 
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
@@ -31,6 +33,7 @@ class Download extends Equatable {
     DownloadState? state,
     int? downloadedBytes,
     int? totalBytes,
+    int? bytesPerSecond,
   }) {
     return Download(
       id: id ?? this.id,
@@ -39,10 +42,18 @@ class Download extends Equatable {
       state: state ?? this.state,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       totalBytes: totalBytes ?? this.totalBytes,
+      bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
     );
   }
 
   @override
-  List<Object?> get props =>
-      [id, url, fileName, state, downloadedBytes, totalBytes];
+  List<Object?> get props => [
+    id,
+    url,
+    fileName,
+    state,
+    downloadedBytes,
+    totalBytes,
+    bytesPerSecond,
+  ];
 }

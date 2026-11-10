@@ -24,6 +24,8 @@ dependencies:
   path: ^1.9.0
   download_api:
     path: ../../packages/download_api
+  download_ipc:
+    path: ../../packages/download_ipc
 
 dev_dependencies:
   flutter_test:
@@ -33,6 +35,7 @@ dev_dependencies:
   freezed: ^3.0.6
   json_serializable: ^6.9.5
   riverpod_generator: ^4.0.0+1
+  fake_async: ^1.3.3
   riverpod_lint: ^3.0.0
   custom_lint: ^0.8.1
   mocktail: ^1.0.4

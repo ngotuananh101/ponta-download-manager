@@ -3,32 +3,10 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:download_ipc/download_ipc.dart';
-import 'package:path/path.dart' as p;
 
 import 'cli.dart';
 import 'engine_config.dart';
 import 'pdm_engine.dart';
-
-/// Default IPC socket path: `$XDG_RUNTIME_DIR/pdm/engine.sock` (Linux),
-/// `~/.local/share/pdm/engine.sock` when XDG is unset, and
-/// `%LOCALAPPDATA%\pdm\engine.sock` on Windows.
-String defaultSocketPath() {
-  if (Platform.isWindows) {
-    final localAppData = Platform.environment['LOCALAPPDATA'];
-    final base =
-        localAppData ??
-        p.join(
-          Platform.environment['USERPROFILE'] ?? '.',
-          'AppData',
-          'Local',
-        );
-    return p.join(base, 'pdm', 'engine.sock');
-  }
-  final runtime = Platform.environment['XDG_RUNTIME_DIR'];
-  final base =
-      runtime ?? p.join(Platform.environment['HOME'] ?? '.', '.local', 'share');
-  return p.join(base, 'pdm', 'engine.sock');
-}
 
 String _randomToken() {
   final random = Random.secure();
