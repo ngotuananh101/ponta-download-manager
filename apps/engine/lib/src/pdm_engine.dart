@@ -361,6 +361,7 @@ class PdmEngine implements DownloadEngine {
       status: record.status,
       downloadedBytes: record.downloadedBytes,
       totalBytes: record.totalBytes,
+      createdAt: record.createdAt,
     );
   }
 }

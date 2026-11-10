@@ -11,6 +11,7 @@ Download downloadFromInfo(DownloadInfo info) {
     downloadedBytes: info.downloadedBytes,
     totalBytes: info.totalBytes,
     bytesPerSecond: info.bytesPerSecond,
+    createdAt: info.createdAt,
   );
 }
 

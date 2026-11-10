@@ -22,13 +22,15 @@ const _fdmScheme = ColorScheme(
   onError: Color(0xFFFFFFFF),
   errorContainer: Color(0xFF5A1F1F),
   onErrorContainer: Color(0xFFFFC9C9),
-  surface: Color(0xFF1C1C1C),
+  // Uniform background: the scaffold, the title bar, the toolbar and
+  // the status bar are all the same color, so nothing separates them.
+  surface: Color(0xFF121212),
   onSurface: Color(0xFFF2F2F2),
-  surfaceContainerLowest: Color(0xFF0A0A0A),
-  surfaceContainerLow: Color(0xFF141414),
-  surfaceContainer: Color(0xFF232323),
-  surfaceContainerHigh: Color(0xFF2A2A2A),
-  surfaceContainerHighest: Color(0xFF2E2E2E),
+  surfaceContainerLowest: Color(0xFF0E0E0E),
+  surfaceContainerLow: Color(0xFF161616),
+  surfaceContainer: Color(0xFF1E1E1E),
+  surfaceContainerHigh: Color(0xFF232323),
+  surfaceContainerHighest: Color(0xFF2A2A2A),
   onSurfaceVariant: Color(0xFF9A9A9A),
   outline: Color(0xFF555555),
   outlineVariant: Color(0xFF333333),
@@ -50,7 +52,7 @@ class AppTheme {
   );
 
   static ThemeData get dark =>
-      _theme(_fdmScheme, scaffoldBackground: const Color(0xFF0E0E0E));
+      _theme(_fdmScheme, scaffoldBackground: const Color(0xFF121212));
 
   /// Builds a [ButtonStyle] for a button of the given size, from the
   /// tokens. The theme uses [AppButtonSize.md] by default.

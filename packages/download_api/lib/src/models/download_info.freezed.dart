@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$DownloadInfo {
 
- String get id; String get url; String get fileName; DownloadStatus get status; int get downloadedBytes; int get totalBytes; int get bytesPerSecond;
+ String get id; String get url; String get fileName; DownloadStatus get status; int get downloadedBytes; int get totalBytes; int get bytesPerSecond; DateTime? get createdAt;
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $DownloadInfoCopyWith<DownloadInfo> get copyWith => _$DownloadInfoCopyWithImpl<D
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond);
+int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond,createdAt);
 
 @override
 String toString() {
-  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond)';
+  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond, createdAt: $createdAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $DownloadInfoCopyWith<$Res>  {
   factory $DownloadInfoCopyWith(DownloadInfo value, $Res Function(DownloadInfo) _then) = _$DownloadInfoCopyWithImpl;
 @useResult
 $Res call({
- String id, String url, String fileName, DownloadStatus status, int downloadedBytes, int totalBytes, int bytesPerSecond
+ String id, String url, String fileName, DownloadStatus status, int downloadedBytes, int totalBytes, int bytesPerSecond, DateTime? createdAt
 });
 
 
@@ -65,7 +65,7 @@ class _$DownloadInfoCopyWithImpl<$Res>
 
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? url = null,Object? fileName = null,Object? status = null,Object? downloadedBytes = null,Object? totalBytes = null,Object? bytesPerSecond = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? url = null,Object? fileName = null,Object? status = null,Object? downloadedBytes = null,Object? totalBytes = null,Object? bytesPerSecond = null,Object? createdAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
@@ -74,7 +74,8 @@ as String,status: null == status ? _self.status : status // ignore: cast_nullabl
 as DownloadStatus,downloadedBytes: null == downloadedBytes ? _self.downloadedBytes : downloadedBytes // ignore: cast_nullable_to_non_nullable
 as int,totalBytes: null == totalBytes ? _self.totalBytes : totalBytes // ignore: cast_nullable_to_non_nullable
 as int,bytesPerSecond: null == bytesPerSecond ? _self.bytesPerSecond : bytesPerSecond // ignore: cast_nullable_to_non_nullable
-as int,
+as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 
@@ -159,10 +160,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond,  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _DownloadInfo() when $default != null:
-return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond);case _:
+return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond,_that.createdAt);case _:
   return orElse();
 
 }
@@ -180,10 +181,10 @@ return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedB
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond,  DateTime? createdAt)  $default,) {final _that = this;
 switch (_that) {
 case _DownloadInfo():
-return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond);case _:
+return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond,_that.createdAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -200,10 +201,10 @@ return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedB
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String url,  String fileName,  DownloadStatus status,  int downloadedBytes,  int totalBytes,  int bytesPerSecond,  DateTime? createdAt)?  $default,) {final _that = this;
 switch (_that) {
 case _DownloadInfo() when $default != null:
-return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond);case _:
+return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedBytes,_that.totalBytes,_that.bytesPerSecond,_that.createdAt);case _:
   return null;
 
 }
@@ -215,7 +216,7 @@ return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedB
 @JsonSerializable()
 
 class _DownloadInfo implements DownloadInfo {
-  const _DownloadInfo({required this.id, required this.url, required this.fileName, required this.status, this.downloadedBytes = 0, required this.totalBytes, this.bytesPerSecond = 0});
+  const _DownloadInfo({required this.id, required this.url, required this.fileName, required this.status, this.downloadedBytes = 0, required this.totalBytes, this.bytesPerSecond = 0, this.createdAt});
   factory _DownloadInfo.fromJson(Map<String, dynamic> json) => _$DownloadInfoFromJson(json);
 
 @override final  String id;
@@ -225,6 +226,7 @@ class _DownloadInfo implements DownloadInfo {
 @override@JsonKey() final  int downloadedBytes;
 @override final  int totalBytes;
 @override@JsonKey() final  int bytesPerSecond;
+@override final  DateTime? createdAt;
 
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
@@ -239,16 +241,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond);
+int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond,createdAt);
 
 @override
 String toString() {
-  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond)';
+  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond, createdAt: $createdAt)';
 }
 
 
@@ -259,7 +261,7 @@ abstract mixin class _$DownloadInfoCopyWith<$Res> implements $DownloadInfoCopyWi
   factory _$DownloadInfoCopyWith(_DownloadInfo value, $Res Function(_DownloadInfo) _then) = __$DownloadInfoCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String url, String fileName, DownloadStatus status, int downloadedBytes, int totalBytes, int bytesPerSecond
+ String id, String url, String fileName, DownloadStatus status, int downloadedBytes, int totalBytes, int bytesPerSecond, DateTime? createdAt
 });
 
 
@@ -276,7 +278,7 @@ class __$DownloadInfoCopyWithImpl<$Res>
 
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? url = null,Object? fileName = null,Object? status = null,Object? downloadedBytes = null,Object? totalBytes = null,Object? bytesPerSecond = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? url = null,Object? fileName = null,Object? status = null,Object? downloadedBytes = null,Object? totalBytes = null,Object? bytesPerSecond = null,Object? createdAt = freezed,}) {
   return _then(_DownloadInfo(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
@@ -285,7 +287,8 @@ as String,status: null == status ? _self.status : status // ignore: cast_nullabl
 as DownloadStatus,downloadedBytes: null == downloadedBytes ? _self.downloadedBytes : downloadedBytes // ignore: cast_nullable_to_non_nullable
 as int,totalBytes: null == totalBytes ? _self.totalBytes : totalBytes // ignore: cast_nullable_to_non_nullable
 as int,bytesPerSecond: null == bytesPerSecond ? _self.bytesPerSecond : bytesPerSecond // ignore: cast_nullable_to_non_nullable
-as int,
+as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
 

@@ -13,6 +13,7 @@ class Download extends Equatable {
     this.downloadedBytes = 0,
     required this.totalBytes,
     this.bytesPerSecond = 0,
+    this.createdAt,
   });
 
   final String id;
@@ -22,6 +23,10 @@ class Download extends Equatable {
   final int downloadedBytes;
   final int totalBytes;
   final int bytesPerSecond;
+
+  /// When the download was added (the FDM "Added" column). Null for
+  /// downloads created before this field existed.
+  final DateTime? createdAt;
 
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
@@ -34,6 +39,7 @@ class Download extends Equatable {
     int? downloadedBytes,
     int? totalBytes,
     int? bytesPerSecond,
+    DateTime? createdAt,
   }) {
     return Download(
       id: id ?? this.id,
@@ -43,6 +49,7 @@ class Download extends Equatable {
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       totalBytes: totalBytes ?? this.totalBytes,
       bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -55,5 +62,6 @@ class Download extends Equatable {
     downloadedBytes,
     totalBytes,
     bytesPerSecond,
+    createdAt,
   ];
 }

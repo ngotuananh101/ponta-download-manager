@@ -98,12 +98,9 @@ class _AppHeaderState extends State<AppHeader> {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       height: kAppHeaderHeight,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant, width: 1),
-        ),
-      ),
+      // No bottom border: the FDM background is one uniform color,
+      // so the title bar blends into the toolbar below it.
+      color: colorScheme.surface,
       child: Row(
         children: [
           _buildBrand(colorScheme),

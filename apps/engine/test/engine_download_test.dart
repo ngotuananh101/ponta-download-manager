@@ -211,6 +211,7 @@ void main() {
         ),
       );
       expect(info.status, DownloadStatus.queued);
+      expect(info.createdAt, isNotNull);
       final done = await waitForInfo(
         engine,
         info.id,
@@ -224,6 +225,14 @@ void main() {
       final downloads = await engine.listDownloads();
       expect(downloads.length, 1);
       expect(downloads.first.id, info.id);
+      expect(downloads.first.createdAt, isNotNull);
+      expect(
+        DateTime.now()
+            .difference(downloads.first.createdAt!)
+            .inSeconds
+            .abs(),
+        lessThan(60),
+      );
     });
 
     test('pauses and resumes a download', () async {

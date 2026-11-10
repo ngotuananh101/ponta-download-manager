@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pdm/app/app_header.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
+import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
@@ -16,8 +17,10 @@ const _repoUrl = 'https://github.com/ngotuananh101/ponta-download-manager';
 
 /// The home screen, laid out like Free Download Manager: a custom
 /// title bar on top, a toolbar (select / sort / filter / Add / search /
-/// menu), the download list (or a drop zone when empty), and a status
-/// bar with the total speed at the bottom.
+/// menu), the download table (or a drop zone when empty), and a status
+/// bar with the total speed at the bottom. The background is one
+/// uniform color; the toolbar, the table and the status bar are not
+/// separated by borders.
 class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
 
@@ -80,7 +83,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         _buildToolbar(visible),
         if (_selected.isNotEmpty) _buildBulkBar(),
         Expanded(child: _buildBody(items, visible)),
-        _buildStatusBar(items, totalSpeed),
+        _buildStatusBar(items, visible, totalSpeed),
       ],
     );
   }
@@ -94,14 +97,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-      ),
+      color: Theme.of(context).colorScheme.surface,
       child: Row(
         children: [
           _toolbarPill(
@@ -115,54 +111,52 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           const SizedBox(width: AppSpacing.s2),
           _toolbarPill(
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.sort, size: 18),
-                const SizedBox(width: AppSpacing.s1),
-                DropdownButton<DownloadSort>(
-                  value: _sort,
-                  isDense: true,
-                  underline: const SizedBox.shrink(),
-                  items: DownloadSort.values
-                      .map(
-                        (s) => DropdownMenuItem(
-                          value: s,
-                          child: Text(_sortLabel(s)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (s) {
-                    if (s != null) setState(() => _sort = s);
-                  },
-                ),
-              ],
+            PopupMenuButton<DownloadSort>(
+              tooltip: 'Sort',
+              padding: EdgeInsets.zero,
+              onSelected: (s) => setState(() => _sort = s),
+              itemBuilder: (context) => DownloadSort.values
+                  .map(
+                    (s) => PopupMenuItem(
+                      value: s,
+                      child: Text(_sortLabel(s)),
+                    ),
+                  )
+                  .toList(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.sort, size: 18),
+                  const SizedBox(width: AppSpacing.s1),
+                  Text(_sortLabel(_sort)),
+                  const Icon(Icons.arrow_drop_down, size: 18),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
           _toolbarPill(
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.filter_list, size: 18),
-                const SizedBox(width: AppSpacing.s1),
-                DropdownButton<DownloadFilter>(
-                  value: _filter,
-                  isDense: true,
-                  underline: const SizedBox.shrink(),
-                  items: DownloadFilter.values
-                      .map(
-                        (f) => DropdownMenuItem(
-                          value: f,
-                          child: Text(_filterLabel(f)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (f) {
-                    if (f != null) setState(() => _filter = f);
-                  },
-                ),
-              ],
+            PopupMenuButton<DownloadFilter>(
+              tooltip: 'Filter',
+              padding: EdgeInsets.zero,
+              onSelected: (f) => setState(() => _filter = f),
+              itemBuilder: (context) => DownloadFilter.values
+                  .map(
+                    (f) => PopupMenuItem(
+                      value: f,
+                      child: Text(_filterLabel(f)),
+                    ),
+                  )
+                  .toList(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.filter_list, size: 18),
+                  const SizedBox(width: AppSpacing.s1),
+                  Text(_filterLabel(_filter)),
+                  const Icon(Icons.arrow_drop_down, size: 18),
+                ],
+              ),
             ),
           ),
           const Spacer(),
@@ -171,18 +165,34 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add download'),
           ),
-          const SizedBox(width: AppSpacing.s3),
+          const SizedBox(width: AppSpacing.s2),
+          // The search box is exactly as tall as the pills and the Add
+          // button (36px) and at most 200px wide, so it sits snugly in
+          // the right group instead of towering over the buttons. It
+          // shrinks below 200px when the window is narrow rather than
+          // overflowing the toolbar.
           Flexible(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 240),
-              child: TextField(
-                controller: _searchController,
-                decoration: const InputDecoration(
-                  hintText: 'Search in downloads...',
-                  prefixIcon: Icon(Icons.search),
-                  isDense: true,
+              constraints: const BoxConstraints(maxWidth: 200),
+              child: SizedBox(
+                height: 36,
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Search in downloads...',
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s2,
+                      vertical: 8,
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
                 ),
-                onChanged: (value) => setState(() => _query = value),
               ),
             ),
           ),
@@ -344,7 +354,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     if (mounted) setState(() => _selected.clear());
   }
 
-  // --- Body: list / drop zone ---
+  // --- Body: table / drop zone ---
 
   Widget _buildBody(List<Download> items, List<Download> visible) {
     final Widget content;
@@ -355,23 +365,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     } else if (visible.isEmpty) {
       content = const Center(child: Text('No downloads match.'));
     } else {
-      content = ListView.builder(
-        itemCount: visible.length,
-        itemBuilder: (context, index) {
-          final item = visible[index];
-          return _DownloadRow(
-            item: item,
-            selected: _selected.contains(item.id),
-            onSelectedChanged: (value) => setState(() {
-              if (value == true) {
-                _selected.add(item.id);
-              } else {
-                _selected.remove(item.id);
-              }
-            }),
-          );
-        },
-      );
+      content = _buildTable(visible);
     }
 
     final stack = Stack(
@@ -399,6 +393,254 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       onLeave: () => setState(() => _dragOver = false),
       onDrop: _onDrop,
       child: stack,
+    );
+  }
+
+  /// The FDM table on top, the drop zone filling the rest below it.
+  /// The rows area is capped so the drop zone always keeps at least
+  /// 120px; with more rows than fit, the table scrolls.
+  Widget _buildTable(List<Download> visible) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const headerHeight = 32.0;
+        const rowHeight = 40.0;
+        const minDropZoneHeight = 120.0;
+        final available = constraints.maxHeight;
+        final rowsHeight = (visible.length * rowHeight).clamp(
+          0.0,
+          (available - headerHeight - minDropZoneHeight).clamp(
+            0.0,
+            double.infinity,
+          ),
+        );
+        return Column(
+          children: [
+            _buildTableHeader(),
+            SizedBox(
+              height: rowsHeight,
+              child: ListView.builder(
+                itemCount: visible.length,
+                itemBuilder: (context, index) =>
+                    _buildTableRow(visible[index]),
+              ),
+            ),
+            Expanded(child: _buildDropZone()),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTableHeader() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final labelStyle = AppTextSize.xs.textStyle(
+      weight: AppFontWeight.semibold,
+      color: colorScheme.onSurfaceVariant,
+    );
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: DownloadTableColumns.check,
+            child: Text('#', style: labelStyle),
+          ),
+          Expanded(child: Text('Name', style: labelStyle)),
+          SizedBox(
+            width: DownloadTableColumns.size,
+            child: Text('Size', style: labelStyle),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.status,
+            child: Text('Status', style: labelStyle),
+          ),
+          const SizedBox(width: DownloadTableColumns.menu),
+          SizedBox(
+            width: DownloadTableColumns.speed,
+            child: Text('Download', style: labelStyle),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.speed,
+            child: Text('Upload', style: labelStyle),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.added,
+            child: Text('Added', style: labelStyle),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTableRow(Download item) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = _selected.contains(item.id);
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: selected
+            ? colorScheme.surfaceContainerHigh
+            : colorScheme.surfaceContainer,
+        border: Border(
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: DownloadTableColumns.check,
+            child: Center(
+              child: Checkbox(
+                value: selected,
+                onChanged: (value) => setState(() {
+                  if (value == true) {
+                    _selected.add(item.id);
+                  } else {
+                    _selected.remove(item.id);
+                  }
+                }),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.insert_drive_file,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    item.fileName,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.size,
+            child: Text(downloadSizeText(item)),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.status,
+            child: Text(
+              downloadStatusText(item),
+              style: TextStyle(
+                color: downloadStatusColor(colorScheme, item.state),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.menu,
+            child: _buildRowMenu(item),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.speed,
+            child: Text('${formatBytes(item.bytesPerSecond)}/s'),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.speed,
+            child: const Text('0 B/s'),
+          ),
+          SizedBox(
+            width: DownloadTableColumns.added,
+            child: Text(
+              formatAdded(item.createdAt),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The `⋮` row menu (Pause / Resume / Retry / Cancel, by state).
+  /// Completed and cancelled downloads have no row actions.
+  Widget _buildRowMenu(Download item) {
+    switch (item.state) {
+      case DownloadState.completed:
+      case DownloadState.cancelled:
+        return const SizedBox.shrink();
+      case DownloadState.downloading:
+      case DownloadState.queued:
+      case DownloadState.paused:
+      case DownloadState.failed:
+        break;
+    }
+    return Center(
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert, size: 18),
+        tooltip: 'Actions',
+        padding: EdgeInsets.zero,
+        onSelected: (value) => _onRowAction(item, value),
+        itemBuilder: (context) {
+          final entries = <PopupMenuEntry<String>>[];
+          switch (item.state) {
+            case DownloadState.downloading:
+            case DownloadState.queued:
+              entries.add(
+                const PopupMenuItem(value: 'pause', child: Text('Pause')),
+              );
+              entries.add(
+                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+              );
+            case DownloadState.paused:
+              entries.add(
+                const PopupMenuItem(value: 'resume', child: Text('Resume')),
+              );
+              entries.add(
+                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+              );
+            case DownloadState.failed:
+              entries.add(
+                const PopupMenuItem(value: 'retry', child: Text('Retry')),
+              );
+              entries.add(
+                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+              );
+            case DownloadState.completed:
+            case DownloadState.cancelled:
+              break;
+          }
+          return entries;
+        },
+      ),
+    );
+  }
+
+  Future<void> _onRowAction(Download item, String action) async {
+    final actions = ref.read(downloadsActionsProvider);
+    Future<Either<Failure, Unit>> Function() call;
+    switch (action) {
+      case 'pause':
+        call = () => actions.pauseDownload(item.id);
+      case 'resume':
+        call = () => actions.resumeDownload(item.id);
+      case 'cancel':
+        call = () => actions.cancelDownload(item.id);
+      case 'retry':
+        call = () => actions.retryDownload(item.id);
+      default:
+        return;
+    }
+    final result = await call();
+    result.fold(
+      (failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        }
+      },
+      (_) {},
     );
   }
 
@@ -474,15 +716,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // --- Status bar ---
 
-  Widget _buildStatusBar(List<Download> items, int totalSpeed) {
+  Widget _buildStatusBar(
+    List<Download> items,
+    List<Download> visible,
+    int totalSpeed,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
+    final statusFile = _statusFile(visible);
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
-      ),
+      color: colorScheme.surface,
       child: Row(
         children: [
           _buildGlobalToggle(items),
@@ -493,7 +737,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: AppSpacing.s1),
-          Text('${_formatBytes(totalSpeed)}/s'),
+          Text('${formatBytes(totalSpeed)}/s'),
           const SizedBox(width: AppSpacing.s4),
           Icon(
             Icons.arrow_upward,
@@ -504,11 +748,31 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           const Text('0 B/s'),
           const SizedBox(width: AppSpacing.s4),
           _buildHighBadge(),
-          const Spacer(),
+          const SizedBox(width: AppSpacing.s4),
           _buildSupportButton(),
+          const Spacer(),
+          if (statusFile != null)
+            Flexible(
+              child: Text(
+                statusFile.fileName,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// The file named at the far right of the status bar: the selected
+  /// one, else the newest download.
+  Download? _statusFile(List<Download> visible) {
+    if (_selected.isNotEmpty) {
+      final selected =
+          visible.where((d) => _selected.contains(d.id)).toList();
+      if (selected.isNotEmpty) return selected.first;
+    }
+    return visible.isNotEmpty ? visible.first : null;
   }
 
   Widget _buildGlobalToggle(List<Download> items) {
@@ -684,133 +948,4 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       );
     }
   }
-}
-
-class _DownloadRow extends ConsumerWidget {
-  const _DownloadRow({
-    required this.item,
-    required this.selected,
-    required this.onSelectedChanged,
-  });
-
-  final Download item;
-  final bool selected;
-  final ValueChanged<bool?> onSelectedChanged;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // A total of -1 means the server never sent a Content-Length, so
-    // there is no percentage to show: an indeterminate bar while it
-    // runs, a full bar once it completed, and no "-1 B (0%)" text.
-    final hasTotal = item.totalBytes > 0;
-    final double? barValue = hasTotal
-        ? item.progress
-        : item.state == DownloadState.completed
-            ? 1
-            : item.state == DownloadState.downloading ||
-                    item.state == DownloadState.queued
-                ? null
-                : 0;
-    final status = hasTotal
-        ? '${_formatBytes(item.downloadedBytes)} / '
-            '${_formatBytes(item.totalBytes)} '
-            '(${(item.progress * 100).round()}%) · ${item.state.name}'
-        : '${_formatBytes(item.downloadedBytes)} (total unknown) · '
-            '${item.state.name}';
-    return ListTile(
-      leading: Checkbox(value: selected, onChanged: onSelectedChanged),
-      title: Text(item.fileName),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(item.url),
-          const SizedBox(height: AppSpacing.s1),
-          LinearProgressIndicator(value: barValue),
-          const SizedBox(height: AppSpacing.s1),
-          Text(status),
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: _actions(context, ref),
-      ),
-    );
-  }
-
-  List<Widget> _actions(BuildContext context, WidgetRef ref) {
-    final actions = ref.read(downloadsActionsProvider);
-
-    Future<void> run(Future<Either<Failure, Unit>> Function() call) async {
-      final result = await call();
-      result.fold(
-        (failure) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(failure.message)));
-          }
-        },
-        (_) {},
-      );
-    }
-
-    switch (item.state) {
-      case DownloadState.downloading:
-      case DownloadState.queued:
-        return [
-          IconButton(
-            icon: const Icon(Icons.pause),
-            tooltip: 'Pause',
-            onPressed: () => run(() => actions.pauseDownload(item.id)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.cancel),
-            tooltip: 'Cancel',
-            onPressed: () => run(() => actions.cancelDownload(item.id)),
-          ),
-        ];
-      case DownloadState.paused:
-        return [
-          IconButton(
-            icon: const Icon(Icons.play_arrow),
-            tooltip: 'Resume',
-            onPressed: () => run(() => actions.resumeDownload(item.id)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.cancel),
-            tooltip: 'Cancel',
-            onPressed: () => run(() => actions.cancelDownload(item.id)),
-          ),
-        ];
-      case DownloadState.failed:
-        return [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Retry',
-            onPressed: () => run(() => actions.retryDownload(item.id)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.cancel),
-            tooltip: 'Cancel',
-            onPressed: () => run(() => actions.cancelDownload(item.id)),
-          ),
-        ];
-      case DownloadState.completed:
-      case DownloadState.cancelled:
-        return const [];
-    }
-  }
-}
-
-String _formatBytes(int bytes) {
-  if (bytes < 1024) {
-    return '$bytes B';
-  }
-  if (bytes < 1024 * 1024) {
-    return '${(bytes / 1024).toStringAsFixed(1)} KiB';
-  }
-  if (bytes < 1024 * 1024 * 1024) {
-    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MiB';
-  }
-  return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(1)} GiB';
 }

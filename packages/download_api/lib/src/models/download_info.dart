@@ -14,6 +14,7 @@ abstract class DownloadInfo with _$DownloadInfo {
     @Default(0) int downloadedBytes,
     required int totalBytes,
     @Default(0) int bytesPerSecond,
+    DateTime? createdAt,
   }) = _DownloadInfo;
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) =>

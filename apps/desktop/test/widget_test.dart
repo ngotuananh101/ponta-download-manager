@@ -37,20 +37,43 @@ Widget app({
 }
 
 void main() {
-  testWidgets('shows a download with progress and a pause button',
+  testWidgets('shows the download table with the FDM columns',
       (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('Ponta Download Manager'), findsOneWidget);
+    expect(find.text('Add download'), findsOneWidget);
+    // Table headers.
+    for (final header in [
+      '#',
+      'Name',
+      'Size',
+      'Status',
+      'Download',
+      'Upload',
+      'Added',
+    ]) {
+      expect(find.text(header), findsOneWidget);
+    }
+    // The one downloading row (the file name also shows in the status
+    // bar, and each speed shows in the table and the status bar).
+    expect(find.text('f.bin'), findsNWidgets(2));
+    expect(find.text('1000 B'), findsOneWidget);
+    expect(find.text('Downloading 50%'), findsOneWidget);
+    expect(find.text('250 B/s'), findsNWidgets(2));
+    expect(find.text('0 B/s'), findsNWidgets(2));
+  });
+
+  testWidgets('the row menu pauses a download', (tester) async {
     final actions = MockDownloadsActions();
     when(
       () => actions.pauseDownload(any()),
     ).thenAnswer((_) async => const Right(unit));
     await tester.pumpWidget(app(actions: actions));
     await tester.pumpAndSettle();
-    expect(find.text('Ponta Download Manager'), findsOneWidget);
-    expect(find.text('Add download'), findsOneWidget);
-    expect(find.text('f.bin'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    expect(find.byIcon(Icons.pause), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.pause));
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pause'));
     await tester.pumpAndSettle();
     verify(() => actions.pauseDownload('dl-1')).called(1);
   });
@@ -61,9 +84,8 @@ void main() {
     expect(find.text('Newest'), findsOneWidget);
     expect(find.text('All files'), findsOneWidget);
     expect(find.text('Search in downloads...'), findsOneWidget);
-    // The one downloading item runs at 250 B/s.
-    expect(find.text('250 B/s'), findsOneWidget);
-    expect(find.text('0 B/s'), findsOneWidget);
+    expect(find.text('250 B/s'), findsNWidgets(2));
+    expect(find.text('0 B/s'), findsNWidgets(2));
     expect(find.text('HIGH'), findsOneWidget);
     expect(find.text('Support the project'), findsOneWidget);
     expect(find.text('ON'), findsOneWidget);
@@ -76,7 +98,7 @@ void main() {
     expect(find.text('Drag-and-drop URL or torrent file'), findsOneWidget);
   });
 
-  testWidgets('an unknown total is shown as unknown, not -1 B (0%)',
+  testWidgets('an unknown total shows the downloaded size, not -1 B',
       (tester) async {
     const unknownTotal = Download(
       id: 'dl-2',
@@ -89,17 +111,11 @@ void main() {
     await tester.pumpWidget(app(downloads: const [unknownTotal]));
     await tester.pumpAndSettle();
     expect(find.textContaining('155.9 KiB'), findsOneWidget);
-    expect(find.textContaining('total unknown'), findsOneWidget);
     expect(find.textContaining('-1 B'), findsNothing);
-    expect(find.textContaining('(0%)'), findsNothing);
-    expect(find.textContaining('completed'), findsOneWidget);
-    final bar = tester.widget<LinearProgressIndicator>(
-      find.byType(LinearProgressIndicator),
-    );
-    expect(bar.value, 1);
+    expect(find.text('Completed'), findsOneWidget);
   });
 
-  testWidgets('a downloading unknown total shows an indeterminate bar',
+  testWidgets('a downloading unknown total shows no percent',
       (tester) async {
     const downloading = Download(
       id: 'dl-3',
@@ -110,13 +126,8 @@ void main() {
       totalBytes: -1,
     );
     await tester.pumpWidget(app(downloads: const [downloading]));
-    // No pumpAndSettle here: an indeterminate LinearProgressIndicator
-    // animates forever, so the tester would never settle.
-    await tester.pump();
-    expect(find.textContaining('total unknown'), findsOneWidget);
-    final bar = tester.widget<LinearProgressIndicator>(
-      find.byType(LinearProgressIndicator),
-    );
-    expect(bar.value, isNull);
+    await tester.pumpAndSettle();
+    expect(find.text('Downloading'), findsOneWidget);
+    expect(find.text('1.0 KiB'), findsOneWidget);
   });
 }
