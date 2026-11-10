@@ -124,10 +124,18 @@ class HttpTransport implements DownloadTransport {
   }
 
   @override
-  Stream<List<int>> openStream(Uri url, {int? start, int? end}) async* {
+  Stream<List<int>> openStream(
+    Uri url, {
+    int? start,
+    int? end,
+    String? ifRange,
+  }) async* {
     final headers = <String, String>{};
     if (start != null) {
       headers['range'] = end != null ? 'bytes=$start-$end' : 'bytes=$start-';
+    }
+    if (ifRange != null) {
+      headers['if-range'] = ifRange;
     }
     final response = await _openResponse(url, headers);
     if (response.statusCode == HttpStatus.ok ||
@@ -228,8 +236,9 @@ class HttpTransport implements DownloadTransport {
 
   String _fileName(Uri url, String? contentDisposition) {
     if (contentDisposition != null) {
-      final match = RegExp('filename\\*?=(?:UTF-8\'\')?"?([^";]+)"?')
-          .firstMatch(contentDisposition);
+      final match = RegExp(
+        'filename\\*?=(?:UTF-8\'\')?"?([^";]+)"?',
+      ).firstMatch(contentDisposition);
       if (match != null) {
         final name = Uri.decodeComponent(match.group(1)!).trim();
         if (name.isNotEmpty) {
@@ -247,8 +256,9 @@ class HttpTransport implements DownloadTransport {
     if (contentRange == null) {
       return null;
     }
-    final match = RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$')
-        .firstMatch(contentRange.trim());
+    final match = RegExp(
+      r'^bytes (\d+)-(\d+)/(\d+|\*)$',
+    ).firstMatch(contentRange.trim());
     if (match == null) {
       return null;
     }

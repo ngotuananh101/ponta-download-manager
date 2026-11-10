@@ -1,1 +1,4 @@
-// TODO: implement `download_core` (see docs/architecture.md sections 14 and 21).
+export 'src/chunk_sink.dart';
+export 'src/download_task.dart';
+export 'src/segment.dart';
+export 'src/segment_planner.dart';

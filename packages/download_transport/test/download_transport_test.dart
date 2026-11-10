@@ -62,8 +62,10 @@ void main() {
             'last-modified',
             'Wed, 21 Oct 2015 07:28:00 GMT',
           );
-          response.headers.contentType =
-              ContentType('application', 'octet-stream');
+          response.headers.contentType = ContentType(
+            'application',
+            'octet-stream',
+          );
           response.headers.set(
             'content-disposition',
             'attachment; filename="archive.zip"',
@@ -80,10 +82,7 @@ void main() {
             final end = endText.isEmpty ? total - 1 : int.parse(endText);
             response.statusCode = HttpStatus.partialContent;
             response.headers.set('accept-ranges', 'bytes');
-            response.headers.set(
-              'content-range',
-              'bytes $start-$end/$total',
-            );
+            response.headers.set('content-range', 'bytes $start-$end/$total');
             response.headers.contentLength = end - start + 1;
             response.add(data.sublist(start, end + 1));
             await response.close();
@@ -133,9 +132,7 @@ void main() {
     test('throws DownloadError on 404', () async {
       await expectLater(
         transport.probe(base.resolve('/not-found')),
-        throwsA(
-          isA<DownloadError>().having((e) => e.code, 'code', 'http-404'),
-        ),
+        throwsA(isA<DownloadError>().having((e) => e.code, 'code', 'http-404')),
       );
     });
   });
@@ -182,23 +179,21 @@ void main() {
         transport
             .openStream(base.resolve('/not-found'))
             .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk)),
-        throwsA(
-          isA<DownloadError>().having((e) => e.code, 'code', 'http-404'),
-        ),
+        throwsA(isA<DownloadError>().having((e) => e.code, 'code', 'http-404')),
       );
     });
 
     test('cancelling the stream stops the download', () async {
       final received = <int>[];
       final firstChunk = Completer<void>();
-      final subscription = transport.openStream(base.resolve('/big')).listen(
-        (chunk) {
-          received.addAll(chunk);
-          if (!firstChunk.isCompleted) {
-            firstChunk.complete();
-          }
-        },
-      );
+      final subscription = transport.openStream(base.resolve('/big')).listen((
+        chunk,
+      ) {
+        received.addAll(chunk);
+        if (!firstChunk.isCompleted) {
+          firstChunk.complete();
+        }
+      });
       await firstChunk.future.timeout(const Duration(seconds: 5));
       await subscription.cancel().timeout(const Duration(seconds: 2));
       expect(received.isNotEmpty, isTrue);

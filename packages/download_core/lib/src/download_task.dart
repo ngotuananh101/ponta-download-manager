@@ -1,0 +1,353 @@
+import 'dart:async';
+
+import 'package:download_api/download_api.dart';
+import 'package:download_core/src/chunk_sink.dart';
+import 'package:download_core/src/segment.dart';
+import 'package:download_core/src/segment_planner.dart';
+import 'package:download_transport/download_transport.dart';
+import 'package:logging/logging.dart';
+
+final _log = Logger('DownloadTask');
+
+/// Thrown when a server answers a range request with more bytes than the
+/// requested range: the server ignored Range (§5.3).
+class _RangeIgnored implements Exception {
+  const _RangeIgnored();
+}
+
+/// Mutable download progress of one segment.
+class _SegmentState {
+  _SegmentState(this.segment);
+
+  final Segment segment;
+  var downloaded = 0;
+
+  bool get isComplete =>
+      segment.length != null && downloaded >= segment.length!;
+}
+
+/// Runs one download: probe, validate, plan, fetch segments, report
+/// progress (docs/architecture.md §5.1, §6, §7).
+class DownloadTask {
+  DownloadTask({
+    required this.transport,
+    required this.sink,
+    required this.url,
+    required this.id,
+    this.maxConnections = 4,
+    this.maxRetries = 3,
+    this.retryDelay = const Duration(seconds: 1),
+  });
+
+  final DownloadTransport transport;
+  final ChunkSink sink;
+  final Uri url;
+  final String id;
+  final int maxConnections;
+  final int maxRetries;
+  final Duration retryDelay;
+
+  DownloadStatus get status => _status;
+  int get downloadedBytes => _downloaded;
+
+  /// Total bytes when known, -1 when unknown.
+  int get totalBytes => _total;
+
+  Stream<DownloadEvent> get events => _events.stream;
+
+  DownloadStatus _status = DownloadStatus.queued;
+  int _downloaded = 0;
+  int _total = -1;
+  String? _fileName;
+  String? _eTag;
+  final _events = StreamController<DownloadEvent>.broadcast();
+  bool _paused = false;
+  bool _cancelled = false;
+  bool _aborted = false;
+  Completer<void>? _resumeGate;
+  final _iterators = <StreamIterator<List<int>>>[];
+  var _sinkClosed = false;
+
+  /// Starts the download. Subscribe to [events] before calling this.
+  /// Returns the final [DownloadInfo] for completed and cancelled runs;
+  /// throws [DownloadError] when the download fails.
+  Future<DownloadInfo> run() async {
+    _setStatus(DownloadStatus.queued);
+    try {
+      final info = await transport.probe(url);
+      _total = info.contentLength ?? -1;
+      _fileName = info.fileName;
+      _eTag = info.eTag;
+      var segmented = false;
+      if (info.supportsRange &&
+          info.contentLength != null &&
+          info.contentLength! > 0) {
+        final validation = await transport.validateRange(url, start: 0, end: 0);
+        segmented = validation.valid;
+      }
+      if (_total == 0) {
+        return _finish(DownloadStatus.completed);
+      }
+      _setStatus(DownloadStatus.downloading);
+      try {
+        if (segmented) {
+          final segments = planSegments(
+            totalBytes: _total,
+            maxConnections: maxConnections,
+          );
+          await Future.wait(
+            segments.map((s) => _runSegment(s, _SegmentState(s))),
+          );
+        } else {
+          const single = Segment(id: 0, start: 0, end: null);
+          await _runSegment(single, _SegmentState(single));
+        }
+      } on _RangeIgnored {
+        _log.info(
+          'Server ignored Range for $url; falling back to single-stream',
+        );
+        _aborted = false;
+        _downloaded = 0;
+        const single = Segment(id: 0, start: 0, end: null);
+        await _runSegment(single, _SegmentState(single));
+      }
+      if (_cancelled) {
+        return _finish(DownloadStatus.cancelled);
+      }
+      if (_total >= 0 && _downloaded != _total) {
+        throw DownloadError(
+          'size-mismatch',
+          'Downloaded $_downloaded bytes, expected $_total',
+        );
+      }
+      return _finish(DownloadStatus.completed);
+    } on DownloadError catch (e) {
+      _fail(e);
+      rethrow;
+    } catch (e) {
+      final wrapped = DownloadError('internal', e.toString());
+      _fail(wrapped);
+      throw wrapped;
+    } finally {
+      await _closeSink();
+      await _events.close();
+    }
+  }
+
+  void pause() {
+    if (_status != DownloadStatus.downloading) {
+      return;
+    }
+    _paused = true;
+    _setStatus(DownloadStatus.paused);
+    _cancelIterators();
+  }
+
+  void resume() {
+    if (!_paused) {
+      return;
+    }
+    _paused = false;
+    _setStatus(DownloadStatus.downloading);
+    final gate = _resumeGate;
+    _resumeGate = null;
+    gate?.complete();
+  }
+
+  void cancel() {
+    if (_status == DownloadStatus.completed ||
+        _status == DownloadStatus.failed ||
+        _status == DownloadStatus.cancelled) {
+      return;
+    }
+    _cancelled = true;
+    _paused = false;
+    final gate = _resumeGate;
+    _resumeGate = null;
+    gate?.complete();
+    _cancelIterators();
+  }
+
+  DownloadInfo _finish(DownloadStatus status) {
+    _setStatus(status);
+    final info = DownloadInfo(
+      id: id,
+      url: url.toString(),
+      fileName: _fileName ?? 'download',
+      status: status,
+      downloadedBytes: _downloaded,
+      totalBytes: _total,
+    );
+    if (status == DownloadStatus.completed) {
+      _events.add(
+        DownloadEvent.completed(downloadId: id, filePath: sink.filePath ?? ''),
+      );
+    }
+    return info;
+  }
+
+  void _fail(DownloadError error) {
+    _setStatus(DownloadStatus.failed);
+    _events.add(
+      DownloadEvent.failed(
+        downloadId: id,
+        code: error.code,
+        message: error.message,
+      ),
+    );
+  }
+
+  void _setStatus(DownloadStatus status) {
+    if (_status == status) {
+      return;
+    }
+    _status = status;
+    _events.add(DownloadEvent.stateChanged(downloadId: id, status: status));
+  }
+
+  void _emitProgress() {
+    _events.add(
+      DownloadEvent.progress(
+        downloadId: id,
+        downloadedBytes: _downloaded,
+        totalBytes: _total,
+        bytesPerSecond: 0,
+      ),
+    );
+  }
+
+  Future<void> _runSegment(Segment segment, _SegmentState state) async {
+    var attempts = 0;
+    while (!state.isComplete) {
+      if (_cancelled || _aborted) {
+        return;
+      }
+      await _waitIfPaused();
+      if (_cancelled || _aborted) {
+        return;
+      }
+      try {
+        final streamEnded = await _pumpSegment(segment, state, () {
+          attempts = 0;
+        });
+        if (_cancelled || _aborted) {
+          return;
+        }
+        if (_paused) {
+          continue;
+        }
+        if (state.isComplete || streamEnded) {
+          return;
+        }
+        throw DownloadError(
+          'truncated',
+          'Stream ended before segment ${segment.id} was complete',
+        );
+      } on _RangeIgnored {
+        rethrow;
+      } on DownloadError catch (e) {
+        if (_cancelled || _aborted) {
+          return;
+        }
+        if (_isTransient(e) && attempts < maxRetries) {
+          attempts++;
+          _log.fine(
+            'Segment ${segment.id} failed (${e.code}); '
+            'retry $attempts/$maxRetries',
+          );
+          await Future<void>.delayed(_backoffDelay(attempts));
+          continue;
+        }
+        _abort();
+        rethrow;
+      }
+    }
+  }
+
+  Future<bool> _pumpSegment(
+    Segment segment,
+    _SegmentState state,
+    void Function() onProgress,
+  ) async {
+    final start = segment.start + state.downloaded;
+    final stream = transport.openStream(
+      url,
+      start: start,
+      end: segment.end,
+      ifRange: _eTag,
+    );
+    final iterator = StreamIterator<List<int>>(stream);
+    _iterators.add(iterator);
+    try {
+      while (await iterator.moveNext()) {
+        final chunk = iterator.current;
+        final remaining = segment.length == null
+            ? null
+            : segment.length! - state.downloaded;
+        if (remaining != null && chunk.length > remaining) {
+          throw const _RangeIgnored();
+        }
+        await sink.write(segment.start + state.downloaded, chunk);
+        state.downloaded += chunk.length;
+        _downloaded += chunk.length;
+        onProgress();
+        _emitProgress();
+        if (_cancelled || _paused || _aborted) {
+          await iterator.cancel();
+          return false;
+        }
+      }
+      return true;
+    } finally {
+      _iterators.remove(iterator);
+      await iterator.cancel();
+    }
+  }
+
+  Future<void> _waitIfPaused() async {
+    if (!_paused) {
+      return;
+    }
+    _resumeGate ??= Completer<void>();
+    await _resumeGate!.future;
+  }
+
+  void _abort() {
+    _aborted = true;
+    _cancelIterators();
+  }
+
+  void _cancelIterators() {
+    for (final iterator in _iterators.toList()) {
+      unawaited(iterator.cancel());
+    }
+  }
+
+  Future<void> _closeSink() async {
+    if (_sinkClosed) {
+      return;
+    }
+    _sinkClosed = true;
+    await sink.close();
+  }
+
+  Duration _backoffDelay(int attempt) {
+    return retryDelay * (1 << (attempt - 1));
+  }
+
+  bool _isTransient(DownloadError error) {
+    switch (error.code) {
+      case 'network':
+      case 'timeout':
+      case 'truncated':
+      case 'http-429':
+        return true;
+      default:
+        if (error.code.startsWith('http-')) {
+          final status = int.tryParse(error.code.substring(5));
+          return status != null && status >= 500 && status < 600;
+        }
+        return false;
+    }
+  }
+}

@@ -7,11 +7,10 @@ class RangeValidation {
   });
 
   const RangeValidation.valid({required this.totalBytes})
-      : valid = true,
-        reason = null;
+    : valid = true,
+      reason = null;
 
-  const RangeValidation.invalid(this.reason, {this.totalBytes})
-      : valid = false;
+  const RangeValidation.invalid(this.reason, {this.totalBytes}) : valid = false;
 
   /// True when the server returned 206 with a Content-Range matching the
   /// requested interval and a consistent total length.

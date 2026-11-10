@@ -1,11 +1,18 @@
 name: download_core
-description: "TODO: download_core — part of the Ponta Download Manager engine (see docs/architecture.md)."
+description: "Download execution for the engine: segment planning, concurrent segment workers, pause/resume/cancel."
 publish_to: none
 version: 0.1.0
 resolution: workspace
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  download_api:
+    path: ../download_api
+  download_transport:
+    path: ../download_transport
+  logging: ^1.3.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0

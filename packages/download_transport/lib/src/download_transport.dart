@@ -20,7 +20,13 @@ abstract interface class DownloadTransport {
 
   /// Opens a byte stream for the URL, or for [start]-[end] when a range
   /// is given. Cancelling the subscription aborts the request.
-  Stream<List<int>> openStream(Uri url, {int? start, int? end});
+  /// When [ifRange] is given, it is sent as an If-Range header.
+  Stream<List<int>> openStream(
+    Uri url, {
+    int? start,
+    int? end,
+    String? ifRange,
+  });
 
   /// Releases the underlying HTTP client. The transport must not be
   /// used after [close].
