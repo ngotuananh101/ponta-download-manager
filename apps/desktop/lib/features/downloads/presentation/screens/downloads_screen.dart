@@ -167,33 +167,31 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           const SizedBox(width: AppSpacing.s2),
           // The search box is exactly as tall as the pills and the Add
-          // button (36px) and at most 200px wide, so it sits snugly in
-          // the right group instead of towering over the buttons. It
-          // shrinks below 200px when the window is narrow rather than
-          // overflowing the toolbar.
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 200),
-              child: SizedBox(
-                height: 36,
-                child: TextField(
-                  controller: _searchController,
-                  decoration: const InputDecoration(
-                    hintText: 'Search in downloads...',
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    prefixIconConstraints: BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s2,
-                      vertical: 8,
-                    ),
-                  ),
-                  onChanged: (value) => setState(() => _query = value),
+          // button (36px) and 200px wide. It is a fixed-size box, not a
+          // flex child: the Spacer above is the only flex child, so it
+          // takes all the free space and pushes Add / search / menu
+          // flush to the right edge. (A Flexible search shared the free
+          // space with the Spacer, and the leftover past its 200px cap
+          // sat empty after the menu button.)
+          SizedBox(
+            width: 200,
+            height: 36,
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: 'Search in downloads...',
+                prefixIcon: Icon(Icons.search, size: 18),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s2,
+                  vertical: 8,
                 ),
               ),
+              onChanged: (value) => setState(() => _query = value),
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
