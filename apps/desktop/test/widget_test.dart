@@ -91,6 +91,22 @@ void main() {
     expect(menuRect.right, greaterThan(930));
   });
 
+  testWidgets('the toolbar button texts use the FDM colors',
+      (tester) async {
+    await pumpApp(tester);
+    // The sort/filter pill labels are FDM's near-white, sampled from
+    // the screenshot; the Add button's dark text comes from the theme's
+    // onPrimary (covered by the AppTheme palette test).
+    expect(
+      tester.widget<Text>(find.text('Newest')).style?.color,
+      const Color(0xFFF4F5F5),
+    );
+    expect(
+      tester.widget<Text>(find.text('All files')).style?.color,
+      const Color(0xFFF4F5F5),
+    );
+  });
+
   testWidgets('the toolbar input and buttons use small text',
       (tester) async {
     await pumpApp(tester);

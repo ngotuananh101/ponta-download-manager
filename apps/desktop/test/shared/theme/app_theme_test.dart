@@ -40,8 +40,11 @@ void main() {
     test('dark theme uses the FDM colors', () {
       final scheme = AppTheme.dark.colorScheme;
       expect(scheme.brightness, Brightness.dark);
-      expect(scheme.primary, const Color(0xFF4DA3FF));
-      expect(scheme.secondary, const Color(0xFF4ADE80));
+      // Sampled from the FDM screenshots: the Add button is light sky
+      // blue with dark text; the green is #4EC284.
+      expect(scheme.primary, const Color(0xFF73CEFC));
+      expect(scheme.onPrimary, const Color(0xFF141415));
+      expect(scheme.secondary, const Color(0xFF4EC284));
       expect(scheme.surface, const Color(0xFF121212));
       expect(scheme.surfaceContainer, const Color(0xFF1E1E1E));
       expect(scheme.surfaceContainerHighest, const Color(0xFF2A2A2A));

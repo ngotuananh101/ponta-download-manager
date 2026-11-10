@@ -130,7 +130,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   const SizedBox(width: AppSpacing.s1),
                   Text(
                     _sortLabel(_sort),
-                    style: AppTextSize.xs.textStyle(),
+                    style: AppTextSize.xs.textStyle(
+                      color: const Color(0xFFF4F5F5),
+                    ),
                   ),
                   const Icon(Icons.arrow_drop_down, size: 18),
                 ],
@@ -158,7 +160,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   const SizedBox(width: AppSpacing.s1),
                   Text(
                     _filterLabel(_filter),
-                    style: AppTextSize.xs.textStyle(),
+                    style: AppTextSize.xs.textStyle(
+                      color: const Color(0xFFF4F5F5),
+                    ),
                   ),
                   const Icon(Icons.arrow_drop_down, size: 18),
                 ],

@@ -2,22 +2,24 @@ import 'package:flutter/material.dart';
 
 import 'app_tokens.dart';
 
-/// The FDM color scheme: a near-black dark theme with a sky-blue
-/// primary (the "+ Add download" button) and a bright-green secondary
-/// (the HIGH badge and the "Support the project" button), sampled from
-/// the Free Download Manager screenshot.
+/// The FDM color scheme: a near-black dark theme. The blue and the
+/// green are sampled pixel-by-pixel from the Free Download Manager
+/// screenshots (image-9 / image-10): the "+ Add download" button is a
+/// light sky blue (#73CEFC) with DARK text (#141415); the green text
+/// (HIGH badge, "Support the project", Downloading status) is #4EC284;
+/// the "Completed" status and the file icon use the same #73CEFC.
 const _fdmScheme = ColorScheme(
   brightness: Brightness.dark,
-  primary: Color(0xFF4DA3FF),
-  onPrimary: Color(0xFFFFFFFF),
+  primary: Color(0xFF73CEFC),
+  onPrimary: Color(0xFF141415),
   primaryContainer: Color(0xFF1E3A5F),
   onPrimaryContainer: Color(0xFFBDD8FF),
-  secondary: Color(0xFF4ADE80),
+  secondary: Color(0xFF4EC284),
   onSecondary: Color(0xFF0E0E0E),
   secondaryContainer: Color(0xFF1A3A24),
   onSecondaryContainer: Color(0xFFB8F5CC),
-  tertiary: Color(0xFF4DA3FF),
-  onTertiary: Color(0xFFFFFFFF),
+  tertiary: Color(0xFF73CEFC),
+  onTertiary: Color(0xFF141415),
   error: Color(0xFFFF6B6B),
   onError: Color(0xFFFFFFFF),
   errorContainer: Color(0xFF5A1F1F),
@@ -38,7 +40,7 @@ const _fdmScheme = ColorScheme(
   inverseSurface: Color(0xFFF2F2F2),
   onInverseSurface: Color(0xFF0E0E0E),
   inversePrimary: Color(0xFF2B6CB0),
-  surfaceTint: Color(0xFF4DA3FF),
+  surfaceTint: Color(0xFF73CEFC),
 );
 
 class AppTheme {
