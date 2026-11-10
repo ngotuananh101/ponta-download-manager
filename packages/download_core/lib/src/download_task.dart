@@ -5,6 +5,7 @@ import 'package:download_core/src/chunk_sink.dart';
 import 'package:download_core/src/segment.dart';
 import 'package:download_core/src/segment_planner.dart';
 import 'package:download_core/src/segment_progress.dart';
+import 'package:download_limiter/download_limiter.dart';
 import 'package:download_transport/download_transport.dart';
 import 'package:logging/logging.dart';
 
@@ -39,6 +40,8 @@ class DownloadTask {
     this.maxRetries = 3,
     this.retryDelay = const Duration(seconds: 1),
     this.resumeFrom = const [],
+    this.limiter,
+    this.priority = 0,
   });
 
   final DownloadTransport transport;
@@ -49,6 +52,8 @@ class DownloadTask {
   final int maxRetries;
   final Duration retryDelay;
   final List<SegmentProgress> resumeFrom;
+  final BandwidthLimiter? limiter;
+  final int priority;
 
   DownloadStatus get status => _status;
   int get downloadedBytes => _downloaded;
@@ -337,6 +342,10 @@ class DownloadTask {
             : segment.length! - state.downloaded;
         if (remaining != null && chunk.length > remaining) {
           throw const _RangeIgnored();
+        }
+        final throttle = limiter;
+        if (throttle != null) {
+          await throttle.acquire(id, chunk.length, priority: priority);
         }
         await sink.write(segment.start + state.downloaded, chunk);
         state.downloaded += chunk.length;

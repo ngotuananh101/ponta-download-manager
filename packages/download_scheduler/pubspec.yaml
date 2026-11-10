@@ -12,6 +12,8 @@ dependencies:
     path: ../download_api
   download_core:
     path: ../download_core
+  download_limiter:
+    path: ../download_limiter
   download_storage:
     path: ../download_storage
   download_transport:

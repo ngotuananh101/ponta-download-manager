@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_core/download_core.dart';
+import 'package:download_limiter/download_limiter.dart';
 import 'package:download_storage/download_storage.dart';
 import 'package:download_transport/download_transport.dart';
 import 'package:logging/logging.dart';
@@ -58,17 +59,23 @@ class _RunningJob {
 
 /// Runs downloads with a priority queue and a limit on concurrent
 /// downloads (docs/architecture.md §8.3, §21.5). In-memory only:
-/// persistence and bandwidth limiting live in later packages.
+/// persistence lives in download_recovery. Bandwidth limiting is
+/// enforced when the scheduler is constructed with a limiter.
 class DownloadScheduler {
   DownloadScheduler({
     int maxConcurrent = 3,
     DownloadTaskFactory? taskFactory,
     DownloadTransport? transport,
+    this.limiter,
   }) : _maxConcurrent = maxConcurrent,
        _ownsTransport = transport == null && taskFactory == null {
     _transport = transport;
     _taskFactory = taskFactory ?? _defaultTaskFactory;
   }
+
+  /// Optional limiter, owned by the caller. A custom taskFactory
+  /// wires its own limiter; the default factory uses this one.
+  final BandwidthLimiter? limiter;
 
   int get maxConcurrent => _maxConcurrent;
 
@@ -273,6 +280,18 @@ class DownloadScheduler {
     }
   }
 
+  /// Changes the global bandwidth limit at runtime. No-op without
+  /// a limiter.
+  void setGlobalBandwidthLimit(int? bytesPerSecond) {
+    limiter?.setGlobalLimit(bytesPerSecond);
+  }
+
+  /// Changes the per-download bandwidth limit at runtime. No-op
+  /// without a limiter.
+  void setPerDownloadBandwidthLimit(int? bytesPerSecond) {
+    limiter?.setPerDownloadLimit(bytesPerSecond);
+  }
+
   /// Changes the concurrent-download limit and starts queued jobs when
   /// the limit grows.
   void setMaxConcurrent(int value) {
@@ -333,6 +352,8 @@ class DownloadScheduler {
       url: Uri.parse(job.url),
       id: job.id,
       maxConnections: job.maxConnections,
+      limiter: limiter,
+      priority: job.priority,
     );
     return ScheduledTask(task, sink);
   }
