@@ -11,36 +11,22 @@ class DownloadsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final downloads = ref.watch(downloadsProvider);
-    final connected = ref.watch(engineConnectedProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Downloads')),
-      body: Column(
-        children: [
-          connected.when(
-            data: (isConnected) => isConnected
-                ? const SizedBox.shrink()
-                : const _DisconnectedBanner(),
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
-          ),
-          Expanded(
-            child: downloads.when(
-              data: (items) {
-                if (items.isEmpty) {
-                  return const Center(child: Text('No downloads yet.'));
-                }
-                return ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    return _DownloadRow(item: items[index]);
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('Error: $error')),
-            ),
-          ),
-        ],
+      body: downloads.when(
+        data: (items) {
+          if (items.isEmpty) {
+            return const Center(child: Text('No downloads yet.'));
+          }
+          return ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              return _DownloadRow(item: items[index]);
+            },
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(child: Text('Error: $error')),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context, ref),
@@ -86,28 +72,6 @@ class DownloadsScreen extends ConsumerWidget {
         (_) {},
       );
     }
-  }
-}
-
-class _DisconnectedBanner extends ConsumerWidget {
-  const _DisconnectedBanner();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      width: double.infinity,
-      color: Theme.of(context).colorScheme.errorContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          const Expanded(child: Text('Engine not running — retrying…')),
-          TextButton(
-            onPressed: () => ref.invalidate(downloadDatasourceProvider),
-            child: const Text('Retry now'),
-          ),
-        ],
-      ),
-    );
   }
 }
 

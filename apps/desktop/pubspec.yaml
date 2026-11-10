@@ -26,6 +26,11 @@ dependencies:
     path: ../../packages/download_api
   download_ipc:
     path: ../../packages/download_ipc
+  pdm_engine:
+    path: ../../apps/engine
+  window_manager: ^0.6.0
+  nativeapi: ^0.5.10
+  nativeapi_flutter: ^0.5.10
 
 dev_dependencies:
   flutter_test:
@@ -42,3 +47,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/images/icon.png

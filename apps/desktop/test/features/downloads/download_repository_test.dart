@@ -1,11 +1,11 @@
 import 'package:download_api/download_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:pdm/features/downloads/data/datasources/ipc_download_datasource.dart';
+import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 
-class MockDatasource extends Mock implements IpcDownloadDatasource {}
+class MockDatasource extends Mock implements EngineDownloadDatasource {}
 
 DownloadInfo info({String id = 'dl-1'}) {
   return DownloadInfo(
@@ -18,7 +18,7 @@ DownloadInfo info({String id = 'dl-1'}) {
 }
 
 void main() {
-  group('DownloadRepositoryImpl over the IPC datasource', () {
+  group('DownloadRepositoryImpl over the engine datasource', () {
     late MockDatasource datasource;
     late DownloadRepositoryImpl repository;
 

@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:download_ipc/download_ipc.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdm/app/engine_ipc_host.dart';
 import 'package:pdm/core/error/failures.dart';
-import 'package:pdm/features/downloads/data/datasources/ipc_download_datasource.dart';
+import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
+import 'package:pdm_engine/pdm_engine.dart';
 
 String _defaultDownloadDirectory() {
   if (Platform.isWindows) {
@@ -18,22 +19,25 @@ String _defaultDownloadDirectory() {
   return p.join(Platform.environment['HOME'] ?? '.', 'Downloads');
 }
 
-final downloadDatasourceProvider = Provider<IpcDownloadDatasource>((ref) {
-  final socketPath = defaultSocketPath();
-  final datasource = IpcDownloadDatasource(
-    clientFactory: () async {
-      final token = await File('$socketPath.token').readAsString();
-      return IpcClient.connect(
-        channelFactory: () =>
-            UnixSocketTransport(socketPath: socketPath).connect(),
-        token: token,
-      );
-    },
+/// The engine, running in this process. Opening it runs startup
+/// recovery; disposing the datasource disposes the engine.
+final downloadDatasourceProvider = Provider<EngineDownloadDatasource>((ref) {
+  final datasource = EngineDownloadDatasource(
+    engine: PdmEngine.open(),
     downloadDirectory: _defaultDownloadDirectory(),
   );
-  unawaited(datasource.connect());
   ref.onDispose(() => unawaited(datasource.dispose()));
   return datasource;
+});
+
+/// The IPC server the browser extension's native host talks to.
+/// Started at app startup; closed on quit (and by onDispose).
+final engineIpcHostProvider = FutureProvider<EngineIpcHost>((ref) async {
+  final host = await EngineIpcHost.start(
+    engine: ref.watch(downloadDatasourceProvider).engine,
+  );
+  ref.onDispose(() => unawaited(host.close()));
+  return host;
 });
 
 final downloadRepositoryProvider = Provider<DownloadRepository>((ref) {
@@ -43,11 +47,6 @@ final downloadRepositoryProvider = Provider<DownloadRepository>((ref) {
 /// The live download list, driven by engine snapshots and events.
 final downloadsProvider = StreamProvider<List<Download>>((ref) {
   return ref.watch(downloadRepositoryProvider).watchDownloads();
-});
-
-/// True once the hello handshake with the engine succeeded.
-final engineConnectedProvider = StreamProvider<bool>((ref) {
-  return ref.watch(downloadDatasourceProvider).watchConnected();
 });
 
 final downloadsActionsProvider = Provider<DownloadsActions>((ref) {

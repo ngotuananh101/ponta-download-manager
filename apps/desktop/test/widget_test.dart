@@ -21,13 +21,11 @@ const _download = Download(
 
 Widget app({
   List<Download> downloads = const [_download],
-  bool connected = true,
   MockDownloadsActions? actions,
 }) {
   return ProviderScope(
     overrides: [
       downloadsProvider.overrideWith((ref) => Stream.value(downloads)),
-      engineConnectedProvider.overrideWith((ref) => Stream.value(connected)),
       if (actions != null)
         downloadsActionsProvider.overrideWithValue(actions),
     ],
@@ -58,12 +56,5 @@ void main() {
     await tester.pumpWidget(app(downloads: const []));
     await tester.pumpAndSettle();
     expect(find.text('No downloads yet.'), findsOneWidget);
-  });
-
-  testWidgets('shows a banner while the engine is disconnected',
-      (tester) async {
-    await tester.pumpWidget(app(connected: false));
-    await tester.pumpAndSettle();
-    expect(find.text('Engine not running — retrying…'), findsOneWidget);
   });
 }

@@ -7,8 +7,10 @@ the download in the running engine over IPC.
 
 ## Setup (Linux)
 
-1. Start the engine from `apps/engine`:
-   `dart run bin/engine.dart serve`
+1. Start the desktop app (`flutter run -d linux` from
+   `apps/desktop`, or the built `bundle/pdm`). The engine runs
+   inside the app now, and the app hosts the IPC server the
+   native host talks to.
 2. Load the unpacked extension in Chrome: `chrome://extensions` →
    Developer mode → Load unpacked → pick `extension/`. Copy the
    extension id shown on its card.
@@ -28,7 +30,7 @@ the download in the running engine over IPC.
 - The file name comes from the URL (or the link target); a server
   `Content-Disposition` filename does not rename the file, because
   the destination is fixed before the engine probes the URL.
-- The engine must be running. When it is not, the extension
-  reports "Engine is not running".
+- The desktop app must be running. When it is not, the
+  extension reports "Engine is not running".
 - The icon is a generated placeholder; proper icons are a
   follow-up.

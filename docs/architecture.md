@@ -135,21 +135,27 @@ flowchart TB
 
 ## 4. Runtime and process model
 
-### 4.1 Recommended initial process model
+### 4.1 Process model
 
-Use two independently managed processes:
+Use a single process, following IDM: the Flutter desktop application
+embeds the Dart download engine in-process.
 
--   **Flutter desktop process:** UI only; sends commands and subscribes
-    to events.
--   **Dart engine process:** owns downloads, scheduler, persistence, and
-    recovery.
+-   **Flutter desktop process:** owns the UI and the engine. The engine
+    (`PdmEngine`) runs in the same process, so downloads live and die
+    with the app — closing the window hides it to the system tray
+    instead of exiting, and the app only ends from the tray menu's Quit.
+-   **CLI:** `apps/engine` keeps a thin `download` subcommand for
+    headless use; it creates its own in-process engine. There is no
+    separate engine daemon and no `serve` subcommand.
 
 The engine must not depend on Flutter packages.
 
 ### 4.2 IPC
 
-Start with a local IPC abstraction. A practical first implementation is
-a local socket using newline-delimited JSON messages. Keep the protocol
+The desktop app hosts the IPC server itself, so external clients (the
+browser extension's native host) talk to the app over the same local
+socket protocol. Use a local IPC abstraction: a local socket with
+newline-delimited JSON messages. Keep the protocol
 transport-independent so it can later use named pipes on Windows or Unix
 domain sockets on Linux.
 
@@ -660,8 +666,10 @@ Show:
 ### 11.3 UI architecture
 
 Use a feature-oriented Flutter structure. Riverpod is a reasonable
-state-management choice, but UI state must be derived from engine
-snapshots and events rather than owning download execution.
+state-management choice. The engine runs in-process: the UI subscribes
+to the embedded engine's events and snapshots through a datasource
+(`EngineDownloadDatasource`) instead of talking to a separate process
+over IPC. The UI still must not own download execution.
 
 Throttle high-frequency progress events before rendering. For example,
 aggregate progress updates and publish at a configurable UI refresh
@@ -708,21 +716,35 @@ Security requirements:
 
 ### Windows
 
--   System tray.
+-   System tray (via `window_manager` + `nativeapi`; implemented in the
+    desktop app, not yet verified on Windows).
 -   Startup registration.
 -   Installer and updater.
 -   Native Messaging host registration.
 -   Windows path and file-lock handling.
--   Graceful shutdown and background process lifecycle.
+-   Graceful shutdown: quitting from the tray disposes the in-process
+    engine and closes the IPC server.
 
 ### Linux
 
--   System tray where supported by the desktop environment.
--   XDG autostart.
--   Desktop entry and package formats.
--   Native Messaging host registration.
--   Unix domain sockets where appropriate.
--   Graceful shutdown and process supervision.
+-   System tray where supported by the desktop environment. Implemented:
+    closing the window hides the app to the tray (downloads keep running
+    in the same process), and the tray menu offers Show, Pause all, and
+    Quit. The tray uses `window_manager` 0.6 + `nativeapi` (no
+    `tray_manager`); on Linux the menu trigger must be
+    `ContextMenuTrigger.clicked`, otherwise GNOME's AppIndicator shows an
+    empty menu.
+-   XDG autostart (open; the Linux runner already accepts a `--minimized`
+    flag for it).
+-   Desktop entry and package formats. The app installs its own
+    `.desktop` file and 256x256 icon into `~/.local/share` on startup
+    (`LinuxDesktopService`).
+-   Native Messaging host registration (via `install.sh`).
+-   Unix domain sockets: the app hosts the IPC server on a Unix socket
+    for the browser extension's native host.
+-   Graceful shutdown: quitting from the tray disposes the in-process
+    engine and closes the IPC server; a second app instance fails fast
+    (single-instance enforcement is still open).
 
 Keep these behind a platform interface so the core engine remains
 portable.
@@ -783,6 +805,13 @@ download-manager/
 
 Each package should expose a small public API and keep implementation
 details private. Avoid circular package dependencies.
+
+`apps/engine` is a plain Dart package (no Flutter dependency): the
+desktop app imports `PdmEngine` from it and runs the engine in-process.
+Its `bin/engine.dart` is only a CLI (`download` subcommand) for headless
+use; there is no engine daemon. The SQLite store lives inside
+`download_recovery` as a thin repository; there is no separate
+`download_database` package.
 
 ------------------------------------------------------------------------
 
@@ -997,7 +1026,8 @@ failures, with bounded memory usage.
 -   Download details.
 -   Settings.
 -   Statistics.
--   Engine IPC.
+-   In-process engine (no IPC between UI and engine); the app hosts the
+    IPC server for the browser extension.
 
 **Exit criteria:** the UI can manage engine tasks without owning
 download execution.
@@ -1006,12 +1036,14 @@ download execution.
 
 -   System tray.
 -   Autostart.
--   Engine lifecycle management.
+-   Engine lifecycle management (the engine runs in-process, so its
+    lifecycle is the app's; closing the window hides to the tray).
 -   Windows and Linux packaging.
 -   Startup recovery.
 
-**Exit criteria:** closing the UI does not terminate the engine, and
-downloads can recover after reboot.
+**Exit criteria:** closing the window hides the app to the tray and
+downloads keep running; quitting from the tray ends the app cleanly,
+and downloads can recover after reboot.
 
 ### M5 --- Browser integration
 
@@ -1049,13 +1081,24 @@ Implement in this order:
 5.  `download_scheduler`: per-file and global scheduling.
 6.  `download_recovery`: SQLite checkpoints and startup reconciliation.
 7.  `download_limiter`: global and per-task bandwidth limits.
-8.  `apps/engine`: standalone CLI/daemon entry point.
-9.  `download_ipc`: versioned local protocol.
-10. `apps/desktop`: Flutter UI.
+8.  `apps/engine`: in-process engine library + CLI `download`
+    subcommand (no daemon, no `serve`).
+9.  `download_ipc`: versioned local protocol, hosted by the desktop app
+    for the browser extension.
+10. `apps/desktop`: Flutter UI with the engine embedded and a system
+    tray.
 11. `integrations/browser-extension`: browser handoff.
 
 Do not start browser integration before the engine API and recovery
 behavior are stable.
+
+**IDM rework (2026-11-10):** the original plan had the engine as a
+separate daemon process (`serve`) with the UI talking to it over IPC.
+That was reworked to the IDM direction — a single process with the
+engine embedded in the desktop app — so the release bundle is one app,
+downloads survive closing the window via the tray, and the extension
+still works through the IPC server the app hosts. Steps 8–11 above
+reflect the reworked order.
 
 ------------------------------------------------------------------------
 

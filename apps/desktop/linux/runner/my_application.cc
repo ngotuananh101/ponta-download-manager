@@ -10,12 +10,22 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Set when the app was launched with `--minimized` (auto-start at login):
+  // the window stays hidden in the tray instead of being shown on first frame.
+  gboolean start_minimized;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  // `--minimized` means "start in the tray": showing the window here (as the
+  // template does unconditionally) made auto-start pop the full window over
+  // whatever the user was doing, even though the Dart side deliberately does
+  // not call show() in that case.
+  if (self->start_minimized) {
+    return;
+  }
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
@@ -85,6 +95,17 @@ static gboolean my_application_local_command_line(GApplication* application,
   MyApplication* self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+
+  // The runner is what actually shows the window (first_frame_cb), so it has
+  // to know about `--minimized` itself: the Dart side setting that argument
+  // aside cannot stop this callback from presenting the window.
+  self->start_minimized = FALSE;
+  for (char** arg = *arguments; arg != nullptr && *arg != nullptr; ++arg) {
+    if (g_strcmp0(*arg, "--minimized") == 0) {
+      self->start_minimized = TRUE;
+      break;
+    }
+  }
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {

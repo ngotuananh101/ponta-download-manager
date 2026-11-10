@@ -2,17 +2,18 @@ import 'package:download_api/download_api.dart';
 import 'package:download_ipc/download_ipc.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pdm/core/error/failures.dart';
-import 'package:pdm/features/downloads/data/datasources/ipc_download_datasource.dart';
+import 'package:pdm/features/downloads/data/datasources/download_mapper.dart';
+import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
 
-/// The repository over the engine IPC datasource. The engine is the
-/// source of truth: no state is flipped locally, and a download
-/// created here comes back with the engine's id.
+/// The repository over the in-process engine datasource. The engine
+/// is the source of truth: no state is flipped locally, and a
+/// download created here comes back with the engine's id.
 class DownloadRepositoryImpl implements DownloadRepository {
   DownloadRepositoryImpl(this._datasource);
 
-  final IpcDownloadDatasource _datasource;
+  final EngineDownloadDatasource _datasource;
 
   @override
   Stream<List<Download>> watchDownloads() => _datasource.watchDownloads();

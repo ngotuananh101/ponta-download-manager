@@ -9,8 +9,6 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln(engineUsage);
     case 'version':
       stdout.writeln('pdm engine 0.1.0');
-    case 'serve':
-      exitCode = await runServe(result);
     case 'download':
       exitCode = await runDownload(result);
   }

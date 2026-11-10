@@ -517,9 +517,10 @@ class DownloadScheduler {
       return;
     }
     // The task reports completion before the scheduler finished the
-    // sink (renamed the partial file to its final path). Hold the
-    // completed event back; _onTaskDone emits it once the file is
-    // final, so a consumer acting on it can rely on the file existing.
+    // sink (renamed the partial file to its final path): it emits both
+    // stateChanged(completed) and the completed event. Hold both back;
+    // _onTaskDone emits them once the file is final, so a consumer
+    // acting on either can rely on the file existing.
     final forward = event.when(
       progress: (downloadId, downloadedBytes, totalBytes, bytesPerSecond) {
         final info = _infos[downloadId];
@@ -537,7 +538,11 @@ class DownloadScheduler {
         if (info != null) {
           _infos[downloadId] = info.copyWith(status: status);
         }
-        return true;
+        // The task sets its status to completed (and emits the
+        // completed event) before the scheduler finished the sink.
+        // Hold the completed state change back too, so the UI never
+        // reports a download as completed before its file is final.
+        return status != DownloadStatus.completed;
       },
       completed: (downloadId, filePath) {
         final info = _infos[downloadId];
@@ -593,6 +598,12 @@ class DownloadScheduler {
           return;
         }
       }
+      _emit(
+        DownloadEvent.stateChanged(
+          downloadId: job.id,
+          status: DownloadStatus.completed,
+        ),
+      );
       _emit(
         DownloadEvent.completed(
           downloadId: job.id,
