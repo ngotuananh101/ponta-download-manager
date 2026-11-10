@@ -172,18 +172,23 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
           ),
           const Spacer(),
-          FilledButton.icon(
-            onPressed: () => _showAddDialog(),
-            icon: const Icon(Icons.add, size: 18),
-            label: Text(
-              'Add download',
-              style: AppTextSize.sm.textStyle(),
-            ),
-            style: AppTheme.buttonStyle(AppButtonSize.sm).copyWith(
-              minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
-              // The default padded tap target forces a 48px minimum;
-              // shrinkWrap lets the button actually be 36px tall.
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          // A SizedBox forces the height: relying on the button
+          // style's minimumSize alone left the button short in the
+          // rebuilt app even though the widget test read 36px.
+          SizedBox(
+            height: 36,
+            child: FilledButton.icon(
+              onPressed: () => _showAddDialog(),
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(
+                'Add download',
+                style: AppTextSize.sm.textStyle(),
+              ),
+              style: AppTheme.buttonStyle(AppButtonSize.sm).copyWith(
+                // The default padded tap target forces a 48px minimum;
+                // shrinkWrap lets the button fit in the 36px box.
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
