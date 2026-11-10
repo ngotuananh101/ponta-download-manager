@@ -199,9 +199,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           // flush to the right edge. (A Flexible search shared the free
           // space with the Spacer, and the leftover past its 200px cap
           // sat empty after the menu button.)
-          SizedBox(
+          // The pill is drawn by the Container (like the toolbar
+          // pills), not by the TextField: a TextField's own filled
+          // decoration measured taller than 36px and off-center in the
+          // rebuilt app even though the SizedBox was 36px.
+          Container(
             width: 200,
             height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
             child: TextField(
               controller: _searchController,
               style: AppTextSize.xs.textStyle(),
@@ -213,6 +225,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   minHeight: 32,
                 ),
                 isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: AppSpacing.s2,
                   vertical: 8,

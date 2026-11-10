@@ -110,7 +110,15 @@ void main() {
   testWidgets('all toolbar items share one vertical center line',
       (tester) async {
     await pumpApp(tester);
-    final searchBox = tester.getRect(find.byType(TextField));
+    // The search pill is a Container(36) holding a borderless
+    // TextField; measure the pill, not the TextField (which sizes to
+    // its 32px content and is centered inside the pill).
+    final searchBox = tester.getRect(
+      find.ancestor(
+        of: find.byType(TextField),
+        matching: find.byType(Container),
+      ).first,
+    );
     final addButton = tester.getRect(find.byType(FilledButton));
     // Every visible item is 36px tall.
     expect(searchBox.height, 36);
