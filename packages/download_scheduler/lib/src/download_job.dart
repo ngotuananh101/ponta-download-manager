@@ -1,3 +1,5 @@
+import 'package:download_core/download_core.dart';
+
 /// A download waiting to run, or paused mid-run.
 class DownloadJob {
   const DownloadJob({
@@ -8,6 +10,8 @@ class DownloadJob {
     required this.priority,
     required this.maxConnections,
     required this.sequence,
+    this.resumeFrom = const [],
+    this.resumeExisting = false,
   });
 
   final String id;
@@ -19,4 +23,11 @@ class DownloadJob {
 
   /// Enqueue order; breaks priority ties (earlier first).
   final int sequence;
+
+  /// Checkpointed progress to resume from, when this job restarts a
+  /// download that already has bytes on disk.
+  final List<SegmentProgress> resumeFrom;
+
+  /// Open the existing partial file instead of creating a new one.
+  final bool resumeExisting;
 }

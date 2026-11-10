@@ -111,16 +111,31 @@ class DownloadScheduler {
     String directory = '.',
     int priority = 0,
     int maxConnections = 4,
+    String? id,
+    List<SegmentProgress> resumeFrom = const [],
+    bool resumeExisting = false,
   }) {
     _throwIfDisposed();
+    final jobId = id ?? 'dl-${++_counter}';
+    if (id != null) {
+      final match = RegExp(r'^dl-(\d+)$').firstMatch(id);
+      if (match != null) {
+        final n = int.parse(match.group(1)!);
+        if (n >= _counter) {
+          _counter = n + 1;
+        }
+      }
+    }
     final job = DownloadJob(
-      id: 'dl-${++_counter}',
+      id: jobId,
       url: url,
       fileName: fileName,
       directory: directory,
       priority: priority,
       maxConnections: maxConnections,
       sequence: ++_sequence,
+      resumeFrom: resumeFrom,
+      resumeExisting: resumeExisting,
     );
     _jobs[job.id] = job;
     _infos[job.id] = DownloadInfo(
@@ -172,6 +187,49 @@ class DownloadScheduler {
         ),
       );
     }
+  }
+
+  /// Changes the priority of a queued or paused download. A running
+  /// download keeps the priority it started with.
+  void setPriority(String id, int priority) {
+    _throwIfDisposed();
+    final queuedIndex = _pending.indexWhere((q) => q.job.id == id);
+    if (queuedIndex != -1) {
+      final queued = _pending[queuedIndex];
+      _pending[queuedIndex] = _QueuedJob(
+        _withPriority(queued.job, priority),
+        started: queued.started,
+        subscription: queued.subscription,
+        runStarted: queued.runStarted,
+      )..paused = queued.paused;
+      _jobs[id] = _pending[queuedIndex].job;
+      _pump();
+      return;
+    }
+    final paused = _pausedRunning[id];
+    if (paused != null) {
+      _pausedRunning[id] = _RunningJob(
+        _withPriority(paused.job, priority),
+        paused.started,
+        paused.subscription,
+        runStarted: paused.runStarted,
+      );
+      _jobs[id] = _pausedRunning[id]!.job;
+    }
+  }
+
+  DownloadJob _withPriority(DownloadJob job, int priority) {
+    return DownloadJob(
+      id: job.id,
+      url: job.url,
+      fileName: job.fileName,
+      directory: job.directory,
+      priority: priority,
+      maxConnections: job.maxConnections,
+      sequence: job.sequence,
+      resumeFrom: job.resumeFrom,
+      resumeExisting: job.resumeExisting,
+    );
   }
 
   /// Resumes a paused download. It re-enters the queue and starts when
@@ -458,8 +516,11 @@ class DownloadScheduler {
     if (_disposed) {
       return;
     }
-    _emit(event);
-    event.when(
+    // The task reports completion before the scheduler finished the
+    // sink (renamed the partial file to its final path). Hold the
+    // completed event back; _onTaskDone emits it once the file is
+    // final, so a consumer acting on it can rely on the file existing.
+    final forward = event.when(
       progress: (downloadId, downloadedBytes, totalBytes, bytesPerSecond) {
         final info = _infos[downloadId];
         if (info != null) {
@@ -469,12 +530,14 @@ class DownloadScheduler {
             bytesPerSecond: bytesPerSecond,
           );
         }
+        return true;
       },
       stateChanged: (downloadId, status) {
         final info = _infos[downloadId];
         if (info != null) {
           _infos[downloadId] = info.copyWith(status: status);
         }
+        return true;
       },
       completed: (downloadId, filePath) {
         final info = _infos[downloadId];
@@ -483,14 +546,19 @@ class DownloadScheduler {
             status: DownloadStatus.completed,
           );
         }
+        return false;
       },
       failed: (downloadId, code, message) {
         final info = _infos[downloadId];
         if (info != null) {
           _infos[downloadId] = info.copyWith(status: DownloadStatus.failed);
         }
+        return true;
       },
     );
+    if (forward) {
+      _emit(event);
+    }
   }
 
   Future<void> _onTaskDone(DownloadJob job, DownloadInfo info) async {
@@ -521,8 +589,16 @@ class DownloadScheduler {
               message: e.toString(),
             ),
           );
+          _pump();
+          return;
         }
       }
+      _emit(
+        DownloadEvent.completed(
+          downloadId: job.id,
+          filePath: sink?.filePath ?? '',
+        ),
+      );
     }
     _pump();
   }

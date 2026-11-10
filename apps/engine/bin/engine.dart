@@ -1,7 +1,8 @@
 import 'dart:io';
+
 import 'package:pdm_engine/pdm_engine.dart';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   final result = parseCliArgs(arguments);
   switch (result.command) {
     case 'help':
@@ -9,12 +10,9 @@ void main(List<String> arguments) {
     case 'version':
       stdout.writeln('pdm engine 0.1.0');
     case 'serve':
-      stdout.writeln('Engine daemon is not implemented yet (M1).');
+      stdout.writeln('Engine daemon is not implemented yet (IPC, M3).');
       exitCode = 2;
     case 'download':
-      stdout.writeln(
-        'Download transport is not implemented yet (M1): ${result.url}',
-      );
-      exitCode = 2;
+      exitCode = await runDownload(result);
   }
 }
