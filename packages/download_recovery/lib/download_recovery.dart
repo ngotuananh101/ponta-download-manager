@@ -1,1 +1,4 @@
-// TODO: implement `download_recovery` (see docs/architecture.md sections 14 and 21).
+export 'src/checkpoint_writer.dart';
+export 'src/download_record.dart';
+export 'src/download_store.dart';
+export 'src/recovery.dart';

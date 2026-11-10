@@ -4,6 +4,7 @@ import 'package:download_api/download_api.dart';
 import 'package:download_core/src/chunk_sink.dart';
 import 'package:download_core/src/segment.dart';
 import 'package:download_core/src/segment_planner.dart';
+import 'package:download_core/src/segment_progress.dart';
 import 'package:download_transport/download_transport.dart';
 import 'package:logging/logging.dart';
 
@@ -37,6 +38,7 @@ class DownloadTask {
     this.maxConnections = 4,
     this.maxRetries = 3,
     this.retryDelay = const Duration(seconds: 1),
+    this.resumeFrom = const [],
   });
 
   final DownloadTransport transport;
@@ -46,12 +48,31 @@ class DownloadTask {
   final int maxConnections;
   final int maxRetries;
   final Duration retryDelay;
+  final List<SegmentProgress> resumeFrom;
 
   DownloadStatus get status => _status;
   int get downloadedBytes => _downloaded;
 
   /// Total bytes when known, -1 when unknown.
   int get totalBytes => _total;
+
+  /// ETag validator from the probe, when the server sent one.
+  String? get eTag => _eTag;
+
+  /// URL after following redirects, when the probe ran.
+  Uri? get finalUrl => _finalUrl;
+
+  /// Live per-segment progress. Empty before the segments are planned.
+  List<SegmentProgress> get segments => _segmentStates
+      .map(
+        (s) => SegmentProgress(
+          segmentId: s.segment.id,
+          start: s.segment.start,
+          end: s.segment.end,
+          downloaded: s.downloaded,
+        ),
+      )
+      .toList();
 
   Stream<DownloadEvent> get events => _events.stream;
 
@@ -60,6 +81,8 @@ class DownloadTask {
   int _total = -1;
   String? _fileName;
   String? _eTag;
+  Uri? _finalUrl;
+  final _segmentStates = <_SegmentState>[];
   final _events = StreamController<DownloadEvent>.broadcast();
   bool _paused = false;
   bool _cancelled = false;
@@ -78,6 +101,7 @@ class DownloadTask {
       _total = info.contentLength ?? -1;
       _fileName = info.fileName;
       _eTag = info.eTag;
+      _finalUrl = info.finalUrl;
       var segmented = false;
       if (info.supportsRange &&
           info.contentLength != null &&
@@ -95,12 +119,21 @@ class DownloadTask {
             totalBytes: _total,
             maxConnections: maxConnections,
           );
+          _segmentStates.clear();
+          _segmentStates.addAll(segments.map(_stateFor));
+          _downloaded = _segmentStates.fold(
+            0,
+            (sum, s) => sum + s.downloaded,
+          );
           await Future.wait(
-            segments.map((s) => _runSegment(s, _SegmentState(s))),
+            _segmentStates.map((s) => _runSegment(s.segment, s)),
           );
         } else {
           const single = Segment(id: 0, start: 0, end: null);
-          await _runSegment(single, _SegmentState(single));
+          _segmentStates.clear();
+          _segmentStates.add(_stateFor(single));
+          _downloaded = _segmentStates.first.downloaded;
+          await _runSegment(single, _segmentStates.first);
         }
       } on _RangeIgnored {
         _log.info(
@@ -109,7 +142,9 @@ class DownloadTask {
         _aborted = false;
         _downloaded = 0;
         const single = Segment(id: 0, start: 0, end: null);
-        await _runSegment(single, _SegmentState(single));
+        _segmentStates.clear();
+        _segmentStates.add(_SegmentState(single));
+        await _runSegment(single, _segmentStates.first);
       }
       if (_cancelled) {
         return _finish(DownloadStatus.cancelled);
@@ -214,6 +249,22 @@ class DownloadTask {
         bytesPerSecond: 0,
       ),
     );
+  }
+
+  _SegmentState _stateFor(Segment segment) {
+    final state = _SegmentState(segment);
+    for (final entry in resumeFrom) {
+      if (entry.segmentId == segment.id &&
+          entry.start == segment.start &&
+          entry.end == segment.end) {
+        final length = segment.length;
+        state.downloaded = length == null
+            ? entry.downloaded
+            : entry.downloaded.clamp(0, length);
+        break;
+      }
+    }
+    return state;
   }
 
   Future<void> _runSegment(Segment segment, _SegmentState state) async {
