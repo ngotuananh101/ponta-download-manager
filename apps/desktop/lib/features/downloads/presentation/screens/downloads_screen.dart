@@ -93,7 +93,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final someSelected = visible.any((d) => _selected.contains(d.id));
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
@@ -104,45 +104,66 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       ),
       child: Row(
         children: [
-          Checkbox(
-            value: allSelected ? true : (someSelected ? null : false),
-            tristate: true,
-            onChanged: (_) => _toggleSelectAll(visible),
-          ),
-          const Icon(Icons.sort, size: 18),
-          const SizedBox(width: AppSpacing.s1),
-          DropdownButton<DownloadSort>(
-            value: _sort,
-            underline: const SizedBox.shrink(),
-            items: DownloadSort.values
-                .map(
-                  (s) => DropdownMenuItem(
-                    value: s,
-                    child: Text(_sortLabel(s)),
-                  ),
-                )
-                .toList(),
-            onChanged: (s) {
-              if (s != null) setState(() => _sort = s);
-            },
+          _toolbarPill(
+            Checkbox(
+              value: allSelected ? true : (someSelected ? null : false),
+              tristate: true,
+              onChanged: (_) => _toggleSelectAll(visible),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ),
           const SizedBox(width: AppSpacing.s2),
-          const Icon(Icons.filter_list, size: 18),
-          const SizedBox(width: AppSpacing.s1),
-          DropdownButton<DownloadFilter>(
-            value: _filter,
-            underline: const SizedBox.shrink(),
-            items: DownloadFilter.values
-                .map(
-                  (f) => DropdownMenuItem(
-                    value: f,
-                    child: Text(_filterLabel(f)),
-                  ),
-                )
-                .toList(),
-            onChanged: (f) {
-              if (f != null) setState(() => _filter = f);
-            },
+          _toolbarPill(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.sort, size: 18),
+                const SizedBox(width: AppSpacing.s1),
+                DropdownButton<DownloadSort>(
+                  value: _sort,
+                  isDense: true,
+                  underline: const SizedBox.shrink(),
+                  items: DownloadSort.values
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(_sortLabel(s)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (s) {
+                    if (s != null) setState(() => _sort = s);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.s2),
+          _toolbarPill(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.filter_list, size: 18),
+                const SizedBox(width: AppSpacing.s1),
+                DropdownButton<DownloadFilter>(
+                  value: _filter,
+                  isDense: true,
+                  underline: const SizedBox.shrink(),
+                  items: DownloadFilter.values
+                      .map(
+                        (f) => DropdownMenuItem(
+                          value: f,
+                          child: Text(_filterLabel(f)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (f) {
+                    if (f != null) setState(() => _filter = f);
+                  },
+                ),
+              ],
+            ),
           ),
           const Spacer(),
           FilledButton.icon(
@@ -177,6 +198,22 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// A dark rounded pill behind a toolbar control, like FDM's
+  /// dropdowns and search field.
+  Widget _toolbarPill(Widget child) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s2,
+        vertical: AppSpacing.s1,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: child,
     );
   }
 
@@ -487,28 +524,24 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         ),
         decoration: BoxDecoration(
           color: isOff
-              ? colorScheme.errorContainer
-              : colorScheme.primaryContainer,
+              ? colorScheme.surfaceContainerHighest
+              : colorScheme.primary,
           borderRadius: BorderRadius.circular(AppRadius.full),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.power_settings_new,
+              Icons.speed,
               size: 14,
-              color: isOff
-                  ? colorScheme.onErrorContainer
-                  : colorScheme.onPrimaryContainer,
+              color: isOff ? colorScheme.onSurface : colorScheme.onPrimary,
             ),
             const SizedBox(width: AppSpacing.s1),
             Text(
               isOff ? 'OFF' : 'ON',
               style: AppTextSize.xs.textStyle(
                 weight: AppFontWeight.semibold,
-                color: isOff
-                    ? colorScheme.onErrorContainer
-                    : colorScheme.onPrimaryContainer,
+                color: isOff ? colorScheme.onSurface : colorScheme.onPrimary,
               ),
             ),
           ],
@@ -559,7 +592,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         vertical: AppSpacing.s1,
       ),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(AppRadius.full),
       ),
       child: Row(
@@ -568,14 +601,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           Icon(
             Icons.speed,
             size: 14,
-            color: colorScheme.onPrimaryContainer,
+            color: colorScheme.secondary,
           ),
           const SizedBox(width: AppSpacing.s1),
           Text(
             'HIGH',
             style: AppTextSize.xs.textStyle(
               weight: AppFontWeight.semibold,
-              color: colorScheme.onPrimaryContainer,
+              color: colorScheme.secondary,
             ),
           ),
         ],
@@ -584,10 +617,20 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   Widget _buildSupportButton() {
-    return TextButton.icon(
+    final colorScheme = Theme.of(context).colorScheme;
+    return OutlinedButton.icon(
       onPressed: _openSupport,
       icon: const Icon(Icons.favorite_outline, size: 18),
       label: const Text('Support the project'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colorScheme.secondary,
+        side: BorderSide(color: colorScheme.secondary),
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+      ),
     );
   }
 

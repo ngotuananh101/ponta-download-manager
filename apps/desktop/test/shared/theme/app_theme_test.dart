@@ -35,4 +35,35 @@ void main() {
       expect(style?.textStyle?.resolve({})?.fontSize, 16);
     });
   });
+
+  group('AppTheme FDM palette', () {
+    test('dark theme uses the FDM colors', () {
+      final scheme = AppTheme.dark.colorScheme;
+      expect(scheme.brightness, Brightness.dark);
+      expect(scheme.primary, const Color(0xFF4DA3FF));
+      expect(scheme.secondary, const Color(0xFF4ADE80));
+      expect(scheme.surface, const Color(0xFF1C1C1C));
+      expect(scheme.surfaceContainerHighest, const Color(0xFF2E2E2E));
+      expect(scheme.onSurface, const Color(0xFFF2F2F2));
+      expect(scheme.onSurfaceVariant, const Color(0xFF9A9A9A));
+      expect(scheme.outline, const Color(0xFF555555));
+      expect(scheme.outlineVariant, const Color(0xFF333333));
+      expect(AppTheme.dark.scaffoldBackgroundColor, const Color(0xFF0E0E0E));
+    });
+
+    test('the default button theme is rounded like FDM', () {
+      final style = AppTheme.dark.elevatedButtonTheme.style;
+      final borderRadius =
+          (style?.shape?.resolve({}) as RoundedRectangleBorder?)
+                  ?.borderRadius
+              as BorderRadius?;
+      expect(borderRadius?.topLeft.x, 8);
+    });
+
+    test('text fields are filled dark pills', () {
+      final decoration = AppTheme.dark.inputDecorationTheme;
+      expect(decoration.filled, isTrue);
+      expect(decoration.fillColor, const Color(0xFF2E2E2E));
+    });
+  });
 }

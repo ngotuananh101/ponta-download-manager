@@ -2,12 +2,55 @@ import 'package:flutter/material.dart';
 
 import 'app_tokens.dart';
 
+/// The FDM color scheme: a near-black dark theme with a sky-blue
+/// primary (the "+ Add download" button) and a bright-green secondary
+/// (the HIGH badge and the "Support the project" button), sampled from
+/// the Free Download Manager screenshot.
+const _fdmScheme = ColorScheme(
+  brightness: Brightness.dark,
+  primary: Color(0xFF4DA3FF),
+  onPrimary: Color(0xFFFFFFFF),
+  primaryContainer: Color(0xFF1E3A5F),
+  onPrimaryContainer: Color(0xFFBDD8FF),
+  secondary: Color(0xFF4ADE80),
+  onSecondary: Color(0xFF0E0E0E),
+  secondaryContainer: Color(0xFF1A3A24),
+  onSecondaryContainer: Color(0xFFB8F5CC),
+  tertiary: Color(0xFF4DA3FF),
+  onTertiary: Color(0xFFFFFFFF),
+  error: Color(0xFFFF6B6B),
+  onError: Color(0xFFFFFFFF),
+  errorContainer: Color(0xFF5A1F1F),
+  onErrorContainer: Color(0xFFFFC9C9),
+  surface: Color(0xFF1C1C1C),
+  onSurface: Color(0xFFF2F2F2),
+  surfaceContainerLowest: Color(0xFF0A0A0A),
+  surfaceContainerLow: Color(0xFF141414),
+  surfaceContainer: Color(0xFF232323),
+  surfaceContainerHigh: Color(0xFF2A2A2A),
+  surfaceContainerHighest: Color(0xFF2E2E2E),
+  onSurfaceVariant: Color(0xFF9A9A9A),
+  outline: Color(0xFF555555),
+  outlineVariant: Color(0xFF333333),
+  scrim: Color(0xFF000000),
+  inverseSurface: Color(0xFFF2F2F2),
+  onInverseSurface: Color(0xFF0E0E0E),
+  inversePrimary: Color(0xFF2B6CB0),
+  surfaceTint: Color(0xFF4DA3FF),
+);
+
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData get light => _theme(Brightness.light);
+  static ThemeData get light => _theme(
+    ColorScheme.fromSeed(
+      seedColor: Colors.teal,
+      brightness: Brightness.light,
+    ),
+  );
 
-  static ThemeData get dark => _theme(Brightness.dark);
+  static ThemeData get dark =>
+      _theme(_fdmScheme, scaffoldBackground: const Color(0xFF0E0E0E));
 
   /// Builds a [ButtonStyle] for a button of the given size, from the
   /// tokens. The theme uses [AppButtonSize.md] by default.
@@ -18,20 +61,21 @@ class AppTheme {
       textStyle: WidgetStatePropertyAll(size.textStyle),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
       ),
     );
   }
 
-  static ThemeData _theme(Brightness brightness) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: Colors.teal,
-      brightness: brightness,
-    );
+  static ThemeData _theme(
+    ColorScheme colorScheme, {
+    Color? scaffoldBackground,
+  }) {
     return ThemeData(
       colorScheme: colorScheme,
       useMaterial3: true,
+      scaffoldBackgroundColor: scaffoldBackground ?? colorScheme.surface,
+      canvasColor: colorScheme.surfaceContainer,
       textTheme: _textTheme(colorScheme),
       appBarTheme: AppBarTheme(
         titleTextStyle: AppTextSize.xl.textStyle(
@@ -54,12 +98,23 @@ class AppTheme {
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.s4,
           vertical: AppSpacing.s3,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide(color: colorScheme.primary),
         ),
       ),
     );
