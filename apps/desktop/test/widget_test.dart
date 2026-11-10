@@ -28,6 +28,9 @@ Widget app({
       downloadsProvider.overrideWith((ref) => Stream.value(downloads)),
       if (actions != null)
         downloadsActionsProvider.overrideWithValue(actions),
+      // The native library behind DropTarget is not bundled in a test
+      // VM, so the screen renders without the native target here.
+      dropTargetEnabledProvider.overrideWithValue(false),
     ],
     child: const PdmApp(),
   );
@@ -42,7 +45,8 @@ void main() {
     ).thenAnswer((_) async => const Right(unit));
     await tester.pumpWidget(app(actions: actions));
     await tester.pumpAndSettle();
-    expect(find.text('Downloads'), findsOneWidget);
+    expect(find.text('Ponta Download Manager'), findsOneWidget);
+    expect(find.text('Add download'), findsOneWidget);
     expect(find.text('f.bin'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
     expect(find.byIcon(Icons.pause), findsOneWidget);
@@ -51,11 +55,25 @@ void main() {
     verify(() => actions.pauseDownload('dl-1')).called(1);
   });
 
-  testWidgets('shows the empty state when there are no downloads',
+  testWidgets('toolbar and status bar show the FDM layout', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('Newest'), findsOneWidget);
+    expect(find.text('All files'), findsOneWidget);
+    expect(find.text('Search in downloads...'), findsOneWidget);
+    // The one downloading item runs at 250 B/s.
+    expect(find.text('250 B/s'), findsOneWidget);
+    expect(find.text('0 B/s'), findsOneWidget);
+    expect(find.text('HIGH'), findsOneWidget);
+    expect(find.text('Support the project'), findsOneWidget);
+    expect(find.text('ON'), findsOneWidget);
+  });
+
+  testWidgets('shows the drop zone when there are no downloads',
       (tester) async {
     await tester.pumpWidget(app(downloads: const []));
     await tester.pumpAndSettle();
-    expect(find.text('No downloads yet.'), findsOneWidget);
+    expect(find.text('Drag-and-drop URL or torrent file'), findsOneWidget);
   });
 
   testWidgets('an unknown total is shown as unknown, not -1 B (0%)',

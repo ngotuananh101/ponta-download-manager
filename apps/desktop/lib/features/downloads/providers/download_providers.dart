@@ -53,6 +53,16 @@ final downloadsActionsProvider = Provider<DownloadsActions>((ref) {
   return DownloadsActions(ref.watch(downloadRepositoryProvider));
 });
 
+/// Whether the native drag-and-drop target is available.
+///
+/// The desktop_drop plugin loads a native library
+/// (`libdesktop_drop_plugin.so`) that is only bundled in a built app.
+/// A widget test runs in a plain Dart VM without it, and building a
+/// [DropTarget] there throws. The screen only builds the target when
+/// this is true; tests override it to false so the screen renders
+/// without the native target.
+final dropTargetEnabledProvider = Provider<bool>((ref) => true);
+
 /// The user-facing download actions (add/pause/resume/cancel/retry).
 class DownloadsActions {
   DownloadsActions(this._repository);

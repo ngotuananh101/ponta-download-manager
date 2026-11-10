@@ -1,5 +1,8 @@
 #include "my_application.h"
 
+#include <limits.h>
+#include <unistd.h>
+
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
@@ -35,31 +38,41 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
-#ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
-  if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
+  // Always set the window title explicitly. Some desktop environments,
+  // Wayland compositors, and task switchers read the window title directly.
+  gtk_window_set_title(window, "Ponta Download Manager");
+
+  // The application renders its own header bar in Flutter (AppHeader), so
+  // the window carries no decoration of its own. This is done here rather
+  // than from Dart: on Linux, asking nativeapi for a hidden title bar
+  // switches on its custom-shadow mode, which in 0.5.10 registers an input
+  // region offset from the real content area and leaves a dead band along
+  // the right and bottom of the window (see the comment in `lib/main.dart`).
+  // Setting it before the window is realized also means no native title
+  // bar can flash before the first frame, and no GtkHeaderBar is attached.
+  gtk_window_set_decorated(window, FALSE);
+
+  // Load and set application icon from bundle assets if available.
+  char exe_path[PATH_MAX];
+  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+  if (len != -1) {
+    exe_path[len] = '\0';
+    g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+    const char* possible_icons[] = {
+        "data/flutter_assets/assets/images/icon.png",
+        "pdm.png",
+        "com.ponta.pdm.png",
+        nullptr
+    };
+    for (int i = 0; possible_icons[i] != nullptr; ++i) {
+      g_autofree gchar* icon_path =
+          g_build_filename(exe_dir, possible_icons[i], nullptr);
+      if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+        gtk_window_set_icon_from_file(window, icon_path, nullptr);
+        gtk_window_set_default_icon_from_file(icon_path, nullptr);
+        break;
+      }
     }
-  }
-#endif
-  if (use_header_bar) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-    gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "pdm");
-    gtk_header_bar_set_show_close_button(header_bar, TRUE);
-    gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "pdm");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
