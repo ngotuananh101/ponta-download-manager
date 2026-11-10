@@ -107,7 +107,7 @@ class _AppHeaderState extends State<AppHeader> {
       child: Row(
         children: [
           _buildBrand(colorScheme),
-          const Expanded(
+          Expanded(
             child: DragToMoveArea(
               child: SizedBox(
                 height: kAppHeaderHeight,
