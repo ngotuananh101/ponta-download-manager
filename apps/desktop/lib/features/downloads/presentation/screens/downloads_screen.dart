@@ -217,6 +217,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             child: TextField(
               controller: _searchController,
               style: AppTextSize.xs.textStyle(),
+              // The text and prefix icon must sit on the pill's center
+              // line: isDense + vertical contentPadding top-aligned
+              // them ~4px high in the rebuilt app.
+              textAlignVertical: TextAlignVertical.center,
               decoration: const InputDecoration(
                 hintText: 'Search in downloads...',
                 prefixIcon: Icon(Icons.search, size: 18),
@@ -231,7 +235,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 filled: false,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: AppSpacing.s2,
-                  vertical: 8,
                 ),
               ),
               onChanged: (value) => setState(() => _query = value),
