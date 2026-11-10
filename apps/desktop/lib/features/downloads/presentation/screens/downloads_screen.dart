@@ -9,6 +9,7 @@ import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/dashed_border.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -99,6 +100,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
       color: Theme.of(context).colorScheme.surface,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _toolbarPill(
             Checkbox(
@@ -177,6 +179,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               'Add download',
               style: AppTextSize.sm.textStyle(),
             ),
+            style: AppTheme.buttonStyle(AppButtonSize.sm).copyWith(
+              minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
+              // The default padded tap target forces a 48px minimum;
+              // shrinkWrap lets the button actually be 36px tall.
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
           ),
           const SizedBox(width: AppSpacing.s2),
           // The search box is exactly as tall as the pills and the Add
@@ -209,14 +217,28 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Menu',
-            onSelected: _onMenuSelected,
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'pause-all', child: Text('Pause all')),
-              PopupMenuItem(value: 'resume-all', child: Text('Resume all')),
-            ],
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: PopupMenuButton<String>(
+              tooltip: 'Menu',
+              padding: EdgeInsets.zero,
+              onSelected: _onMenuSelected,
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'pause-all',
+                  child: Text('Pause all'),
+                ),
+                PopupMenuItem(
+                  value: 'resume-all',
+                  child: Text('Resume all'),
+                ),
+              ],
+              // An explicit child (not the icon form): the icon form
+              // builds an IconButton whose 48px minimum survives both
+              // a SizedBox wrapper and PopupMenuButton.constraints.
+              child: const Center(child: Icon(Icons.menu)),
+            ),
           ),
         ],
       ),
@@ -224,13 +246,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   /// A dark rounded pill behind a toolbar control, like FDM's
-  /// dropdowns and search field.
+  /// dropdowns and search field. Every pill is exactly 36px tall (the
+  /// search box height) with its content centered, so all toolbar
+  /// items share one top edge, one center and one bottom edge.
   Widget _toolbarPill(Widget child) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s2,
-        vertical: AppSpacing.s1,
-      ),
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(AppRadius.lg),

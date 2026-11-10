@@ -107,6 +107,31 @@ void main() {
     );
   });
 
+  testWidgets('all toolbar items share one vertical center line',
+      (tester) async {
+    await pumpApp(tester);
+    final searchBox = tester.getRect(find.byType(TextField));
+    final addButton = tester.getRect(find.byType(FilledButton));
+    // Every visible item is 36px tall.
+    expect(searchBox.height, 36);
+    expect(addButton.height, 36);
+    // And they all share one vertical center line. (The menu button
+    // itself has no visible background, so only its icon's center
+    // matters, not the button's height.)
+    final centerY = searchBox.center.dy;
+    expect(addButton.center.dy, centerY);
+    expect(tester.getRect(find.byIcon(Icons.menu)).center.dy, centerY);
+    expect(tester.getRect(find.byIcon(Icons.sort)).center.dy, centerY);
+    expect(
+      tester.getRect(find.byIcon(Icons.filter_list)).center.dy,
+      centerY,
+    );
+    expect(
+      tester.getRect(find.byType(Checkbox).first).center.dy,
+      centerY,
+    );
+  });
+
   testWidgets('the toolbar input and buttons use small text',
       (tester) async {
     await pumpApp(tester);
