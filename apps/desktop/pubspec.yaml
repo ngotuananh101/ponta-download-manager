@@ -1,0 +1,41 @@
+name: pdm
+description: "Ponta Download Manager — desktop UI (Flutter + Riverpod clean architecture)."
+publish_to: none
+version: 0.1.0+1
+resolution: workspace
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^3.0.3
+  riverpod_annotation: ^4.0.0
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+  equatable: ^2.0.7
+  fpdart: ^1.2.0
+  uuid: ^4.3.3
+  logging: ^1.3.0
+  path: ^1.9.0
+  download_api:
+    path: ../../packages/download_api
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.15
+  freezed: ^3.0.6
+  json_serializable: ^6.9.5
+  riverpod_generator: ^4.0.0+1
+  riverpod_lint: ^3.0.0
+  custom_lint: ^0.8.1
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,38 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'download_info.dart';
+
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+_DownloadInfo _$DownloadInfoFromJson(Map<String, dynamic> json) =>
+    _DownloadInfo(
+      id: json['id'] as String,
+      url: json['url'] as String,
+      fileName: json['fileName'] as String,
+      status: $enumDecode(_$DownloadStatusEnumMap, json['status']),
+      downloadedBytes: (json['downloadedBytes'] as num?)?.toInt() ?? 0,
+      totalBytes: (json['totalBytes'] as num).toInt(),
+      bytesPerSecond: (json['bytesPerSecond'] as num?)?.toInt() ?? 0,
+    );
+
+Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'url': instance.url,
+      'fileName': instance.fileName,
+      'status': _$DownloadStatusEnumMap[instance.status]!,
+      'downloadedBytes': instance.downloadedBytes,
+      'totalBytes': instance.totalBytes,
+      'bytesPerSecond': instance.bytesPerSecond,
+    };
+
+const _$DownloadStatusEnumMap = {
+  DownloadStatus.queued: 'queued',
+  DownloadStatus.downloading: 'downloading',
+  DownloadStatus.paused: 'paused',
+  DownloadStatus.completed: 'completed',
+  DownloadStatus.failed: 'failed',
+  DownloadStatus.cancelled: 'cancelled',
+};

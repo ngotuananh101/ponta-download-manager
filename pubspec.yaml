@@ -1,0 +1,22 @@
+name: pdm_workspace
+description: "Ponta Download Manager — workspace root (Flutter UI + Dart engine)."
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+workspace:
+  - apps/desktop
+  - apps/engine
+  - packages/download_api
+  - packages/download_core
+  - packages/download_scheduler
+  - packages/download_transport
+  - packages/download_storage
+  - packages/download_recovery
+  - packages/download_limiter
+  - packages/download_integrity
+  - packages/download_database
+  - packages/download_ipc
+  - packages/download_platform
