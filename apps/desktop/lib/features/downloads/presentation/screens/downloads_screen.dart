@@ -4,6 +4,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/shared/theme/app_tokens.dart';
 
 class DownloadsScreen extends ConsumerWidget {
   const DownloadsScreen({super.key});
@@ -106,9 +107,9 @@ class _DownloadRow extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(item.url),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.s1),
           LinearProgressIndicator(value: barValue),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.s1),
           Text(status),
         ],
       ),
