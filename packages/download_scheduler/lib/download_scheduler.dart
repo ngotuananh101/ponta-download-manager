@@ -1,1 +1,2 @@
-// TODO: implement `download_scheduler` (see docs/architecture.md sections 14 and 21).
+export 'src/download_job.dart';
+export 'src/download_scheduler.dart';
