@@ -128,7 +128,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 children: [
                   const Icon(Icons.sort, size: 18),
                   const SizedBox(width: AppSpacing.s1),
-                  Text(_sortLabel(_sort)),
+                  Text(
+                    _sortLabel(_sort),
+                    style: AppTextSize.xs.textStyle(),
+                  ),
                   const Icon(Icons.arrow_drop_down, size: 18),
                 ],
               ),
@@ -153,7 +156,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 children: [
                   const Icon(Icons.filter_list, size: 18),
                   const SizedBox(width: AppSpacing.s1),
-                  Text(_filterLabel(_filter)),
+                  Text(
+                    _filterLabel(_filter),
+                    style: AppTextSize.xs.textStyle(),
+                  ),
                   const Icon(Icons.arrow_drop_down, size: 18),
                 ],
               ),
@@ -163,7 +169,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           FilledButton.icon(
             onPressed: () => _showAddDialog(),
             icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add download'),
+            label: Text(
+              'Add download',
+              style: AppTextSize.sm.textStyle(),
+            ),
           ),
           const SizedBox(width: AppSpacing.s2),
           // The search box is exactly as tall as the pills and the Add
@@ -178,6 +187,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             height: 36,
             child: TextField(
               controller: _searchController,
+              style: AppTextSize.xs.textStyle(),
               decoration: const InputDecoration(
                 hintText: 'Search in downloads...',
                 prefixIcon: Icon(Icons.search, size: 18),
@@ -316,12 +326,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           TextButton.icon(
             onPressed: () => _bulkPause(),
             icon: const Icon(Icons.pause, size: 18),
-            label: const Text('Pause'),
+            label: Text('Pause', style: AppTextSize.sm.textStyle()),
           ),
           TextButton.icon(
             onPressed: () => _bulkCancel(),
             icon: const Icon(Icons.cancel, size: 18),
-            label: const Text('Cancel'),
+            label: Text('Cancel', style: AppTextSize.sm.textStyle()),
           ),
           const Spacer(),
           IconButton(
@@ -883,7 +893,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return OutlinedButton.icon(
       onPressed: _openSupport,
       icon: const Icon(Icons.favorite_outline, size: 18),
-      label: const Text('Support the project'),
+      label: Text(
+        'Support the project',
+        style: AppTextSize.sm.textStyle(),
+      ),
       style: OutlinedButton.styleFrom(
         foregroundColor: colorScheme.secondary,
         side: BorderSide(color: colorScheme.secondary),

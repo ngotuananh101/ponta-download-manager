@@ -91,6 +91,23 @@ void main() {
     expect(menuRect.right, greaterThan(930));
   });
 
+  testWidgets('the toolbar input and buttons use small text',
+      (tester) async {
+    await pumpApp(tester);
+    final searchField = tester.widget<TextField>(find.byType(TextField));
+    expect(searchField.style?.fontSize, 12);
+    expect(tester.widget<Text>(find.text('Newest')).style?.fontSize, 12);
+    expect(tester.widget<Text>(find.text('All files')).style?.fontSize, 12);
+    expect(
+      tester.widget<Text>(find.text('Add download')).style?.fontSize,
+      14,
+    );
+    expect(
+      tester.widget<Text>(find.text('Support the project')).style?.fontSize,
+      14,
+    );
+  });
+
   testWidgets('the row menu pauses a download', (tester) async {
     final actions = MockDownloadsActions();
     when(
