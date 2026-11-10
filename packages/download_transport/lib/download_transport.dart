@@ -1,1 +1,4 @@
-// TODO: implement `download_transport` (see docs/architecture.md sections 14 and 21).
+export 'src/download_transport.dart';
+export 'src/http_transport.dart';
+export 'src/range_validation.dart';
+export 'src/resource_info.dart';
