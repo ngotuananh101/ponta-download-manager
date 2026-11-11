@@ -293,6 +293,44 @@ void main() {
       expect(emitted.last.single.fileName, 'f.bin');
     });
 
+
+    test('the initial list carries the priority', () async {
+      when(() => engine.listDownloads()).thenAnswer(
+        (_) async => [
+          DownloadInfo(
+            id: 'dl-1',
+            url: 'http://127.0.0.1:9/f.bin',
+            fileName: 'f.bin',
+            status: DownloadStatus.queued,
+            totalBytes: 1000,
+            priority: 2,
+          ),
+        ],
+      );
+      final source = datasource();
+      addTearDown(source.dispose);
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(emitted.last.single.priority, 2);
+    });
+
+    test('getSegments delegates to the engine', () async {
+      const segments = [
+        DownloadSegment(segmentId: 0, start: 0, end: 499, downloaded: 500),
+        DownloadSegment(segmentId: 1, start: 500, end: 999, downloaded: 0),
+      ];
+      when(
+        () => engine.getSegments('dl-1'),
+      ).thenAnswer((_) async => segments);
+      final source = datasource();
+      addTearDown(source.dispose);
+      final result = await source.getSegments('dl-1');
+      expect(result, segments);
+      verify(() => engine.getSegments('dl-1')).called(1);
+    });
+
     test('dispose disposes the engine', () async {
       final source = datasource();
       await source.dispose();

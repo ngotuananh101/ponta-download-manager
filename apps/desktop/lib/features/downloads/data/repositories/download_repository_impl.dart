@@ -61,6 +61,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
     int? bytesPerSecond,
   ) => _act(() => _datasource.setGlobalBandwidthLimit(bytesPerSecond));
 
+  @override
+  Future<Either<Failure, List<DownloadSegment>>> getSegments(
+    String id,
+  ) async {
+    try {
+      return Right(await _datasource.getSegments(id));
+    } on DownloadError catch (e) {
+      return Left(_toFailure(e));
+    }
+  }
+
   Future<Either<Failure, Unit>> _act(Future<void> Function() call) async {
     try {
       await call();

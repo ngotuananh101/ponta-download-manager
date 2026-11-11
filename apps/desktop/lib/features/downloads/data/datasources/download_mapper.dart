@@ -13,6 +13,7 @@ Download downloadFromInfo(DownloadInfo info) {
     bytesPerSecond: info.bytesPerSecond,
     createdAt: info.createdAt,
     filePath: info.filePath,
+    priority: info.priority,
   );
 }
 

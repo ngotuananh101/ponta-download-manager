@@ -16,6 +16,7 @@ class Download extends Equatable {
     this.createdAt,
     this.filePath,
     this.errorMessage,
+    this.priority = 0,
   });
 
   final String id;
@@ -40,6 +41,10 @@ class Download extends Equatable {
   /// download is failed. Shown as a tooltip on the Status cell.
   final String? errorMessage;
 
+  /// Queue priority. Higher runs first; 0 is the default (normal).
+  /// Shown as high / normal / low on the details panel's GENERAL tab.
+  final int priority;
+
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
 
@@ -54,6 +59,7 @@ class Download extends Equatable {
     DateTime? createdAt,
     String? filePath,
     String? errorMessage,
+    int? priority,
     bool clearErrorMessage = false,
   }) {
     return Download(
@@ -68,6 +74,7 @@ class Download extends Equatable {
       filePath: filePath ?? this.filePath,
       errorMessage:
           clearErrorMessage ? null : errorMessage ?? this.errorMessage,
+      priority: priority ?? this.priority,
     );
   }
 
@@ -83,5 +90,6 @@ class Download extends Equatable {
     createdAt,
     filePath,
     errorMessage,
+    priority,
   ];
 }

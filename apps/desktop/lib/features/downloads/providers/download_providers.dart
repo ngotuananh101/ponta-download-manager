@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:download_api/download_api.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
@@ -90,4 +91,7 @@ class DownloadsActions {
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _repository.setGlobalBandwidthLimit(bytesPerSecond);
+
+  Future<Either<Failure, List<DownloadSegment>>> getSegments(String id) =>
+      _repository.getSegments(id);
 }

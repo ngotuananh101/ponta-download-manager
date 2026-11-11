@@ -66,6 +66,10 @@ class EngineDownloadDatasource {
     return controller.stream;
   }
 
+  /// Per-segment progress for the details panel's PROGRESS tab.
+  Future<List<DownloadSegment>> getSegments(String downloadId) =>
+      engine.getSegments(downloadId);
+
   Future<void> _loadInitial() async {
     try {
       final infos = await engine.listDownloads();
