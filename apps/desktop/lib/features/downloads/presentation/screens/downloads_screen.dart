@@ -266,9 +266,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               tooltip: 'Menu',
               padding: EdgeInsets.zero,
               onSelected: _onMenuSelected,
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'pause-all', child: Text('Pause all')),
-                PopupMenuItem(value: 'resume-all', child: Text('Resume all')),
+              itemBuilder: (context) => [
+                _menuItem('pause-all', 'Pause all'),
+                _menuItem('resume-all', 'Resume all'),
               ],
               // An explicit child (not the icon form): the icon form
               // builds an IconButton whose 48px minimum survives both

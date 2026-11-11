@@ -532,4 +532,20 @@ void main() {
     expect(items.length, 8);
     expect(items.every((item) => item.height == 32), isTrue);
   });
+
+  testWidgets('the right-side menu uses xs text in compact rows',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pause all'), findsOneWidget);
+    expect(find.text('Resume all'), findsOneWidget);
+    final menuText = tester.widget<Text>(find.text('Pause all'));
+    expect(menuText.style?.fontSize, 12);
+    final items = tester.widgetList<PopupMenuItem<String>>(
+      find.byType(PopupMenuItem<String>),
+    );
+    expect(items.length, 2);
+    expect(items.every((item) => item.height == 32), isTrue);
+  });
 }
