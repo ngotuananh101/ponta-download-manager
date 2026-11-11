@@ -30,6 +30,16 @@ class _RunningDownload {
   String lastErrorLine = '';
   bool paused = false;
   bool cancelled = false;
+
+  /// True when the engine is shutting down: the process is killed
+  /// but no terminal event is emitted, so the record stays
+  /// non-terminal and recovery resumes it on restart.
+  bool shuttingDown = false;
+
+  /// Completes when the run is fully cleaned up (removed from
+  /// _running). pause/cancel await it so a following resume cannot
+  /// trip over a run that is still being torn down.
+  final done = Completer<void>();
 }
 
 /// Runs yt-dlp as a subprocess for one download, translating its
@@ -127,6 +137,14 @@ class YtDlpDownloader {
       onDone: stderrDone.complete,
     );
     final exitCode = await process.exitCode;
+    if (running.shuttingDown) {
+      // Engine shutdown: close the stream without an event. The
+      // record stays non-terminal so recovery resumes it.
+      _running.remove(running.downloadId);
+      unawaited(running.controller.close());
+      running.done.complete();
+      return;
+    }
     if (!running.paused && !running.cancelled) {
       // Normal exit: drain the output so the final printed path and
       // the last progress lines are not lost. After a pause/cancel
@@ -139,7 +157,7 @@ class YtDlpDownloader {
     await stdoutSub.cancel();
     await stderrSub.cancel();
     if (running.cancelled) {
-      _deleteOutput(running);
+      deleteOutput(running.outputTemplate);
       _finish(
         running,
         DownloadEvent.stateChanged(
@@ -235,11 +253,22 @@ class YtDlpDownloader {
     return null;
   }
 
-  void _deleteOutput(_RunningDownload running) {
-    final stem = p
-        .basename(running.outputTemplate)
-        .replaceAll('.%(ext)s', '');
-    final dir = Directory(running.outputDir);
+  /// Deletes every file matching the output template stem
+  /// (the finished file and any partial). Used by cancel and retry,
+  /// where the download is restarted from scratch.
+  void deleteOutput(String outputTemplate) {
+    _deleteMatching(outputTemplate, partialOnly: false);
+  }
+
+  /// Deletes only the `.part` files matching the output template
+  /// stem. Used by delete, where a finished file on disk is kept.
+  void deletePartial(String outputTemplate) {
+    _deleteMatching(outputTemplate, partialOnly: true);
+  }
+
+  void _deleteMatching(String outputTemplate, {required bool partialOnly}) {
+    final stem = p.basename(outputTemplate).replaceAll('.%(ext)s', '');
+    final dir = Directory(p.dirname(outputTemplate));
     if (!dir.existsSync()) {
       return;
     }
@@ -247,12 +276,17 @@ class YtDlpDownloader {
       if (entity is! File) {
         continue;
       }
-      if (p.basename(entity.path).startsWith(stem)) {
-        try {
-          entity.deleteSync();
-        } catch (_) {
-          // Best effort: the file may already be gone.
-        }
+      final name = p.basename(entity.path);
+      if (!name.startsWith(stem)) {
+        continue;
+      }
+      if (partialOnly && !name.endsWith('.part')) {
+        continue;
+      }
+      try {
+        entity.deleteSync();
+      } catch (_) {
+        // Best effort: the file may already be gone.
       }
     }
   }
@@ -272,9 +306,12 @@ class YtDlpDownloader {
     _running.remove(running.downloadId);
     running.controller.add(event);
     unawaited(running.controller.close());
+    running.done.complete();
   }
 
   /// Kills the process, keeping the partial output (pause).
+  /// Waits until the run is fully cleaned up, so a following resume
+  /// cannot trip over a run that is still being torn down.
   Future<void> pause(String downloadId) async {
     final running = _running[downloadId];
     if (running == null) {
@@ -282,9 +319,11 @@ class YtDlpDownloader {
     }
     running.paused = true;
     running.process?.kill();
+    await running.done.future;
   }
 
   /// Kills the process and deletes the output/partial (cancel).
+  /// Waits until the run is fully cleaned up.
   Future<void> cancel(String downloadId) async {
     final running = _running[downloadId];
     if (running == null) {
@@ -292,5 +331,16 @@ class YtDlpDownloader {
     }
     running.cancelled = true;
     running.process?.kill();
+    await running.done.future;
+  }
+
+  /// Kills all running processes without emitting a terminal event
+  /// (engine shutdown). Their records stay non-terminal so recovery
+  /// resumes them on restart.
+  Future<void> shutdown() async {
+    for (final running in _running.values.toList()) {
+      running.shuttingDown = true;
+      running.process?.kill();
+    }
   }
 }

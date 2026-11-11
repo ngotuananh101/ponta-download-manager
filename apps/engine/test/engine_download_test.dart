@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
+import 'package:download_external/download_external.dart';
 import 'package:pdm_engine/pdm_engine.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -172,6 +173,8 @@ void main() {
     PdmEngine openEngine({
       int maxConcurrent = 3,
       int maxConnections = 8,
+      ExternalTools? externalTools,
+      YtDlpDownloader? ytDlpDownloader,
     }) {
       return PdmEngine.open(
         config: EngineConfig(
@@ -180,7 +183,16 @@ void main() {
           maxConnectionsPerDownload: maxConnections,
         ),
         databasePath: p.join(tempDir.path, 'pdm.db'),
+        externalTools: externalTools,
+        ytDlpDownloader: ytDlpDownloader,
       );
+    }
+
+    Future<String> makeFakeYtDlp(String script) async {
+      final file = File(p.join(tempDir.path, 'yt-dlp'));
+      await file.writeAsString(script);
+      await Process.run('chmod', ['+x', file.path]);
+      return file.path;
     }
 
     Future<void> startServer({
@@ -593,6 +605,214 @@ void main() {
       expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(700));
       expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
     });
+    group('yt-dlp downloads', () {
+      const successScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo "[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30"
+echo "[download]  50.0% of  100.00MiB at  2.00MiB/s ETA 00:25"
+echo "[download] 100% of  100.00MiB in 00:01"
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
+      const slowScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo "[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30"
+mkdir -p "$(dirname "$final")"
+touch "$final.part"
+sleep 3
+echo "[download] 100% of  100.00MiB in 00:03"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
+      test('an m3u8 url downloads via yt-dlp and completes with the real file',
+          () async {
+        final fake = await makeFakeYtDlp(successScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        expect(info.id.startsWith('yt-'), isTrue);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'live.mp4');
+        expect(done.filePath, p.join(tempDir.path, 'live.mp4'));
+        expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
+      });
+
+      test('a normal url still uses the native scheduler', () async {
+        final data = bytesOf(2048);
+        await startServer(data: data);
+        final fake = await makeFakeYtDlp(successScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+          ),
+        );
+        expect(info.id.startsWith('dl-'), isTrue);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'f.bin');
+        expect(File(p.join(tempDir.path, 'f.bin')).readAsBytesSync(), data);
+      });
+
+      test('an m3u8 url without the tools throws external-tools-missing',
+          () async {
+        final engine = openEngine(
+          externalTools: const ExternalTools(
+            ffmpegPath: null,
+            ytDlpPath: null,
+          ),
+        );
+        addTearDown(engine.dispose);
+        await expectLater(
+          engine.createDownload(
+            CreateDownloadRequest(
+              url: 'https://example.com/live.m3u8',
+              destination: p.join(tempDir.path, 'live.m3u8'),
+            ),
+          ),
+          throwsA(
+            isA<DownloadError>().having(
+              (e) => e.code,
+              'code',
+              'external-tools-missing',
+            ),
+          ),
+        );
+        expect(await engine.listDownloads(), isEmpty);
+      });
+
+      test('a yt-dlp download pauses and resumes', () async {
+        final fake = await makeFakeYtDlp(slowScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        await engine.pauseDownload(info.id);
+        final paused = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+        expect(paused.downloadedBytes, greaterThan(0));
+        await engine.resumeDownload(info.id);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'live.mp4');
+        expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
+      });
+
+      test('a paused yt-dlp download stays paused after a restart',
+          () async {
+        final fake = await makeFakeYtDlp(slowScript);
+        final first = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        final created = await first.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          first,
+          created.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        await first.pauseDownload(created.id);
+        await waitForInfo(
+          first,
+          created.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+        await first.dispose();
+        final second = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(second.dispose);
+        final restored = await waitForInfo(
+          second,
+          created.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+        expect(restored.downloadedBytes, greaterThan(0));
+        await second.resumeDownload(created.id);
+        final done = await waitForInfo(
+          second,
+          created.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'live.mp4');
+      });
+    });
+
   });
 
   group('runDownload command', () {
@@ -627,5 +847,6 @@ void main() {
         data,
       );
     });
+
   });
 }

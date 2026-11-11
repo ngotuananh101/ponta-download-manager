@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_core/download_core.dart';
+import 'package:download_external/download_external.dart';
 import 'package:download_limiter/download_limiter.dart';
 import 'package:download_recovery/download_recovery.dart';
 import 'package:download_scheduler/download_scheduler.dart';
@@ -44,16 +45,22 @@ class PdmEngine implements DownloadEngine {
     required CheckpointWriter writer,
     required BandwidthLimiter limiter,
     required DownloadTransport transport,
+    ExternalTools? externalTools,
+    YtDlpDownloader? ytDlpDownloader,
   })  : _store = store,
         _scheduler = scheduler,
         _writer = writer,
         _limiter = limiter,
-        _transport = transport;
+        _transport = transport,
+        _externalTools = externalTools,
+        _ytDlp = ytDlpDownloader;
 
   factory PdmEngine.open({
     EngineConfig config = const EngineConfig(),
     String? databasePath,
     BandwidthLimiter? limiter,
+    ExternalTools? externalTools,
+    YtDlpDownloader? ytDlpDownloader,
   }) {
     final dbPath = databasePath ?? defaultDatabasePath();
     Directory(p.dirname(dbPath)).createSync(recursive: true);
@@ -73,6 +80,11 @@ class PdmEngine implements DownloadEngine {
       writer: writer,
       limiter: bandwidthLimiter,
       transport: HttpTransport(),
+      externalTools: externalTools,
+      ytDlpDownloader: ytDlpDownloader,
+    );
+    engine._schedulerSub = engine._scheduler.events.listen(
+      engine._events.add,
     );
     engine._recover();
     return engine;
@@ -86,8 +98,140 @@ class PdmEngine implements DownloadEngine {
   final DownloadTransport _transport;
   var _disposed = false;
 
+  /// Lazily resolved external tools (injected in tests).
+  ExternalTools? _externalTools;
+
+  /// Lazily created yt-dlp downloader (injected in tests).
+  YtDlpDownloader? _ytDlp;
+
+  /// Merged event stream: scheduler events plus yt-dlp events.
+  final _events = StreamController<DownloadEvent>.broadcast();
+  StreamSubscription<DownloadEvent>? _schedulerSub;
+  final _ytDlpSubs = <String, StreamSubscription<DownloadEvent>>{};
+
+  /// Counter for yt-dlp download ids (`yt-N`), a separate id space
+  /// from the scheduler's `dl-N` so the two can never collide.
+  var _ytCounter = 0;
+
   @override
-  Stream<DownloadEvent> get events => _scheduler.events;
+  Stream<DownloadEvent> get events => _events.stream;
+
+  /// True for HLS (.m3u8) and DASH (.mpd) playlist URLs, which the
+  /// native segment downloader cannot handle (it would save the
+  /// playlist file itself). These go to the yt-dlp downloader.
+  bool _isStreamingPlaylist(String url) {
+    final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+    return path.endsWith('.m3u8') || path.endsWith('.mpd');
+  }
+
+  /// Advances the yt-dlp id counter past [id] (e.g. 'yt-7'), so a
+  /// later generated id never collides with one already in the store.
+  void _reserveYtId(String id) {
+    final match = RegExp(r'^yt-(\d+)$').firstMatch(id);
+    if (match != null) {
+      final n = int.parse(match.group(1)!);
+      if (n >= _ytCounter) {
+        _ytCounter = n + 1;
+      }
+    }
+  }
+
+  /// The yt-dlp downloader, resolved lazily (tools are only needed
+  /// when a playlist URL is added). Returns null when ffmpeg or
+  /// yt-dlp is missing.
+  Future<YtDlpDownloader?> _ytDlpDownloader() async {
+    if (_ytDlp != null) {
+      return _ytDlp;
+    }
+    final tools = _externalTools ?? await ExternalTools.resolve();
+    _externalTools = tools;
+    if (!tools.available) {
+      return null;
+    }
+    _ytDlp = YtDlpDownloader(
+      ytDlpPath: tools.ytDlpPath!,
+      ffmpegDir: p.dirname(tools.ffmpegPath!),
+    );
+    return _ytDlp;
+  }
+
+  /// The yt-dlp `-o` template for a record: the file stem with
+  /// `%(ext)s`, so yt-dlp chooses the container (mp4/mkv) itself.
+  String _ytDlpTemplate(DownloadRecord record) {
+    final stem = p.basenameWithoutExtension(record.fileName);
+    return p.join(record.directory, '$stem.%(ext)s');
+  }
+
+  /// Starts a yt-dlp download for [record] and wires its events into
+  /// the engine event stream and the store.
+  void _startYtDlp(DownloadRecord record, YtDlpDownloader downloader) {
+    final sub = downloader
+        .start(
+          downloadId: record.id,
+          url: record.url,
+          outputTemplate: _ytDlpTemplate(record),
+        )
+        .listen(_onYtDlpEvent);
+    _ytDlpSubs[record.id] = sub;
+  }
+
+  /// Forwards a yt-dlp event to the engine stream and updates the
+  /// store record the same way the scheduler's writer does for
+  /// native downloads.
+  void _onYtDlpEvent(DownloadEvent event) {
+    _events.add(event);
+    event.when(
+      progress: (downloadId, downloadedBytes, totalBytes, bytesPerSecond) {
+        final record = _store.getDownload(downloadId);
+        if (record != null) {
+          _store.upsertDownload(
+            record.copyWith(
+              downloadedBytes: downloadedBytes,
+              totalBytes: totalBytes,
+              // The record is created queued; the first progress event
+              // is what moves it to downloading.
+              status: DownloadStatus.downloading,
+            ),
+          );
+        }
+      },
+      stateChanged: (downloadId, status) {
+        _updateStatus(downloadId, status);
+      },
+      completed: (downloadId, filePath) {
+        final record = _store.getDownload(downloadId);
+        if (record != null) {
+          final file = File(filePath);
+          final size =
+              file.existsSync() ? file.lengthSync() : record.totalBytes;
+          // The file name is the real file yt-dlp produced, which
+          // may differ from the playlist name (live.m3u8 -> live.mp4).
+          // destinationPath is derived from directory + fileName, so
+          // it follows automatically.
+          _store.upsertDownload(
+            record.copyWith(
+              status: DownloadStatus.completed,
+              fileName: p.basename(filePath),
+              downloadedBytes: size,
+              totalBytes: size,
+            ),
+          );
+        }
+      },
+      failed: (downloadId, code, message) {
+        final record = _store.getDownload(downloadId);
+        if (record != null) {
+          _store.upsertDownload(
+            record.copyWith(
+              status: DownloadStatus.failed,
+              errorCode: code,
+              errorMessage: message,
+            ),
+          );
+        }
+      },
+    );
+  }
 
   @override
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
@@ -110,6 +254,30 @@ class PdmEngine implements DownloadEngine {
         'file-exists',
         'Destination already exists: ${p.join(directory, fileName)}',
       );
+    }
+    if (_isStreamingPlaylist(request.url)) {
+      final downloader = await _ytDlpDownloader();
+      if (downloader == null) {
+        throw const DownloadError(
+          'external-tools-missing',
+          'ffmpeg and yt-dlp are required to download streams. '
+          'They are bundled with PDM; check the app bundle.',
+        );
+      }
+      final id = 'yt-${++_ytCounter}';
+      final record = DownloadRecord(
+        id: id,
+        url: request.url,
+        fileName: fileName,
+        directory: directory,
+        status: DownloadStatus.queued,
+        priority: request.priority ?? 0,
+        maxConnections:
+            request.maxConnections ?? config.maxConnectionsPerDownload,
+      );
+      _store.upsertDownload(record);
+      _startYtDlp(record, downloader);
+      return _infoFromRecord(record);
     }
     final id = _scheduler.enqueue(
       url: request.url,
@@ -135,18 +303,43 @@ class PdmEngine implements DownloadEngine {
 
   @override
   Future<void> pauseDownload(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record != null && _isStreamingPlaylist(record.url)) {
+      await _ytDlp?.pause(downloadId);
+      _updateStatus(downloadId, DownloadStatus.paused);
+      return;
+    }
     _scheduler.pause(downloadId);
     _updateStatus(downloadId, DownloadStatus.paused);
   }
 
   @override
   Future<void> resumeDownload(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record != null && _isStreamingPlaylist(record.url)) {
+      final downloader = await _ytDlpDownloader();
+      if (downloader == null) {
+        throw const DownloadError(
+          'external-tools-missing',
+          'ffmpeg and yt-dlp are required to resume this download.',
+        );
+      }
+      _updateStatus(downloadId, DownloadStatus.queued);
+      _startYtDlp(record, downloader);
+      return;
+    }
     _scheduler.resume(downloadId);
     _updateStatus(downloadId, DownloadStatus.queued);
   }
 
   @override
   Future<void> cancelDownload(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record != null && _isStreamingPlaylist(record.url)) {
+      await _ytDlp?.cancel(downloadId);
+      _updateStatus(downloadId, DownloadStatus.cancelled);
+      return;
+    }
     _scheduler.cancel(downloadId);
     _updateStatus(downloadId, DownloadStatus.cancelled);
   }
@@ -155,6 +348,34 @@ class PdmEngine implements DownloadEngine {
   Future<void> retryDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
     if (record == null) {
+      return;
+    }
+    if (_isStreamingPlaylist(record.url)) {
+      final downloader = await _ytDlpDownloader();
+      if (downloader == null) {
+        throw const DownloadError(
+          'external-tools-missing',
+          'ffmpeg and yt-dlp are required to retry this download.',
+        );
+      }
+      downloader.deleteOutput(_ytDlpTemplate(record));
+      final ytPartial = File(record.partialPath);
+      if (ytPartial.existsSync()) {
+        ytPartial.deleteSync();
+      }
+      _store.upsertDownload(
+        DownloadRecord(
+          id: record.id,
+          url: record.url,
+          fileName: record.fileName,
+          directory: record.directory,
+          status: DownloadStatus.queued,
+          priority: record.priority,
+          maxConnections: record.maxConnections,
+          createdAt: record.createdAt,
+        ),
+      );
+      _startYtDlp(record, downloader);
       return;
     }
     final partial = File(record.partialPath);
@@ -193,6 +414,18 @@ class PdmEngine implements DownloadEngine {
   Future<void> deleteDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
     if (record == null) {
+      return;
+    }
+    if (_isStreamingPlaylist(record.url)) {
+      final downloader = await _ytDlpDownloader();
+      await downloader?.cancel(downloadId);
+      // Drop yt-dlp partials; the finished file (if any) is kept.
+      downloader?.deletePartial(_ytDlpTemplate(record));
+      final ytPartial = File(record.partialPath);
+      if (ytPartial.existsSync()) {
+        ytPartial.deleteSync();
+      }
+      _store.deleteDownload(downloadId);
       return;
     }
     // Stop the download if it is running or queued. The scheduler
@@ -246,8 +479,14 @@ class PdmEngine implements DownloadEngine {
         .listNonTerminal()
         .where((r) => r.status == DownloadStatus.paused)
         .toList();
+    await _ytDlp?.shutdown();
+    for (final sub in _ytDlpSubs.values) {
+      await sub.cancel();
+    }
+    await _schedulerSub?.cancel();
     await _scheduler.dispose();
     await _writer.dispose();
+    await _events.close();
     for (final record in paused) {
       final current = _store.getDownload(record.id);
       if (current != null && current.status == DownloadStatus.cancelled) {
@@ -306,6 +545,25 @@ class PdmEngine implements DownloadEngine {
     }
   }
 
+  /// Resumes a yt-dlp record after a restart. If the tools are
+  /// missing the record is marked failed with a clear error instead
+  /// of staying queued forever.
+  Future<void> _resumeYtDlp(DownloadRecord record) async {
+    final downloader = await _ytDlpDownloader();
+    if (downloader == null) {
+      _store.upsertDownload(
+        record.copyWith(
+          status: DownloadStatus.failed,
+          errorCode: 'external-tools-missing',
+          errorMessage:
+              'ffmpeg and yt-dlp are required to download streams.',
+        ),
+      );
+      return;
+    }
+    _startYtDlp(record, downloader);
+  }
+
   void _recover() {
     // Seed the scheduler's id counter from every stored record, so a
     // generated id can never collide with a record recovery does not
@@ -315,8 +573,40 @@ class PdmEngine implements DownloadEngine {
     // dl-2, and so on, with the retried file's data.
     for (final record in _store.listDownloads()) {
       _scheduler.reserveId(record.id);
+      _reserveYtId(record.id);
     }
+    // yt-dlp records are recovered separately: the segment-based
+    // Recovery does not understand yt-dlp partials, so its decisions
+    // for them would be wrong. A paused yt-dlp download stays paused;
+    // a queued/downloading one is resumed through the downloader
+    // (yt-dlp resumes from its partial when present). Terminal
+    // records are left alone.
+    final ytDlpRecords = <DownloadRecord>[];
+    final nativeDecisions = <RecoveryDecision>[];
     for (final decision in Recovery(_store).reconcile()) {
+      if (_isStreamingPlaylist(decision.record.url)) {
+        ytDlpRecords.add(decision.record);
+      } else {
+        nativeDecisions.add(decision);
+      }
+    }
+    for (final record in ytDlpRecords) {
+      final paused = record.status == DownloadStatus.paused;
+      if (record.status == DownloadStatus.completed ||
+          record.status == DownloadStatus.failed ||
+          record.status == DownloadStatus.cancelled) {
+        continue;
+      }
+      _store.upsertDownload(
+        record.copyWith(
+          status: paused ? DownloadStatus.paused : DownloadStatus.queued,
+        ),
+      );
+      if (!paused) {
+        unawaited(_resumeYtDlp(record));
+      }
+    }
+    for (final decision in nativeDecisions) {
       final record = decision.record;
       // A paused download is a deliberate user state, not a crash:
       // it is restored as a paused job so it does not start again on
