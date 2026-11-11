@@ -169,10 +169,6 @@ void main() {
       tester.widget<Text>(find.text('Add download')).style?.fontSize,
       12,
     );
-    expect(
-      tester.widget<Text>(find.text('Support the project')).style?.fontSize,
-      14,
-    );
   });
 
   testWidgets('the row menu pauses a download', (tester) async {
@@ -195,8 +191,6 @@ void main() {
     expect(find.text('Search in downloads...'), findsOneWidget);
     expect(find.text('250 B/s'), findsNWidgets(2));
     expect(find.text('0 B/s'), findsNWidgets(2));
-    expect(find.text('HIGH'), findsOneWidget);
-    expect(find.text('Support the project'), findsOneWidget);
     // Snail mode is OFF by default (unlimited speed).
     expect(find.text('OFF'), findsOneWidget);
   });

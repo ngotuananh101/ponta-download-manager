@@ -13,9 +13,6 @@ import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/dashed_border.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-const _repoUrl = 'https://github.com/ngotuananh101/ponta-download-manager';
 
 /// The home screen, laid out like Free Download Manager: a custom
 /// title bar on top, a toolbar (select / sort / filter / Add / search /
@@ -785,10 +782,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           const SizedBox(width: AppSpacing.s1),
           const Text('0 B/s'),
-          const SizedBox(width: AppSpacing.s4),
-          _buildHighBadge(),
-          const SizedBox(width: AppSpacing.s4),
-          _buildSupportButton(),
           const Spacer(),
           if (statusFile != null)
             Flexible(
@@ -865,62 +858,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(failure.message)));
     }, (_) => setState(() => _snailMode = enabling));
-  }
-
-  Widget _buildHighBadge() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s2,
-        vertical: AppSpacing.s1,
-      ),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppRadius.full),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.speed, size: 14, color: colorScheme.secondary),
-          const SizedBox(width: AppSpacing.s1),
-          Text(
-            'HIGH',
-            style: AppTextSize.xs.textStyle(
-              weight: AppFontWeight.semibold,
-              color: colorScheme.secondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSupportButton() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
-      onPressed: _openSupport,
-      icon: const Icon(Icons.favorite_outline, size: 18),
-      label: Text('Support the project', style: AppTextSize.sm.textStyle()),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: colorScheme.secondary,
-        side: BorderSide(color: colorScheme.secondary),
-        minimumSize: const Size(0, 32),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openSupport() async {
-    final uri = Uri.parse(_repoUrl);
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Không mở được $_repoUrl')));
-    }
   }
 
   // --- Add download dialog ---
