@@ -89,6 +89,13 @@ class DownloadTask {
   Uri? _finalUrl;
   final _segmentStates = <_SegmentState>[];
   final _events = StreamController<DownloadEvent>.broadcast();
+  // Speed sampling window: the rate is recomputed from the bytes
+  // downloaded in the last window, so a single fast chunk does not
+  // spike the reading and the value tracks the current rate.
+  static const _speedWindow = Duration(milliseconds: 500);
+  DateTime? _speedWindowStart;
+  int _speedWindowBytes = 0;
+  int _bytesPerSecond = 0;
   bool _paused = false;
   bool _cancelled = false;
   bool _aborted = false;
@@ -246,12 +253,32 @@ class DownloadTask {
   }
 
   void _emitProgress() {
+    final now = DateTime.now();
+    final start = _speedWindowStart;
+    if (start == null) {
+      // First chunk: start the window. The speed stays 0 until the
+      // window elapses, so a sub-second download never reports a
+      // meaningless one-chunk rate.
+      _speedWindowStart = now;
+      _speedWindowBytes = _downloaded;
+    } else {
+      final elapsed = now.difference(start);
+      if (elapsed >= _speedWindow) {
+        final bytes = _downloaded - _speedWindowBytes;
+        final micros = elapsed.inMicroseconds;
+        _bytesPerSecond = micros > 0
+            ? (bytes * 1000000 / micros).round()
+            : 0;
+        _speedWindowStart = now;
+        _speedWindowBytes = _downloaded;
+      }
+    }
     _events.add(
       DownloadEvent.progress(
         downloadId: id,
         downloadedBytes: _downloaded,
         totalBytes: _total,
-        bytesPerSecond: 0,
+        bytesPerSecond: _bytesPerSecond,
       ),
     );
   }

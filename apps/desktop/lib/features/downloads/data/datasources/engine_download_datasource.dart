@@ -97,8 +97,16 @@ class EngineDownloadDatasource {
         if (current == null) {
           return;
         }
+        final state = downloadStateFromStatus(status);
+        // A download that is no longer running has no speed; reset it
+        // so a paused/cancelled/failed row does not keep its last
+        // measured rate.
+        final stopped = state == DownloadState.paused ||
+            state == DownloadState.cancelled ||
+            state == DownloadState.failed;
         _downloads[downloadId] = current.copyWith(
-          state: downloadStateFromStatus(status),
+          state: state,
+          bytesPerSecond: stopped ? 0 : current.bytesPerSecond,
         );
         _emit();
       },
@@ -109,6 +117,7 @@ class EngineDownloadDatasource {
         }
         _downloads[downloadId] = current.copyWith(
           state: DownloadState.completed,
+          bytesPerSecond: 0,
         );
         _emit();
       },
@@ -119,6 +128,7 @@ class EngineDownloadDatasource {
         }
         _downloads[downloadId] = current.copyWith(
           state: DownloadState.failed,
+          bytesPerSecond: 0,
         );
         _emit();
       },

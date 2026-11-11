@@ -286,6 +286,22 @@ void main() {
       );
     });
 
+    test('progress events report a non-zero download speed', () async {
+      final sink = MemorySink();
+      final task = taskFor('/slow-big', sink: sink, maxConnections: 1);
+      final events = <DownloadEvent>[];
+      task.events.listen(events.add);
+      final info = await task.run();
+      expect(info.status, DownloadStatus.completed);
+      // The download takes ~2s (5 MiB in 128 KiB chunks with a 50 ms
+      // delay), so the speed window elapses and the rate is measured.
+      final speeds = events
+          .whereType<DownloadProgress>()
+          .map((e) => e.bytesPerSecond)
+          .toList();
+      expect(speeds.any((s) => s > 0), isTrue);
+    });
+
     test('zero-length file completes immediately', () async {
       final sink = MemorySink();
       final task = taskFor('/empty', sink: sink);
