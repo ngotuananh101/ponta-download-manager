@@ -72,9 +72,10 @@ void main() {
     ]) {
       expect(find.text(header), findsOneWidget);
     }
-    // The one downloading row (the file name also shows in the status
-    // bar, and each speed shows in the table and the status bar).
-    expect(find.text('f.bin'), findsNWidgets(2));
+    // The one downloading row. The file name shows in the status bar
+    // only when the row is selected, and each speed shows in the
+    // table and the status bar.
+    expect(find.text('f.bin'), findsOneWidget);
     expect(find.text('1000 B'), findsOneWidget);
     expect(find.text('Downloading 50%'), findsOneWidget);
     expect(find.text('250 B/s'), findsNWidgets(2));
@@ -566,5 +567,34 @@ void main() {
     );
     expect(items.length, 3);
     expect(items.every((item) => item.height == 32), isTrue);
+  });
+
+  testWidgets('the status bar uses xs text and a bigger snail toggle',
+      (tester) async {
+    await pumpApp(tester);
+    // The speeds show in the table and the status bar; the last
+    // match is the status bar one.
+    final downloadSpeed = tester.widget<Text>(find.text('250 B/s').last);
+    expect(downloadSpeed.style?.fontSize, 12);
+    final uploadSpeed = tester.widget<Text>(find.text('0 B/s').last);
+    expect(uploadSpeed.style?.fontSize, 12);
+    // The snail toggle is bigger than the 14px icon it had.
+    final snail = tester.widget<SnailIcon>(find.byType(SnailIcon));
+    expect(snail.size, 16);
+  });
+
+  testWidgets('the status bar shows the selected download name only',
+      (tester) async {
+    await pumpApp(tester);
+    // Nothing selected: the file name shows only in the table row.
+    expect(find.text('f.bin'), findsOneWidget);
+    // Select the row: the name appears in the status bar too.
+    await tester.tap(find.text('f.bin'));
+    await tester.pumpAndSettle();
+    expect(find.text('f.bin'), findsNWidgets(2));
+    // The status bar name is xs and flush to the right edge.
+    final statusName = tester.widget<Text>(find.text('f.bin').last);
+    expect(statusName.style?.fontSize, 12);
+    expect(statusName.textAlign, TextAlign.right);
   });
 }

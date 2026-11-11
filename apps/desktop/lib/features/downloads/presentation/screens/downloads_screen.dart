@@ -883,7 +883,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: AppSpacing.s1),
-          Text('${formatBytes(totalSpeed)}/s'),
+          Text(
+            '${formatBytes(totalSpeed)}/s',
+            style: AppTextSize.xs.textStyle(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(width: AppSpacing.s4),
           Icon(
             Icons.arrow_upward,
@@ -891,14 +896,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             color: colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: AppSpacing.s1),
-          const Text('0 B/s'),
-          const Spacer(),
+          Text(
+            '0 B/s',
+            style: AppTextSize.xs.textStyle(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
           if (statusFile != null)
-            Flexible(
+            Expanded(
               child: Text(
                 statusFile.fileName,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.right,
+                style: AppTextSize.xs.textStyle(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
         ],
@@ -907,13 +919,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   /// The file named at the far right of the status bar: the selected
-  /// one, else the newest download.
+  /// one only. Nothing is shown when no row is selected.
   Download? _statusFile(List<Download> visible) {
-    if (_selected.isNotEmpty) {
-      final selected = visible.where((d) => _selected.contains(d.id)).toList();
-      if (selected.isNotEmpty) return selected.first;
+    if (_selected.isEmpty) {
+      return null;
     }
-    return visible.isNotEmpty ? visible.first : null;
+    final selected = visible.where((d) => _selected.contains(d.id)).toList();
+    return selected.isNotEmpty ? selected.first : null;
   }
 
   Widget _buildGlobalToggle() {
@@ -924,7 +936,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       borderRadius: BorderRadius.circular(AppRadius.full),
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s2,
+          horizontal: AppSpacing.s3,
           vertical: AppSpacing.s1,
         ),
         decoration: BoxDecoration(
@@ -937,7 +949,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SnailIcon(
-              size: 14,
+              size: 16,
               color: isOff ? colorScheme.onSurface : colorScheme.onPrimary,
             ),
             const SizedBox(width: AppSpacing.s1),
