@@ -298,8 +298,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  // One menu row for the toolbar selects: xs text like the table rows,
-  // in a compact 32px row instead of the 48px PopupMenuItem default.
+  // One menu row for the toolbar selects and the per-row action
+  // menu: xs text like the table rows, in a compact 32px row instead
+  // of the 48px PopupMenuItem default.
   PopupMenuItem<T> _menuItem<T>(T value, String label) {
     return PopupMenuItem<T>(
       value: value,
@@ -744,35 +745,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           switch (item.state) {
             case DownloadState.downloading:
             case DownloadState.queued:
-              entries.add(
-                const PopupMenuItem(value: 'pause', child: Text('Pause')),
-              );
-              entries.add(
-                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-              );
+              entries.add(_menuItem('pause', 'Pause'));
+              entries.add(_menuItem('cancel', 'Cancel'));
             case DownloadState.paused:
-              entries.add(
-                const PopupMenuItem(value: 'resume', child: Text('Resume')),
-              );
-              entries.add(
-                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-              );
+              entries.add(_menuItem('resume', 'Resume'));
+              entries.add(_menuItem('cancel', 'Cancel'));
             case DownloadState.failed:
-              entries.add(
-                const PopupMenuItem(value: 'retry', child: Text('Retry')),
-              );
-              entries.add(
-                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-              );
+              entries.add(_menuItem('retry', 'Retry'));
+              entries.add(_menuItem('cancel', 'Cancel'));
             case DownloadState.completed:
             case DownloadState.cancelled:
               break;
           }
           // Every row can be deleted; the finished file on disk is
           // kept when a row is deleted.
-          entries.add(
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          );
+          entries.add(_menuItem('delete', 'Delete'));
           return entries;
         },
       ),

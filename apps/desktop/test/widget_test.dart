@@ -548,4 +548,23 @@ void main() {
     expect(items.length, 2);
     expect(items.every((item) => item.height == 32), isTrue);
   });
+
+  testWidgets('the row menu uses xs text in compact rows',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pause'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    // The menu item text is xs (12px) like the table rows.
+    final menuText = tester.widget<Text>(find.text('Pause'));
+    expect(menuText.style?.fontSize, 12);
+    // The menu rows are compact (32px, not the 48px default).
+    final items = tester.widgetList<PopupMenuItem<String>>(
+      find.byType(PopupMenuItem<String>),
+    );
+    expect(items.length, 3);
+    expect(items.every((item) => item.height == 32), isTrue);
+  });
 }
