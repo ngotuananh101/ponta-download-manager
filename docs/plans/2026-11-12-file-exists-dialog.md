@@ -136,6 +136,13 @@ user what to do instead of failing silently with a snackbar.
   saves the setting and the next add skips the dialog; a remembered
   policy is passed without any dialog; Cancel adds nothing.
 - Verify: full desktop suite, `flutter analyze` clean.
+- Status: DONE 2026-11-12. Desktop 125/125, analyze clean, release
+  build succeeds. Implementation notes: `save()` is synchronous —
+  an async save never completes in a widget test's FakeAsync zone.
+  The dialog uses `RadioGroup` (per-tile `groupValue`/`onChanged`
+  are deprecated). Mocktail: `any(named:)` matches a call that
+  omits the named argument, and later-registered stubs win — the
+  conflict tests share one answer queue across both stubs.
 
 ## Final verification
 - Full desktop suite + `flutter analyze` + `flutter build linux

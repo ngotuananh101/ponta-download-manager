@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:download_external/download_external.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdm/core/app_data_dir.dart';
 
 import '../../domain/entities/download.dart';
 
@@ -148,22 +149,7 @@ class ThumbnailService {
     }
   }
 
-  static String _defaultCacheDir() {
-    if (Platform.isWindows) {
-      final base =
-          Platform.environment['LOCALAPPDATA'] ??
-          p.join(
-            Platform.environment['USERPROFILE'] ?? '.',
-            'AppData',
-            'Local',
-          );
-      return p.join(base, 'pdm', 'thumbs');
-    }
-    final xdg = Platform.environment['XDG_DATA_HOME'];
-    final base =
-        xdg ?? p.join(Platform.environment['HOME'] ?? '.', '.local', 'share');
-    return p.join(base, 'pdm', 'thumbs');
-  }
+  static String _defaultCacheDir() => p.join(defaultAppDataDir(), 'thumbs');
 
   static Future<ProcessResult> _defaultRunProcess(
     List<String> args, {

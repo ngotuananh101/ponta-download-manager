@@ -9,6 +9,7 @@ import 'package:pdm/app/engine_ipc_host.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/data/repositories/download_repository_impl.dart';
+import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
 import 'package:pdm_engine/pdm_engine.dart';
@@ -64,14 +65,23 @@ final downloadsActionsProvider = Provider<DownloadsActions>((ref) {
 /// without the native target.
 final dropTargetEnabledProvider = Provider<bool>((ref) => true);
 
+/// The remembered file-conflict choice (overwrite/rename), if any.
+/// Persisted as JSON under the app data dir. The downloads screen
+/// applies it without asking, and the conflict dialog saves it.
+final fileConflictSettingsProvider = Provider<FileConflictSettings>(
+  (ref) => FileConflictSettings(),
+);
+
 /// The user-facing download actions (add/pause/resume/cancel/retry).
 class DownloadsActions {
   DownloadsActions(this._repository);
 
   final DownloadRepository _repository;
 
-  Future<Either<Failure, Download>> addDownload(String url) =>
-      _repository.addDownload(url);
+  Future<Either<Failure, Download>> addDownload(
+    String url, {
+    FileConflictPolicy? conflictPolicy,
+  }) => _repository.addDownload(url, conflictPolicy: conflictPolicy);
 
   Future<Either<Failure, Unit>> pauseDownload(String id) =>
       _repository.pauseDownload(id);

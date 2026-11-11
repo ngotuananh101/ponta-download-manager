@@ -195,12 +195,16 @@ class EngineDownloadDatasource {
     _controller.add(_downloads.values.toList());
   }
 
-  Future<DownloadInfo> addDownload(String url) async {
+  Future<DownloadInfo> addDownload(
+    String url, {
+    FileConflictPolicy? conflictPolicy,
+  }) async {
     final fileName = _fileNameFromUrl(url);
     final info = await engine.createDownload(
       CreateDownloadRequest(
         url: url,
         destination: p.join(downloadDirectory, fileName),
+        conflictPolicy: conflictPolicy,
       ),
     );
     // The create response is the source of truth for the new

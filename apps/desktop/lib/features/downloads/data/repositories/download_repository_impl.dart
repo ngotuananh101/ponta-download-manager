@@ -19,7 +19,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
   Stream<List<Download>> watchDownloads() => _datasource.watchDownloads();
 
   @override
-  Future<Either<Failure, Download>> addDownload(String url) async {
+  Future<Either<Failure, Download>> addDownload(
+    String url, {
+    FileConflictPolicy? conflictPolicy,
+  }) async {
     final uri = Uri.tryParse(url);
     if (uri == null ||
         !uri.hasScheme ||
@@ -29,7 +32,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       );
     }
     try {
-      final info = await _datasource.addDownload(url);
+      final info = await _datasource.addDownload(
+        url,
+        conflictPolicy: conflictPolicy,
+      );
       return Right(downloadFromInfo(info));
     } on DownloadError catch (e) {
       return Left(_toFailure(e));
@@ -82,6 +88,14 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }
 
   Failure _toFailure(DownloadError error) {
+    if (error.code == 'file-exists') {
+      // The engine reports 'Destination already exists: <path>'.
+      const prefix = 'Destination already exists: ';
+      final destination = error.message.startsWith(prefix)
+          ? error.message.substring(prefix.length)
+          : '';
+      return FileExistsFailure(destination);
+    }
     if (error.code == IpcErrorCode.notFound) {
       return const ValidationFailure('Download not found');
     }

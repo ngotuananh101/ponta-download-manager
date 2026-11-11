@@ -10,6 +10,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pdm/app/app.dart';
 import 'package:pdm/app/snail_icon.dart';
+import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
@@ -30,12 +32,17 @@ const _download = Download(
 Widget app({
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
+  String? settingsPath,
 }) {
   return ProviderScope(
     overrides: [
       downloadsProvider.overrideWith((ref) => Stream.value(downloads)),
       if (actions != null)
         downloadsActionsProvider.overrideWithValue(actions),
+      if (settingsPath != null)
+        fileConflictSettingsProvider.overrideWithValue(
+          FileConflictSettings(filePath: settingsPath),
+        ),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -51,14 +58,38 @@ Future<void> pumpApp(
   WidgetTester tester, {
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
+  String? settingsPath,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  await tester.pumpWidget(app(downloads: downloads, actions: actions));
+  await tester.pumpWidget(
+    app(downloads: downloads, actions: actions, settingsPath: settingsPath),
+  );
   await tester.pumpAndSettle();
+}
+
+/// Drives the toolbar Add download dialog for [url].
+Future<void> addDownloadViaDialog(WidgetTester tester, String url) async {
+  await tester.tap(find.text('Add download'));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byType(TextField).last, url);
+  await tester.tap(find.text('Add'));
+  await tester.pumpAndSettle();
+}
+
+/// A temp dir with a settings file path and an existing f.bin, so the
+/// conflict dialog's rename preview is `f (1).bin`. File I/O is sync:
+/// awaiting real dart:io work in a testWidgets body deadlocks.
+({Directory dir, String settingsPath}) conflictFixture() {
+  final dir = Directory.systemTemp.createTempSync('pdm-conflict-test-');
+  addTearDown(() {
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  });
+  File(p.join(dir.path, 'f.bin')).createSync();
+  return (dir: dir, settingsPath: p.join(dir.path, 'settings.json'));
 }
 
 void main() {
@@ -1014,6 +1045,236 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets(
+      'adding a download that already exists shows the conflict dialog',
+      (tester) async {
+    final fixture = conflictFixture();
+    final actions = MockDownloadsActions();
+    final queued = <Either<Failure, Download>>[
+      Left(FileExistsFailure(p.join(fixture.dir.path, 'f.bin'))),
+      Right(_download),
+    ];
+    final policies = <FileConflictPolicy?>[];
+    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: fixture.settingsPath,
+    );
+    await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('File already exists')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('f.bin')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('Save as "f (1).bin"'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('Remember my choice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('choosing Rename retries with rename and remembers it',
+      (tester) async {
+    final fixture = conflictFixture();
+    final actions = MockDownloadsActions();
+    final queued = <Either<Failure, Download>>[
+      Left(FileExistsFailure(p.join(fixture.dir.path, 'f.bin'))),
+      Right(_download),
+    ];
+    final policies = <FileConflictPolicy?>[];
+    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: fixture.settingsPath,
+    );
+    await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
+    final dialog = find.byType(AlertDialog);
+    await tester.tap(
+      find.descendant(
+        of: dialog,
+        matching: find.text('Remember my choice'),
+      ),
+    );
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text('Download')),
+    );
+    await tester.pumpAndSettle();
+    expect(policies, [null, FileConflictPolicy.rename]);
+    expect(
+      FileConflictSettings(filePath: fixture.settingsPath).load(),
+      FileConflictPolicy.rename,
+    );
+    expect(find.text('File already exists'), findsNothing);
+  });
+
+  testWidgets('choosing Overwrite retries with overwrite', (tester) async {
+    final fixture = conflictFixture();
+    final actions = MockDownloadsActions();
+    final queued = <Either<Failure, Download>>[
+      Left(FileExistsFailure(p.join(fixture.dir.path, 'f.bin'))),
+      Right(_download),
+    ];
+    final policies = <FileConflictPolicy?>[];
+    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: fixture.settingsPath,
+    );
+    await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
+    final dialog = find.byType(AlertDialog);
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text('Overwrite')),
+    );
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text('Download')),
+    );
+    await tester.pumpAndSettle();
+    expect(policies, [null, FileConflictPolicy.overwrite]);
+    expect(
+      FileConflictSettings(filePath: fixture.settingsPath).load(),
+      isNull,
+    );
+  });
+
+  testWidgets('a remembered choice skips the dialog', (tester) async {
+    final fixture = conflictFixture();
+    File(
+      fixture.settingsPath,
+    ).writeAsStringSync('{"fileConflictPolicy": "overwrite"}');
+    final actions = MockDownloadsActions();
+    final policies = <FileConflictPolicy?>[];
+    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return Right(_download);
+    });
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return Right(_download);
+    });
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: fixture.settingsPath,
+    );
+    await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
+    expect(policies, [FileConflictPolicy.overwrite]);
+    expect(find.text('File already exists'), findsNothing);
+  });
+
+  testWidgets('cancelling the dialog adds nothing', (tester) async {
+    final fixture = conflictFixture();
+    final actions = MockDownloadsActions();
+    final queued = <Either<Failure, Download>>[
+      Left(FileExistsFailure(p.join(fixture.dir.path, 'f.bin'))),
+      Right(_download),
+    ];
+    final policies = <FileConflictPolicy?>[];
+    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((invocation) async {
+      policies.add(
+        invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
+      );
+      return queued.removeAt(0);
+    });
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: fixture.settingsPath,
+    );
+    await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(policies, [null]);
   });
 
   testWidgets('the details panel closes with the X button',

@@ -11,3 +11,11 @@ class UnexpectedFailure extends Failure {
 class ValidationFailure extends Failure {
   const ValidationFailure(super.message);
 }
+
+/// The destination file already exists. The screen offers overwrite
+/// or rename; [destination] is the full path that was taken.
+class FileExistsFailure extends Failure {
+  const FileExistsFailure(this.destination) : super('File already exists');
+
+  final String destination;
+}

@@ -2,6 +2,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:path/path.dart' as p;
 import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
@@ -10,10 +11,12 @@ import 'package:pdm/features/downloads/presentation/download_details_panel.dart'
 import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
+import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/dashed_border.dart';
+import 'package:pdm_engine/pdm_engine.dart';
 
 /// The home screen, laid out like Free Download Manager: a custom
 /// title bar on top, a toolbar (select / sort / filter / Add / search /
@@ -867,16 +870,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Chỉ hỗ trợ kéo-thả URL.')));
     }
-    final actions = ref.read(downloadsActionsProvider);
     for (final url in result.urls) {
-      final addResult = await actions.addDownload(url);
-      addResult.fold((failure) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(failure.message)));
-        }
-      }, (_) {});
+      await _addDownload(url);
     }
   }
 
@@ -1068,14 +1063,52 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       ),
     );
     if (url != null && url.isNotEmpty) {
-      final result = await ref.read(downloadsActionsProvider).addDownload(url);
-      result.fold((failure) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(failure.message)));
-        }
-      }, (_) {});
+      await _addDownload(url);
+    }
+  }
+
+  /// Adds one download, asking what to do when the destination file
+  /// already exists. A remembered choice is applied without asking;
+  /// the dialog's choice can be remembered for the next conflict.
+  Future<void> _addDownload(String url) async {
+    final actions = ref.read(downloadsActionsProvider);
+    final settings = ref.read(fileConflictSettingsProvider);
+    final remembered = settings.load();
+    if (remembered != null) {
+      final result = await actions.addDownload(
+        url,
+        conflictPolicy: remembered,
+      );
+      result.fold(_showFailure, (_) {});
+      return;
+    }
+    final result = await actions.addDownload(url);
+    if (!mounted) return;
+    final failure = result.fold<Failure?>((f) => f, (_) => null);
+    if (failure == null) return;
+    if (failure is! FileExistsFailure) {
+      _showFailure(failure);
+      return;
+    }
+    final decision = await showFileConflictDialog(
+      context: context,
+      fileName: p.basename(failure.destination),
+      renamedName: p.basename(resolveUniquePath(failure.destination)),
+    );
+    if (decision == null || !mounted) return;
+    if (decision.remember) settings.save(decision.policy);
+    final retry = await actions.addDownload(
+      url,
+      conflictPolicy: decision.policy,
+    );
+    retry.fold(_showFailure, (_) {});
+  }
+
+  void _showFailure(Failure failure) {
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
     }
   }
 }
