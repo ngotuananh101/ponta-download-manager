@@ -129,6 +129,10 @@ class DownloadScheduler {
     String? id,
     List<SegmentProgress> resumeFrom = const [],
     bool resumeExisting = false,
+    // Starts the job paused: it sits in the pending queue and _pump()
+    // skips it until resume(id) un-pauses it. Used by startup recovery
+    // for downloads the user had paused.
+    bool paused = false,
   }) {
     _throwIfDisposed();
     final jobId = id ?? 'dl-${++_counter}';
@@ -157,14 +161,15 @@ class DownloadScheduler {
       id: job.id,
       url: url,
       fileName: fileName,
-      status: DownloadStatus.queued,
+      status: paused ? DownloadStatus.paused : DownloadStatus.queued,
       totalBytes: -1,
     );
-    _pending.add(_QueuedJob(job));
+    final queued = _QueuedJob(job)..paused = paused;
+    _pending.add(queued);
     _emit(
       DownloadEvent.stateChanged(
         downloadId: job.id,
-        status: DownloadStatus.queued,
+        status: paused ? DownloadStatus.paused : DownloadStatus.queued,
       ),
     );
     _pump();

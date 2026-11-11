@@ -401,6 +401,54 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
     });
 
+    test('a paused download stays paused after a restart', () async {
+      final data = bytesOf(256 * 1024);
+      await startServer(data: data, chunkSize: 1024);
+      final first = openEngine(maxConnections: 1);
+      final created = await first.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      // Wait until it is downloading with some bytes, then pause it.
+      await waitForInfo(
+        first,
+        created.id,
+        (d) =>
+            d.status == DownloadStatus.downloading &&
+            d.downloadedBytes > 0,
+      );
+      await first.pauseDownload(created.id);
+      await waitForInfo(
+        first,
+        created.id,
+        (d) => d.status == DownloadStatus.paused,
+      );
+      final pausedBytes = (await first.listDownloads())
+          .firstWhere((d) => d.id == created.id)
+          .downloadedBytes;
+      expect(pausedBytes, greaterThan(0));
+      await first.dispose();
+      // Re-open: the paused download must stay paused, not resume.
+      final second = openEngine(maxConnections: 1);
+      addTearDown(second.dispose);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final afterRestart = (await second.listDownloads())
+          .firstWhere((d) => d.id == created.id);
+      expect(afterRestart.status, DownloadStatus.paused);
+      expect(afterRestart.downloadedBytes, pausedBytes);
+      // And resuming it after the restart still works.
+      await second.resumeDownload(created.id);
+      final done = await waitForInfo(
+        second,
+        created.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, data.length);
+      expect(File(p.join(tempDir.path, 'f.bin')).readAsBytesSync(), data);
+    });
+
     test('a retry after a restart does not overwrite other downloads',
         () async {
       final data = bytesOf(1024);

@@ -318,6 +318,12 @@ class PdmEngine implements DownloadEngine {
     }
     for (final decision in Recovery(_store).reconcile()) {
       final record = decision.record;
+      // A paused download is a deliberate user state, not a crash:
+      // it is restored as a paused job so it does not start again on
+      // restart. The resume/restart setup still applies, so resuming
+      // it later resumes from the right place. Only queued and
+      // downloading records resume automatically.
+      final paused = record.status == DownloadStatus.paused;
       switch (decision.action) {
         case RecoveryAction.resume:
           _scheduler.enqueue(
@@ -338,10 +344,13 @@ class PdmEngine implements DownloadEngine {
                 )
                 .toList(),
             resumeExisting: true,
+            paused: paused,
           );
-          _store.upsertDownload(
-            record.copyWith(status: DownloadStatus.queued),
-          );
+          if (!paused) {
+            _store.upsertDownload(
+              record.copyWith(status: DownloadStatus.queued),
+            );
+          }
         case RecoveryAction.restart:
           final partial = File(record.partialPath);
           if (partial.existsSync()) {
@@ -354,10 +363,12 @@ class PdmEngine implements DownloadEngine {
             directory: record.directory,
             priority: record.priority,
             maxConnections: record.maxConnections,
+            paused: paused,
           );
           _store.upsertDownload(
             record.copyWith(
-              status: DownloadStatus.queued,
+              status:
+                  paused ? DownloadStatus.paused : DownloadStatus.queued,
               downloadedBytes: 0,
               totalBytes: -1,
             ),
