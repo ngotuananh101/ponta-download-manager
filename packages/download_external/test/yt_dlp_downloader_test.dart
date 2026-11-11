@@ -190,6 +190,31 @@ void main() {
     expect(File(p.join(outDir.path, 'live.mp4')).existsSync(), isFalse);
   });
 
+  test('passes --progress so progress is not suppressed by --print',
+      () async {
+    final argvFile = File(p.join(tmp.path, 'argv.txt'));
+    final script = File(p.join(tmp.path, 'yt-dlp-argv'));
+    await script.writeAsString(
+      '#!/bin/sh\n'
+      'printf "%s\\n" "\$@" > ${argvFile.path}\n'
+      'exit 0\n',
+    );
+    await Process.run('chmod', ['+x', script.path]);
+    final downloader = YtDlpDownloader(
+      ytDlpPath: script.path,
+      ffmpegDir: tmp.path,
+    );
+    final events = downloader.start(
+      downloadId: 'dl-argv',
+      url: 'https://example.com/live.m3u8',
+      outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
+    );
+    await events.toList();
+    final argv = await argvFile.readAsString();
+    expect(argv, contains('--progress'));
+    expect(argv, contains('--print'));
+  });
+
   test('starting the same download twice throws', () async {
     final fake = await makeFake('yt-dlp', _slowScript);
     final downloader = YtDlpDownloader(

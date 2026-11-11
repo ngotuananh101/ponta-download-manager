@@ -101,6 +101,10 @@ class YtDlpDownloader {
       '--newline',
       '--print',
       'after_move:filepath',
+      // Progress goes to stdout, but --print suppresses it unless
+      // --progress is also given. Without it the UI sees no
+      // progress at all (the row stays queued until it completes).
+      '--progress',
       '-o',
       running.outputTemplate,
       url,

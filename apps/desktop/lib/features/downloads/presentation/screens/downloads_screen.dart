@@ -680,13 +680,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           SizedBox(
             width: DownloadTableColumns.status,
-            child: Text(
-              downloadStatusText(item),
-              style: rowStyle.copyWith(
-                color: downloadStatusColor(colorScheme, item.state),
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: _buildStatusCell(item, rowStyle, colorScheme),
           ),
           SizedBox(
             width: DownloadTableColumns.menu,
@@ -719,6 +713,25 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   /// The `⋮` row menu (Pause / Resume / Retry / Cancel, by state,
   /// plus Delete on every row).
+  Widget _buildStatusCell(
+    Download item,
+    TextStyle rowStyle,
+    ColorScheme colorScheme,
+  ) {
+    final text = Text(
+      downloadStatusText(item),
+      style: rowStyle.copyWith(
+        color: downloadStatusColor(colorScheme, item.state),
+      ),
+      overflow: TextOverflow.ellipsis,
+    );
+    final message = item.errorMessage;
+    if (message == null || message.isEmpty) {
+      return text;
+    }
+    return Tooltip(message: message, child: text);
+  }
+
   Widget _buildRowMenu(Download item) {
     return Center(
       child: PopupMenuButton<String>(

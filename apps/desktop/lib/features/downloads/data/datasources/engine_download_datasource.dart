@@ -99,6 +99,9 @@ class EngineDownloadDatasource {
           totalBytes: totalBytes,
           bytesPerSecond: bytesPerSecond,
           state: stopped ? current.state : DownloadState.downloading,
+          // Progress means it is running again, so a previous
+          // failure reason no longer applies.
+          clearErrorMessage: !stopped,
         );
         _progressDirty = true;
       },
@@ -117,6 +120,10 @@ class EngineDownloadDatasource {
         _downloads[downloadId] = current.copyWith(
           state: state,
           bytesPerSecond: stopped ? 0 : current.bytesPerSecond,
+          // A state change away from failed clears the failure
+          // reason; a change to failed keeps it until the failed
+          // event below carries the message.
+          clearErrorMessage: state != DownloadState.failed,
         );
         _emit();
       },
@@ -128,6 +135,7 @@ class EngineDownloadDatasource {
         _downloads[downloadId] = current.copyWith(
           state: DownloadState.completed,
           bytesPerSecond: 0,
+          clearErrorMessage: true,
         );
         _emit();
       },
@@ -139,6 +147,7 @@ class EngineDownloadDatasource {
         _downloads[downloadId] = current.copyWith(
           state: DownloadState.failed,
           bytesPerSecond: 0,
+          errorMessage: message,
         );
         _emit();
       },

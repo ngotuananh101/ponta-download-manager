@@ -165,6 +165,49 @@ void main() {
       });
     });
 
+    test('a failed event stores the error message, a retry clears it',
+        () {
+      fakeAsync((async) {
+        when(
+          () => engine.listDownloads(),
+        ).thenAnswer(
+          (_) async => [info(status: DownloadStatus.downloading)],
+        );
+        final source = datasource();
+        final emitted = <List<Download>>[];
+        final sub = source.watchDownloads().listen(emitted.add);
+        async.flushMicrotasks();
+        expect(emitted.last.single.errorMessage, isNull);
+        events.add(
+          DownloadEvent.failed(
+            downloadId: 'dl-1',
+            code: 'external-tools-missing',
+            message:
+                'ffmpeg and yt-dlp are required to download streams.',
+          ),
+        );
+        async.flushMicrotasks();
+        expect(emitted.last.single.state, DownloadState.failed);
+        expect(
+          emitted.last.single.errorMessage,
+          'ffmpeg and yt-dlp are required to download streams.',
+        );
+        // Retry: the state flips back to queued, and the stale
+        // reason must not linger on the row.
+        events.add(
+          DownloadEvent.stateChanged(
+            downloadId: 'dl-1',
+            status: DownloadStatus.queued,
+          ),
+        );
+        async.flushMicrotasks();
+        expect(emitted.last.single.state, DownloadState.queued);
+        expect(emitted.last.single.errorMessage, isNull);
+        sub.cancel();
+        unawaited(source.dispose());
+      });
+    });
+
     test('addDownload joins the list from the create response', () async {
       when(
         () => engine.listDownloads(),

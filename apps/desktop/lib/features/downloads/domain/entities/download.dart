@@ -15,6 +15,7 @@ class Download extends Equatable {
     this.bytesPerSecond = 0,
     this.createdAt,
     this.filePath,
+    this.errorMessage,
   });
 
   final String id;
@@ -34,6 +35,11 @@ class Download extends Equatable {
   /// filter.
   final String? filePath;
 
+  /// Why the download failed, from the engine's failed event (e.g.
+  /// ffmpeg/yt-dlp are missing for a stream). Null unless the
+  /// download is failed. Shown as a tooltip on the Status cell.
+  final String? errorMessage;
+
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
 
@@ -47,6 +53,8 @@ class Download extends Equatable {
     int? bytesPerSecond,
     DateTime? createdAt,
     String? filePath,
+    String? errorMessage,
+    bool clearErrorMessage = false,
   }) {
     return Download(
       id: id ?? this.id,
@@ -58,6 +66,8 @@ class Download extends Equatable {
       bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
       createdAt: createdAt ?? this.createdAt,
       filePath: filePath ?? this.filePath,
+      errorMessage:
+          clearErrorMessage ? null : errorMessage ?? this.errorMessage,
     );
   }
 
@@ -72,5 +82,6 @@ class Download extends Equatable {
     bytesPerSecond,
     createdAt,
     filePath,
+    errorMessage,
   ];
 }
