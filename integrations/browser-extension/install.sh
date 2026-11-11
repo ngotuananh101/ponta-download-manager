@@ -37,4 +37,4 @@ fi
 # Firefox: the extension id is fixed in its manifest (pdm@ponta.dev).
 write_manifest "$HOME/.mozilla/native-messaging-hosts" "\"allowed_extensions\": [\"pdm@ponta.dev\"]"
 
-echo "Done. Start the engine (dart run bin/engine.dart serve) before using the extension."
+echo "Done. The PDM app starts automatically when the extension needs it."

@@ -78,6 +78,11 @@ class NativeHost {
       return {'id': id, 'ok': true, 'downloadId': info.id};
     } on DownloadError catch (e) {
       return _error(id, e.code, e.message);
+    } catch (e) {
+      // A factory failure (e.g. the token file missing because the
+      // app is not running) is not a DownloadError; it still needs an
+      // error reply instead of hanging the host.
+      return _error(id, IpcErrorCode.internal, 'Failed to create download: $e');
     }
   }
 

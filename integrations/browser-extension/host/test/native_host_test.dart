@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_ipc/download_ipc.dart';
@@ -174,6 +175,26 @@ void main() {
       ]);
       expect(replies.single['ok'], isTrue);
       verify(() => client.close()).called(1);
+    });
+
+    test('a factory failure that is not a DownloadError still replies '
+        'with an error', () async {
+      final failing = NativeHost(
+        clientFactory: () async {
+          throw const FileSystemException('token file missing');
+        },
+        downloadDirectory: '/tmp/dl',
+      );
+      final replies = await runWith(failing, [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'http://127.0.0.1:9/f.bin',
+        },
+      ]);
+      expect(replies, hasLength(1));
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'internal');
     });
   });
 }

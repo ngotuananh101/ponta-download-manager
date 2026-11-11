@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:download_ipc/download_ipc.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdm_native_host/src/app_launcher.dart';
 import 'package:pdm_native_host/src/native_host.dart';
 
 Future<void> main() async {
@@ -18,11 +19,16 @@ Future<void> main() async {
       : p.join(Platform.environment['HOME'] ?? '.', 'Downloads');
   final host = NativeHost(
     clientFactory: () async {
-      final token = await File('$socketPath.token').readAsString();
-      return IpcClient.connect(
-        channelFactory: () =>
-            UnixSocketTransport(socketPath: socketPath).connect(),
-        token: token,
+      return connectWithAutoLaunch(
+        connect: () async {
+          final token = await File('$socketPath.token').readAsString();
+          return IpcClient.connect(
+            channelFactory: () =>
+                UnixSocketTransport(socketPath: socketPath).connect(),
+            token: token,
+          );
+        },
+        launcher: AppLauncher(socketPath: socketPath),
       );
     },
     downloadDirectory: downloadDirectory,
