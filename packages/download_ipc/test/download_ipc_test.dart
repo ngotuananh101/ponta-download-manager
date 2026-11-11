@@ -274,6 +274,37 @@ void main() {
       );
     });
 
+    test('create carries the conflict policy to the engine', () async {
+      final client = await connectClient();
+      await client.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: '/tmp/f.bin',
+          conflictPolicy: FileConflictPolicy.rename,
+        ),
+      );
+      expect(engine.createdPolicies, [FileConflictPolicy.rename]);
+    });
+
+    test('create with an unknown conflict policy fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('download.create', {
+          'url': 'http://127.0.0.1:9/f.bin',
+          'destination': '/tmp/f.bin',
+          'conflictPolicy': 'explode',
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
     test('create without a url fails with invalid-params', () async {
       final client = await connectClient();
       await expectLater(

@@ -111,6 +111,8 @@ class IpcClient {
       if (request.maxConnections != null)
         'maxConnections': request.maxConnections,
       if (request.priority != null) 'priority': request.priority,
+      if (request.conflictPolicy != null)
+        'conflictPolicy': request.conflictPolicy!.name,
     });
     return downloadInfoFromJson(result);
   }

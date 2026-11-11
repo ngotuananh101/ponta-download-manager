@@ -18,6 +18,9 @@ class FakeEngine implements DownloadEngine {
   final _events = StreamController<DownloadEvent>.broadcast();
   final infos = <String, DownloadInfo>{};
   final calls = <String>[];
+
+  /// The conflict policy of every createDownload call, in order.
+  final createdPolicies = <FileConflictPolicy?>[];
   var _counter = 0;
 
   /// Events the test pushes into the engine's stream.
@@ -29,6 +32,7 @@ class FakeEngine implements DownloadEngine {
   @override
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
     calls.add('create:${request.url}');
+    createdPolicies.add(request.conflictPolicy);
     final id = 'dl-${++_counter}';
     final info = DownloadInfo(
       id: id,

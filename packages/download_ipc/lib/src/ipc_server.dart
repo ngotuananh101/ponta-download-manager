@@ -259,12 +259,27 @@ class _ClientConnection {
             'priority must be an int',
           );
         }
+        final conflictPolicy = params['conflictPolicy'];
+        FileConflictPolicy? policy;
+        if (conflictPolicy != null) {
+          if (conflictPolicy is! String ||
+              (conflictPolicy != 'overwrite' && conflictPolicy != 'rename')) {
+            throw DownloadError(
+              IpcErrorCode.invalidParams,
+              'conflictPolicy must be overwrite or rename',
+            );
+          }
+          policy = conflictPolicy == 'overwrite'
+              ? FileConflictPolicy.overwrite
+              : FileConflictPolicy.rename;
+        }
         final info = await engine.createDownload(
           CreateDownloadRequest(
             url: url,
             destination: destination,
             maxConnections: maxConnections as int?,
             priority: priority as int?,
+            conflictPolicy: policy,
           ),
         );
         return downloadInfoToJson(info);
