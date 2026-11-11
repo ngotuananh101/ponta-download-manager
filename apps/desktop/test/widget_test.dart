@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pdm/app/app.dart';
+import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 
@@ -198,6 +199,12 @@ void main() {
     expect(find.text('Support the project'), findsOneWidget);
     // Snail mode is OFF by default (unlimited speed).
     expect(find.text('OFF'), findsOneWidget);
+  });
+
+  testWidgets('the status bar toggle shows a snail icon',
+      (tester) async {
+    await pumpApp(tester);
+    expect(find.byType(SnailIcon), findsOneWidget);
   });
 
   testWidgets('the status bar toggle switches snail mode on and off',

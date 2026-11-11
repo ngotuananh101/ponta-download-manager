@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pdm/app/app_header.dart';
+import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_table.dart';
@@ -832,8 +833,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.speed,
+            SnailIcon(
               size: 14,
               color: isOff ? colorScheme.onSurface : colorScheme.onPrimary,
             ),
