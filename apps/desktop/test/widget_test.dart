@@ -611,4 +611,32 @@ void main() {
       expect(buttonText.style?.fontSize, 12);
     }
   });
+
+  testWidgets('the table rows have a small checkbox and no bottom border',
+      (tester) async {
+    await pumpApp(tester);
+    // The row checkbox is the last Checkbox in the tree (the toolbar
+    // select-all comes first); it is scaled down to 0.8x.
+    final rowCheckbox = find.byType(Checkbox).last;
+    final transforms = tester.widgetList<Transform>(
+      find.ancestor(of: rowCheckbox, matching: find.byType(Transform)),
+    );
+    expect(
+      transforms.any(
+        // The x-scale is storage[0]; getMaxScaleOnAxis would return
+        // the z-scale (1.0) for a 2D scale matrix.
+        (t) => (t.transform.storage[0] - 0.8).abs() < 0.001,
+      ),
+      isTrue,
+    );
+    // The row container is the only 40px one in the tree (the bulk
+    // bar is hidden when nothing is selected); it has no border.
+    final containers = tester.widgetList<Container>(find.byType(Container));
+    final rowContainers = containers
+        .where((c) => c.constraints?.maxHeight == 40)
+        .toList();
+    expect(rowContainers.length, 1);
+    final decoration = rowContainers.single.decoration as BoxDecoration?;
+    expect(decoration?.border, isNull);
+  });
 }

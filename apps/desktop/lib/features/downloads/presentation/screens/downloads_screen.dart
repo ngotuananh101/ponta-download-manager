@@ -638,24 +638,26 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         // Only a selected row keeps a fill; unselected rows are
         // transparent so the uniform window background shows through.
         color: selected ? colorScheme.surfaceContainerHigh : Colors.transparent,
-        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         children: [
           SizedBox(
             width: DownloadTableColumns.check,
             child: Center(
-              child: Checkbox(
-                value: selected,
-                onChanged: (value) => setState(() {
-                  if (value == true) {
-                    _selected.add(item.id);
-                  } else {
-                    _selected.remove(item.id);
-                  }
-                }),
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              child: Transform.scale(
+                scale: 0.8,
+                child: Checkbox(
+                  value: selected,
+                  onChanged: (value) => setState(() {
+                    if (value == true) {
+                      _selected.add(item.id);
+                    } else {
+                      _selected.remove(item.id);
+                    }
+                  }),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ),
           ),
