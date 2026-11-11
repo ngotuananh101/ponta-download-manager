@@ -18,6 +18,7 @@ _DownloadInfo _$DownloadInfoFromJson(Map<String, dynamic> json) =>
       createdAt: json['createdAt'] == null
           ? null
           : DateTime.parse(json['createdAt'] as String),
+      filePath: json['filePath'] as String?,
     );
 
 Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
@@ -30,6 +31,7 @@ Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
       'totalBytes': instance.totalBytes,
       'bytesPerSecond': instance.bytesPerSecond,
       'createdAt': instance.createdAt?.toIso8601String(),
+      'filePath': instance.filePath,
     };
 
 const _$DownloadStatusEnumMap = {

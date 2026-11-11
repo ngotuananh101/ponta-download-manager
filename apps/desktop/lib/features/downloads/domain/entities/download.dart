@@ -14,6 +14,7 @@ class Download extends Equatable {
     required this.totalBytes,
     this.bytesPerSecond = 0,
     this.createdAt,
+    this.filePath,
   });
 
   final String id;
@@ -28,6 +29,11 @@ class Download extends Equatable {
   /// downloads created before this field existed.
   final DateTime? createdAt;
 
+  /// Final on-disk destination. Null when unknown (e.g. a download
+  /// created before this field existed). Used by the "Missing Files"
+  /// filter.
+  final String? filePath;
+
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
 
@@ -40,6 +46,7 @@ class Download extends Equatable {
     int? totalBytes,
     int? bytesPerSecond,
     DateTime? createdAt,
+    String? filePath,
   }) {
     return Download(
       id: id ?? this.id,
@@ -50,6 +57,7 @@ class Download extends Equatable {
       totalBytes: totalBytes ?? this.totalBytes,
       bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
       createdAt: createdAt ?? this.createdAt,
+      filePath: filePath ?? this.filePath,
     );
   }
 
@@ -63,5 +71,6 @@ class Download extends Equatable {
     totalBytes,
     bytesPerSecond,
     createdAt,
+    filePath,
   ];
 }

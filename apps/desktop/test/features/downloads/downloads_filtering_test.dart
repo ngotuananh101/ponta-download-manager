@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
@@ -8,6 +10,8 @@ Download _d(
   String url = 'https://example.com/file',
   DownloadState state = DownloadState.downloading,
   int totalBytes = 1000,
+  int downloadedBytes = 0,
+  String? filePath,
 }) {
   return Download(
     id: id,
@@ -15,6 +19,8 @@ Download _d(
     fileName: fileName,
     state: state,
     totalBytes: totalBytes,
+    downloadedBytes: downloadedBytes,
+    filePath: filePath,
   );
 }
 
@@ -45,30 +51,75 @@ void main() {
       expect(oldest.map((d) => d.id).toList(), ['dl-1', 'dl-2', 'dl-3', 'dl-4']);
     });
 
-    test('name sorts A-Z case-insensitively', () {
-      final sorted = visibleDownloads(
+    test('A-Z sorts by name ascending, Z-A descending', () {
+      final asc = visibleDownloads(
         items,
-        sort: DownloadSort.name,
+        sort: DownloadSort.nameAsc,
         filter: DownloadFilter.all,
         query: '',
       );
       expect(
-        sorted.map((d) => d.fileName).toList(),
+        asc.map((d) => d.fileName).toList(),
         ['alpha.zip', 'beta.zip', 'delta.zip', 'gamma.zip'],
+      );
+      final desc = visibleDownloads(
+        items,
+        sort: DownloadSort.nameDesc,
+        filter: DownloadFilter.all,
+        query: '',
+      );
+      expect(
+        desc.map((d) => d.fileName).toList(),
+        ['gamma.zip', 'delta.zip', 'beta.zip', 'alpha.zip'],
       );
     });
 
-    test('size sorts largest first, unknown total last', () {
+    test('By size: large sorts largest first, unknown total last', () {
       final sorted = visibleDownloads(
         items,
-        sort: DownloadSort.size,
+        sort: DownloadSort.sizeDesc,
         filter: DownloadFilter.all,
         query: '',
       );
       expect(sorted.map((d) => d.id).toList(), ['dl-1', 'dl-3', 'dl-2', 'dl-4']);
     });
 
-    test('filter keeps only the matching state', () {
+    test('By size: small sorts smallest first, unknown total last', () {
+      final sorted = visibleDownloads(
+        items,
+        sort: DownloadSort.sizeAsc,
+        filter: DownloadFilter.all,
+        query: '',
+      );
+      expect(sorted.map((d) => d.id).toList(), ['dl-2', 'dl-3', 'dl-1', 'dl-4']);
+    });
+
+    test('By status sorts by state order, ascending and descending', () {
+      final asc = visibleDownloads(
+        items,
+        sort: DownloadSort.statusAsc,
+        filter: DownloadFilter.all,
+        query: '',
+      );
+      // queued < downloading < paused < completed < failed < cancelled.
+      expect(asc.map((d) => d.id).toList(), ['dl-4', 'dl-2', 'dl-1', 'dl-3']);
+      final desc = visibleDownloads(
+        items,
+        sort: DownloadSort.statusDesc,
+        filter: DownloadFilter.all,
+        query: '',
+      );
+      expect(desc.map((d) => d.id).toList(), ['dl-3', 'dl-1', 'dl-2', 'dl-4']);
+    });
+
+    test('Active keeps queued, downloading and paused only', () {
+      final active = visibleDownloads(
+        items,
+        sort: DownloadSort.newest,
+        filter: DownloadFilter.active,
+        query: '',
+      );
+      expect(active.map((d) => d.id).toList(), ['dl-4', 'dl-2']);
       final completed = visibleDownloads(
         items,
         sort: DownloadSort.newest,
@@ -76,13 +127,61 @@ void main() {
         query: '',
       );
       expect(completed.map((d) => d.id).toList(), ['dl-1']);
-      final queued = visibleDownloads(
-        items,
+    });
+
+    test('type filters match the file extension, case-insensitively', () {
+      final typed = [
+        _d('dl-1', fileName: 'movie.MP4'),
+        _d('dl-2', fileName: 'song.flac'),
+        _d('dl-3', fileName: 'pack.torrent'),
+        _d('dl-4', fileName: 'archive.zip'),
+      ];
+      final video = visibleDownloads(
+        typed,
         sort: DownloadSort.newest,
-        filter: DownloadFilter.queued,
+        filter: DownloadFilter.video,
         query: '',
       );
-      expect(queued.map((d) => d.id).toList(), ['dl-4']);
+      expect(video.map((d) => d.id).toList(), ['dl-1']);
+      final music = visibleDownloads(
+        typed,
+        sort: DownloadSort.newest,
+        filter: DownloadFilter.music,
+        query: '',
+      );
+      expect(music.map((d) => d.id).toList(), ['dl-2']);
+      final torrent = visibleDownloads(
+        typed,
+        sort: DownloadSort.newest,
+        filter: DownloadFilter.torrent,
+        query: '',
+      );
+      expect(torrent.map((d) => d.id).toList(), ['dl-3']);
+    });
+
+    test('Missing Files keeps completed downloads whose file is gone',
+        () async {
+      final dir = await Directory.systemTemp.createTemp('pdm-missing-');
+      addTearDown(() => dir.delete(recursive: true));
+      final present = File('${dir.path}/present.bin')
+        ..writeAsBytesSync([1, 2, 3]);
+      final gone = '${dir.path}/gone.bin';
+      final rows = [
+        _d('dl-1', fileName: 'present.bin', state: DownloadState.completed, filePath: present.path),
+        _d('dl-2', fileName: 'gone.bin', state: DownloadState.completed, filePath: gone),
+        _d('dl-3', fileName: 'no-path.bin', state: DownloadState.completed),
+        _d('dl-4', fileName: 'active.bin', state: DownloadState.downloading, downloadedBytes: 100, filePath: gone),
+      ];
+      final result = visibleDownloads(
+        rows,
+        sort: DownloadSort.newest,
+        filter: DownloadFilter.missing,
+        query: '',
+      );
+      // Only the completed download whose file is gone. The present
+      // file, the unknown path, and the still-downloading row are not
+      // missing.
+      expect(result.map((d) => d.id).toList(), ['dl-2']);
     });
 
     test('search matches file name and URL, case-insensitively', () {

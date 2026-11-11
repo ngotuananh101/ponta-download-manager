@@ -403,4 +403,104 @@ void main() {
     expect(iconBefore('c.bin'), Icons.folder);
     expect(iconBefore('d.bin'), Icons.insert_drive_file);
   });
+
+  testWidgets('the select dropdown offers the FDM options', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Select'));
+    await tester.pumpAndSettle();
+    for (final option in [
+      'All',
+      'Downloads only',
+      'Uploads only',
+      'Completed',
+      'Stopped',
+    ]) {
+      expect(find.text(option), findsWidgets);
+    }
+  });
+
+  testWidgets('selecting Completed selects only the completed rows',
+      (tester) async {
+    const downloading = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const paused = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.paused,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const completed = Download(
+      id: 'dl-3',
+      url: 'http://127.0.0.1:9/c.bin',
+      fileName: 'c.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [downloading, paused, completed],
+    );
+    await tester.tap(find.byTooltip('Select'));
+    await tester.pumpAndSettle();
+    // 'Completed' also shows as the completed row's status text; the
+    // menu item is the last match (the popup lives in the Overlay).
+    await tester.tap(find.text('Completed').last);
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+  });
+
+  testWidgets('selecting Stopped selects only the stopped rows',
+      (tester) async {
+    const downloading = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const paused = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.paused,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const failed = Download(
+      id: 'dl-3',
+      url: 'http://127.0.0.1:9/c.bin',
+      fileName: 'c.bin',
+      state: DownloadState.failed,
+      downloadedBytes: 100,
+      totalBytes: 1000,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [downloading, paused, failed],
+    );
+    await tester.tap(find.byTooltip('Select'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stopped'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+  });
+
+  testWidgets('selecting Uploads only selects nothing', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Select'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Uploads only'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('selected'), findsNothing);
+  });
 }

@@ -102,12 +102,54 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _toolbarPill(
-            Checkbox(
-              value: allSelected ? true : (someSelected ? null : false),
-              tristate: true,
-              onChanged: (_) => _toggleSelectAll(visible),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: allSelected ? true : (someSelected ? null : false),
+                  tristate: true,
+                  onChanged: (_) => _toggleSelectAll(visible),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                SizedBox(
+                  width: 20,
+                  height: 36,
+                  child: PopupMenuButton<_SelectBy>(
+                    tooltip: 'Select',
+                    padding: EdgeInsets.zero,
+                    onSelected: (option) => _selectBy(option, visible),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: _SelectBy.all,
+                        child: Text('All'),
+                      ),
+                      PopupMenuItem(
+                        value: _SelectBy.downloadsOnly,
+                        child: Text('Downloads only'),
+                      ),
+                      PopupMenuItem(
+                        value: _SelectBy.uploadsOnly,
+                        child: Text('Uploads only'),
+                      ),
+                      PopupMenuItem(
+                        value: _SelectBy.completed,
+                        child: Text('Completed'),
+                      ),
+                      PopupMenuItem(
+                        value: _SelectBy.stopped,
+                        child: Text('Stopped'),
+                      ),
+                    ],
+                    // An explicit child (not the icon form): the icon
+                    // form builds an IconButton whose 48px minimum
+                    // would overflow the 36px pill.
+                    child: const Center(
+                      child: Icon(Icons.arrow_drop_down, size: 18),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
@@ -143,12 +185,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               tooltip: 'Filter',
               padding: EdgeInsets.zero,
               onSelected: (f) => setState(() => _filter = f),
-              itemBuilder: (context) => DownloadFilter.values
-                  .map(
-                    (f) =>
-                        PopupMenuItem(value: f, child: Text(_filterLabel(f))),
-                  )
-                  .toList(),
+              itemBuilder: (context) => [
+                for (final f in DownloadFilter.values) ...[
+                  if (f == DownloadFilter.torrent)
+                    const PopupMenuDivider(),
+                  PopupMenuItem(value: f, child: Text(_filterLabel(f))),
+                ],
+              ],
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -277,11 +320,19 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       case DownloadSort.newest:
         return 'Newest';
       case DownloadSort.oldest:
-        return 'Oldest';
-      case DownloadSort.name:
-        return 'Name';
-      case DownloadSort.size:
-        return 'Size';
+        return 'Old';
+      case DownloadSort.nameAsc:
+        return 'A-Z';
+      case DownloadSort.nameDesc:
+        return 'Z-A';
+      case DownloadSort.sizeDesc:
+        return 'By size: large';
+      case DownloadSort.sizeAsc:
+        return 'By size: small';
+      case DownloadSort.statusAsc:
+        return 'By status: ascending';
+      case DownloadSort.statusDesc:
+        return 'By status: descending';
     }
   }
 
@@ -289,18 +340,18 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     switch (filter) {
       case DownloadFilter.all:
         return 'All files';
-      case DownloadFilter.downloading:
-        return 'Downloading';
-      case DownloadFilter.queued:
-        return 'Queued';
-      case DownloadFilter.paused:
-        return 'Paused';
+      case DownloadFilter.missing:
+        return 'Missing Files';
+      case DownloadFilter.active:
+        return 'Active';
       case DownloadFilter.completed:
         return 'Completed';
-      case DownloadFilter.failed:
-        return 'Failed';
-      case DownloadFilter.cancelled:
-        return 'Cancelled';
+      case DownloadFilter.torrent:
+        return 'Torrent';
+      case DownloadFilter.video:
+        return 'Video';
+      case DownloadFilter.music:
+        return 'Music';
     }
   }
 
@@ -316,6 +367,40 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         for (final d in visible) {
           _selected.add(d.id);
         }
+      }
+    });
+  }
+
+  /// Selects exactly the visible rows matching [option] (FDM's
+  /// select dropdown). "Downloads only" selects all visible rows,
+  /// because every row is a download; "Uploads only" selects nothing,
+  /// because PDM has no uploads; "Stopped" is paused, cancelled or
+  /// failed.
+  void _selectBy(_SelectBy option, List<Download> visible) {
+    setState(() {
+      _selected.clear();
+      switch (option) {
+        case _SelectBy.all:
+        case _SelectBy.downloadsOnly:
+          for (final d in visible) {
+            _selected.add(d.id);
+          }
+        case _SelectBy.uploadsOnly:
+          break;
+        case _SelectBy.completed:
+          for (final d in visible) {
+            if (d.state == DownloadState.completed) {
+              _selected.add(d.id);
+            }
+          }
+        case _SelectBy.stopped:
+          for (final d in visible) {
+            if (d.state == DownloadState.paused ||
+                d.state == DownloadState.cancelled ||
+                d.state == DownloadState.failed) {
+              _selected.add(d.id);
+            }
+          }
       }
     });
   }
@@ -928,3 +1013,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     }
   }
 }
+
+/// The select dropdown's options (FDM). Kept private: the widget test
+/// taps the menu items by their labels.
+enum _SelectBy { all, downloadsOnly, uploadsOnly, completed, stopped }

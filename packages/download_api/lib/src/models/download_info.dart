@@ -15,6 +15,10 @@ abstract class DownloadInfo with _$DownloadInfo {
     required int totalBytes,
     @Default(0) int bytesPerSecond,
     DateTime? createdAt,
+    // Final on-disk destination (directory + fileName). Null for infos
+    // that predate this field or arrive over IPC, which does not carry
+    // it. The desktop UI needs it for the "Missing Files" filter.
+    String? filePath,
   }) = _DownloadInfo;
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) =>
