@@ -20,4 +20,5 @@ workspace:
   - packages/download_database
   - packages/download_ipc
   - packages/download_platform
+  - packages/download_external
   - integrations/browser-extension/host
