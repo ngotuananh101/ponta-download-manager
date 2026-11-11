@@ -944,6 +944,80 @@ exit 0
       });
     });
 
+    group('file conflict policy', () {
+      test('throws file-exists when the destination exists', () async {
+        await File(p.join(tempDir.path, 'f.bin')).writeAsBytes(bytesOf(16));
+        final engine = openEngine();
+        addTearDown(engine.dispose);
+        await expectLater(
+          engine.createDownload(
+            CreateDownloadRequest(
+              url: 'http://127.0.0.1:9/f.bin',
+              destination: p.join(tempDir.path, 'f.bin'),
+            ),
+          ),
+          throwsA(
+            isA<DownloadError>().having(
+              (e) => e.code,
+              'code',
+              'file-exists',
+            ),
+          ),
+        );
+      });
+
+      test('overwrite proceeds when the destination exists', () async {
+        final data = bytesOf(4096);
+        await startServer(data: data);
+        await File(p.join(tempDir.path, 'f.bin')).writeAsBytes(bytesOf(16));
+        final engine = openEngine(maxConnections: 2);
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+            conflictPolicy: FileConflictPolicy.overwrite,
+          ),
+        );
+        expect(info.fileName, 'f.bin');
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'f.bin');
+        expect(
+          await File(p.join(tempDir.path, 'f.bin')).readAsBytes(),
+          data,
+        );
+      });
+
+      test('rename picks the next free name', () async {
+        await File(p.join(tempDir.path, 'f.bin')).writeAsBytes(bytesOf(16));
+        // No concurrent slots: the jobs never start, so the test only
+        // checks the names createDownload picks and nothing writes to
+        // the temp dir while tearDown deletes it.
+        final engine = openEngine(maxConcurrent: 0);
+        addTearDown(engine.dispose);
+        final first = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:9/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+            conflictPolicy: FileConflictPolicy.rename,
+          ),
+        );
+        expect(first.fileName, 'f (1).bin');
+        final second = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:9/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+            conflictPolicy: FileConflictPolicy.rename,
+          ),
+        );
+        expect(second.fileName, 'f (2).bin');
+      });
+    });
+
   });
 
   group('runDownload command', () {

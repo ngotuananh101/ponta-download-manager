@@ -67,15 +67,24 @@ user what to do instead of failing silently with a snackbar.
   barrel): `resolveUniquePath(destination, {exists})` — first free
   name per the rename rules above; `exists` injectable for tests.
 - `createDownload`: `null` -> throw `file-exists` (unchanged);
-  `overwrite` -> skip the check and proceed; `rename` -> replace
-  the destination with `resolveUniquePath` before the
-  playlist/native branch (so the yt-dlp template follows the
-  renamed stem).
+  `overwrite` -> skip the check and enqueue with `overwrite: true`;
+  `rename` -> replace the destination with `resolveUniquePath`
+  before the playlist/native branch (so the yt-dlp template follows
+  the renamed stem).
+- The policy reaches the file writer: `FileChunkSink.create` gains
+  `overwrite` (skips its own final-path `file-exists` throw; the
+  partial is still created exclusively), `DownloadJob` + `enqueue`
+  carry `overwrite`, and the scheduler's default factory and the
+  engine's factory both forward it. (Found during implementation:
+  the sink is a second `file-exists` gate — the engine check alone
+  left overwrite downloads failing at task start.)
 - Tests (engine suite, TDD RED first): overwrite proceeds when the
   file exists; rename picks `(1)` then `(2)`; null still throws
   `file-exists`; the helper strips an existing ` (N)` suffix and
   handles extension-less names.
-- Verify: `dart test` in `apps/engine`, `dart analyze` clean.
+- Verify: `dart test` in `packages/download_storage`,
+  `packages/download_scheduler` and `apps/engine`;
+  `dart analyze` clean.
 
 ### P3 — IPC: carry the policy through the protocol
 - `IpcClient.createDownload` sends `conflictPolicy` when set;

@@ -473,5 +473,59 @@ void main() {
       expect(await File(p.join(tempDir.path, 'a.bin')).readAsBytes(), dataA);
       expect(await File(p.join(tempDir.path, 'b.bin')).readAsBytes(), dataB);
     });
+
+    test('overwrite replaces an existing file', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-scheduler-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final data = bytesOf(2048, 0);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close());
+      server.listen((request) async {
+        if (request.method == 'HEAD') {
+          request.response
+            ..headers.set('content-length', '${data.length}')
+            ..headers.set('accept-ranges', 'bytes');
+          await request.response.close();
+          return;
+        }
+        final range = request.headers.value('range');
+        if (range != null) {
+          final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range);
+          final start = int.parse(match!.group(1)!);
+          final end = match.group(2)!.isEmpty
+              ? data.length - 1
+              : int.parse(match.group(2)!);
+          request.response
+            ..statusCode = HttpStatus.partialContent
+            ..headers.set('content-range', 'bytes $start-$end/${data.length}')
+            ..headers.set('content-length', '${end - start + 1}')
+            ..headers.set('accept-ranges', 'bytes');
+          request.response.add(data.sublist(start, end + 1));
+        } else {
+          request.response
+            ..headers.set('content-length', '${data.length}')
+            ..headers.set('accept-ranges', 'bytes');
+          request.response.add(data);
+        }
+        await request.response.close();
+      });
+      await File(p.join(tempDir.path, 'a.bin')).writeAsBytes(bytesOf(16));
+      final scheduler = DownloadScheduler(maxConcurrent: 2);
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://127.0.0.1:${server.port}/a',
+        fileName: 'a.bin',
+        directory: tempDir.path,
+        overwrite: true,
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(await File(p.join(tempDir.path, 'a.bin')).readAsBytes(), data);
+    });
   });
 }

@@ -145,6 +145,7 @@ class DownloadScheduler {
     String? id,
     List<SegmentProgress> resumeFrom = const [],
     bool resumeExisting = false,
+    bool overwrite = false,
     // Starts the job paused: it sits in the pending queue and _pump()
     // skips it until resume(id) un-pauses it. Used by startup recovery
     // for downloads the user had paused.
@@ -171,6 +172,7 @@ class DownloadScheduler {
       sequence: ++_sequence,
       resumeFrom: resumeFrom,
       resumeExisting: resumeExisting,
+      overwrite: overwrite,
     );
     _jobs[job.id] = job;
     _infos[job.id] = DownloadInfo(
@@ -439,6 +441,7 @@ class DownloadScheduler {
     final sink = await FileChunkSink.create(
       directory: job.directory,
       fileName: job.fileName,
+      overwrite: job.overwrite,
     );
     final task = DownloadTask(
       transport: transport,

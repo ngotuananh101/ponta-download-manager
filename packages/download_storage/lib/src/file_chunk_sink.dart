@@ -18,16 +18,17 @@ class FileChunkSink implements ChunkSink {
   });
 
   /// Creates a new partial file exclusively. Throws [DownloadError]
-  /// (`file-exists`) when the final path or the partial file already
-  /// exists.
+  /// (`file-exists`) when the final path already exists, unless
+  /// [overwrite] is set, or when the partial file already exists.
   static Future<FileChunkSink> create({
     required String directory,
     required String fileName,
+    bool overwrite = false,
   }) async {
     final finalPath = p.join(directory, fileName);
     final partialPath = '$finalPath.partial';
     await Directory(directory).create(recursive: true);
-    if (await File(finalPath).exists()) {
+    if (!overwrite && await File(finalPath).exists()) {
       throw DownloadError(
         'file-exists',
         'Destination already exists: $finalPath',

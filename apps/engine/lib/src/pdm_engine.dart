@@ -12,6 +12,7 @@ import 'package:download_transport/download_transport.dart';
 import 'package:path/path.dart' as p;
 
 import 'engine_config.dart';
+import 'file_naming.dart';
 
 /// Default database path: `$XDG_DATA_HOME/pdm/pdm.db` (Linux),
 /// `~/.local/share/pdm/pdm.db` when XDG is unset, and
@@ -253,6 +254,15 @@ class PdmEngine implements DownloadEngine {
     );
   }
 
+  /// A destination is taken when the file is on disk or a stored
+  /// download already claims it. The store check closes the race
+  /// where two renames pick the same free name while neither file
+  /// exists yet (the first download is still in flight).
+  bool _isDestinationTaken(String path) {
+    if (File(path).existsSync()) return true;
+    return _store.listDownloads().any((r) => r.destinationPath == path);
+  }
+
   @override
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
     _throwIfDisposed();
@@ -269,11 +279,22 @@ class PdmEngine implements DownloadEngine {
         fileName = 'download';
       }
     }
-    if (File(p.join(directory, fileName)).existsSync()) {
-      throw DownloadError(
-        'file-exists',
-        'Destination already exists: ${p.join(directory, fileName)}',
-      );
+    final destPath = p.join(directory, fileName);
+    switch (request.conflictPolicy) {
+      case FileConflictPolicy.overwrite:
+        // Proceed: the sink rename at the end replaces the file.
+        break;
+      case FileConflictPolicy.rename:
+        fileName = p.basename(
+          resolveUniquePath(destPath, isTaken: _isDestinationTaken),
+        );
+      case null:
+        if (File(destPath).existsSync()) {
+          throw DownloadError(
+            'file-exists',
+            'Destination already exists: $destPath',
+          );
+        }
     }
     if (_isStreamingPlaylist(request.url)) {
       final downloader = await _ytDlpDownloader();
@@ -306,6 +327,7 @@ class PdmEngine implements DownloadEngine {
       priority: request.priority ?? 0,
       maxConnections:
           request.maxConnections ?? config.maxConnectionsPerDownload,
+      overwrite: request.conflictPolicy == FileConflictPolicy.overwrite,
     );
     final record = DownloadRecord(
       id: id,
@@ -574,6 +596,7 @@ class PdmEngine implements DownloadEngine {
           : await FileChunkSink.create(
               directory: job.directory,
               fileName: job.fileName,
+              overwrite: job.overwrite,
             );
       final task = DownloadTask(
         transport: _transport,

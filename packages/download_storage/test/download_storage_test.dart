@@ -67,6 +67,21 @@ void main() {
       );
     });
 
+    test('create with overwrite proceeds when the destination exists',
+        () async {
+      final existing = File(p.join(tempDir.path, 'taken.bin'));
+      await existing.writeAsBytes(bytesOf(10));
+      final sink = await FileChunkSink.create(
+        directory: tempDir.path,
+        fileName: 'taken.bin',
+        overwrite: true,
+      );
+      final data = bytesOf(100);
+      await sink.write(0, data);
+      final finalFile = await sink.finish();
+      expect(await finalFile.readAsBytes(), data);
+    });
+
     test('create fails when a partial file already exists', () async {
       final first = await FileChunkSink.create(
         directory: tempDir.path,

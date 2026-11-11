@@ -12,6 +12,7 @@ class DownloadJob {
     required this.sequence,
     this.resumeFrom = const [],
     this.resumeExisting = false,
+    this.overwrite = false,
   });
 
   final String id;
@@ -30,4 +31,8 @@ class DownloadJob {
 
   /// Open the existing partial file instead of creating a new one.
   final bool resumeExisting;
+
+  /// Replace the final file when the download finishes, instead of
+  /// failing when it already exists.
+  final bool overwrite;
 }
