@@ -161,7 +161,14 @@ class PdmEngine implements DownloadEngine {
     if (partial.existsSync()) {
       partial.deleteSync();
     }
-    final id = _scheduler.enqueue(
+    // Retry reuses the same id: the same row restarts (like IDM/FDM),
+    // so no fresh id is generated and no other download can be
+    // overwritten. The scheduler's explicit-id path also advances its
+    // counter past this id. The record is reset to a fresh queued
+    // download, keeping its createdAt so the Added column does not
+    // move and the old error is cleared.
+    _scheduler.enqueue(
+      id: downloadId,
       url: record.url,
       fileName: record.fileName,
       directory: record.directory,
@@ -170,13 +177,14 @@ class PdmEngine implements DownloadEngine {
     );
     _store.upsertDownload(
       DownloadRecord(
-        id: id,
+        id: record.id,
         url: record.url,
         fileName: record.fileName,
         directory: record.directory,
         status: DownloadStatus.queued,
         priority: record.priority,
         maxConnections: record.maxConnections,
+        createdAt: record.createdAt,
       ),
     );
   }
@@ -280,6 +288,15 @@ class PdmEngine implements DownloadEngine {
   }
 
   void _recover() {
+    // Seed the scheduler's id counter from every stored record, so a
+    // generated id can never collide with a record recovery does not
+    // re-enqueue. Recovery only re-enqueues non-terminal downloads;
+    // with every download terminal the counter would restart at 0 and
+    // the next retry (or new download) would overwrite dl-1, then
+    // dl-2, and so on, with the retried file's data.
+    for (final record in _store.listDownloads()) {
+      _scheduler.reserveId(record.id);
+    }
     for (final decision in Recovery(_store).reconcile()) {
       final record = decision.record;
       switch (decision.action) {

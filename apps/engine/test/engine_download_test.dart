@@ -337,17 +337,77 @@ void main() {
         (d) => d.status == DownloadStatus.failed,
       );
       await engine.retryDownload(info.id);
+      // The retry reuses the same id: the same download restarts, no
+      // second record is created and no other download is touched.
       final downloads = await engine.listDownloads();
-      final retried = downloads
-          .where((d) => d.id != info.id)
-          .toList();
-      expect(retried.length, 1);
+      expect(downloads.length, 1);
+      expect(downloads.first.id, info.id);
       await waitForInfo(
         engine,
-        retried.first.id,
+        info.id,
         (d) => d.status == DownloadStatus.completed,
       );
       expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
+    });
+
+    test('a retry after a restart does not overwrite other downloads',
+        () async {
+      final data = bytesOf(1024);
+      await startServer(data: data);
+      final first = openEngine(maxConnections: 1);
+      final a = await first.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/a.bin',
+          destination: p.join(tempDir.path, 'a.bin'),
+        ),
+      );
+      final b = await first.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/b.bin',
+          destination: p.join(tempDir.path, 'b.bin'),
+        ),
+      );
+      final c = await first.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/c.bin',
+          destination: p.join(tempDir.path, 'c.bin'),
+        ),
+      );
+      // Make all three terminal (cancelled) so a restart does not
+      // re-enqueue them and seed the scheduler's id counter.
+      await first.cancelDownload(a.id);
+      await first.cancelDownload(b.id);
+      await first.cancelDownload(c.id);
+      await waitForInfo(
+        first,
+        a.id,
+        (d) => d.status == DownloadStatus.cancelled,
+      );
+      await waitForInfo(
+        first,
+        b.id,
+        (d) => d.status == DownloadStatus.cancelled,
+      );
+      await waitForInfo(
+        first,
+        c.id,
+        (d) => d.status == DownloadStatus.cancelled,
+      );
+      await first.dispose();
+      // Re-open: all three are terminal, so recovery re-enqueues
+      // nothing and the counter would restart at 0 without the fix.
+      final second = openEngine(maxConnections: 1);
+      addTearDown(second.dispose);
+      // Retry the last download twice, as the user did.
+      await second.retryDownload(c.id);
+      await second.retryDownload(c.id);
+      final downloads = await second.listDownloads();
+      expect(downloads.length, 3);
+      expect(
+        downloads.map((d) => d.fileName).toList(),
+        ['a.bin', 'b.bin', 'c.bin'],
+      );
+      expect(downloads.map((d) => d.id).toSet().length, 3);
     });
 
     test('setPriority reorders queued downloads', () async {

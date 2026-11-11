@@ -103,6 +103,21 @@ class DownloadScheduler {
   /// Latest known info for every download, in enqueue order.
   List<DownloadInfo> get downloads => List.of(_infos.values);
 
+  /// Advances the id counter past [id] (e.g. 'dl-7'), so a later
+  /// generated id never collides with an id that already exists.
+  /// Recovery only re-enqueues non-terminal downloads, so on engine
+  /// open the counter must also be seeded from the terminal records
+  /// in the store, or the next generated id would overwrite one.
+  void reserveId(String id) {
+    final match = RegExp(r'^dl-(\d+)$').firstMatch(id);
+    if (match != null) {
+      final n = int.parse(match.group(1)!);
+      if (n >= _counter) {
+        _counter = n + 1;
+      }
+    }
+  }
+
   /// Enqueues a download and returns its id. Starts it right away when
   /// a slot is free.
   String enqueue({
