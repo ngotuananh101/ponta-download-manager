@@ -15,6 +15,11 @@ abstract interface class DownloadEngine {
 
   Future<void> retryDownload(String downloadId);
 
+  /// Removes a download entirely: stops it if it runs, drops its
+  /// partial file, and deletes its stored record. The finished file
+  /// on disk (if any) is kept.
+  Future<void> deleteDownload(String downloadId);
+
   Future<void> setPriority(String downloadId, int priority);
 
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond);

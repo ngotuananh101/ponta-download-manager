@@ -55,6 +55,12 @@ class FakeEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> deleteDownload(String downloadId) async {
+    calls.add('delete:$downloadId');
+    infos.remove(downloadId);
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {}
 
   @override

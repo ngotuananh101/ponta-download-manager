@@ -285,6 +285,70 @@ void main() {
     expect(decoration()?.color, scheme.surfaceContainerHigh);
   });
 
+  testWidgets('tapping a row selects it', (tester) async {
+    await pumpApp(tester);
+    // The innermost Container ancestor of the row's file name is the
+    // row itself (the name also shows in the status bar, so .first
+    // picks the table row's text).
+    final rowFinder = find
+        .ancestor(of: find.text('f.bin').first, matching: find.byType(Container))
+        .last;
+    BoxDecoration? decoration() =>
+        tester.widget<Container>(rowFinder).decoration as BoxDecoration?;
+    expect(decoration()?.color, Colors.transparent);
+    // Tap the row's file name (not the checkbox, not the menu).
+    await tester.tap(find.text('f.bin').first);
+    await tester.pumpAndSettle();
+    final scheme =
+        Theme.of(tester.element(find.text('f.bin').first)).colorScheme;
+    expect(decoration()?.color, scheme.surfaceContainerHigh);
+    expect(find.text('1 selected'), findsOneWidget);
+    // Tapping the same row again deselects it.
+    await tester.tap(find.text('f.bin').first);
+    await tester.pumpAndSettle();
+    expect(decoration()?.color, Colors.transparent);
+    expect(find.text('1 selected'), findsNothing);
+  });
+
+  testWidgets('tapping the row menu does not select the row',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    // The menu opens (Pause is a downloading row's action).
+    expect(find.text('Pause'), findsOneWidget);
+    // And the row is still unselected: no bulk bar.
+    expect(find.text('1 selected'), findsNothing);
+  });
+
+  testWidgets('a completed row has a Delete action', (tester) async {
+    const completed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    await pumpApp(tester, downloads: const [completed]);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete'), findsOneWidget);
+  });
+
+  testWidgets('deleting a row calls deleteDownload', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload('dl-1'),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    verify(() => actions.deleteDownload('dl-1')).called(1);
+  });
+
   testWidgets('the row icon follows the download state',
       (tester) async {
     const downloading = Download(

@@ -155,6 +155,14 @@ class EngineDownloadDatasource {
 
   Future<void> retryDownload(String id) => engine.retryDownload(id);
 
+  Future<void> deleteDownload(String id) async {
+    await engine.deleteDownload(id);
+    // The delete is the source of truth for removing the row, like
+    // the create response is for adding one.
+    _downloads.remove(id);
+    _emit();
+  }
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

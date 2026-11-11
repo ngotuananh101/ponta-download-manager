@@ -370,6 +370,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             icon: const Icon(Icons.cancel, size: 18),
             label: Text('Cancel', style: AppTextSize.sm.textStyle()),
           ),
+          TextButton.icon(
+            onPressed: () => _bulkDelete(),
+            icon: const Icon(Icons.delete, size: 18),
+            label: Text('Delete', style: AppTextSize.sm.textStyle()),
+          ),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.close, size: 18),
@@ -395,6 +400,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final ids = _selected.toList();
     for (final id in ids) {
       await actions.cancelDownload(id);
+    }
+    if (mounted) setState(() => _selected.clear());
+  }
+
+  Future<void> _bulkDelete() async {
+    final actions = ref.read(downloadsActionsProvider);
+    final ids = _selected.toList();
+    for (final id in ids) {
+      await actions.deleteDownload(id);
     }
     if (mounted) setState(() => _selected.clear());
   }
@@ -513,11 +527,28 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
+  /// Tapping a row selects (or deselects) it, like the checkbox.
+  void _toggleRowSelection(String id) {
+    setState(() {
+      if (_selected.contains(id)) {
+        _selected.remove(id);
+      } else {
+        _selected.add(id);
+      }
+    });
+  }
+
   Widget _buildTableRow(Download item) {
     final colorScheme = Theme.of(context).colorScheme;
     final selected = _selected.contains(item.id);
     final rowStyle = AppTextSize.xs.textStyle(weight: AppFontWeight.semibold);
-    return Container(
+    // Tapping anywhere on the row toggles its selection. The checkbox
+    // and the row menu keep their own tap handling, so tapping them
+    // does not also toggle the row.
+    return GestureDetector(
+      onTap: () => _toggleRowSelection(item.id),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
       decoration: BoxDecoration(
@@ -603,22 +634,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
-  /// The `⋮` row menu (Pause / Resume / Retry / Cancel, by state).
-  /// Completed and cancelled downloads have no row actions.
+  /// The `⋮` row menu (Pause / Resume / Retry / Cancel, by state,
+  /// plus Delete on every row).
   Widget _buildRowMenu(Download item) {
-    switch (item.state) {
-      case DownloadState.completed:
-      case DownloadState.cancelled:
-        return const SizedBox.shrink();
-      case DownloadState.downloading:
-      case DownloadState.queued:
-      case DownloadState.paused:
-      case DownloadState.failed:
-        break;
-    }
     return Center(
       child: PopupMenuButton<String>(
         icon: const Icon(Icons.more_vert, size: 18),
@@ -654,6 +676,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             case DownloadState.cancelled:
               break;
           }
+          // Every row can be deleted; the finished file on disk is
+          // kept when a row is deleted.
+          entries.add(
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          );
           return entries;
         },
       ),
@@ -672,6 +699,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         call = () => actions.cancelDownload(item.id);
       case 'retry':
         call = () => actions.retryDownload(item.id);
+      case 'delete':
+        call = () => actions.deleteDownload(item.id);
       default:
         return;
     }
@@ -682,7 +711,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(failure.message)));
       }
-    }, (_) {});
+    }, (_) {
+      if (action == 'delete' && mounted) {
+        setState(() => _selected.remove(item.id));
+      }
+    });
   }
 
   Widget _buildDropZone() {

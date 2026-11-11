@@ -350,6 +350,57 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
     });
 
+    test('deleteDownload removes the record and drops the partial',
+        () async {
+      final data = bytesOf(10 * 1024 * 1024);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(engine, info.id, (d) => d.downloadedBytes > 0);
+      await engine.pauseDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.paused,
+      );
+      final partial = File(p.join(tempDir.path, 'f.bin.partial'));
+      expect(await partial.exists(), isTrue);
+      await engine.deleteDownload(info.id);
+      expect(await engine.listDownloads(), isEmpty);
+      // The partial is dropped; there is no finished file to keep.
+      expect(await partial.exists(), isFalse);
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isFalse);
+    });
+
+    test('deleteDownload keeps the finished file on disk', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.deleteDownload(info.id);
+      expect(await engine.listDownloads(), isEmpty);
+      // Deleting a row must not delete a file another row still
+      // references, so the finished file stays on disk.
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
+    });
+
     test('a retry after a restart does not overwrite other downloads',
         () async {
       final data = bytesOf(1024);

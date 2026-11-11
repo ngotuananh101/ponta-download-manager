@@ -190,6 +190,25 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> deleteDownload(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return;
+    }
+    // Stop the download if it is running or queued. The scheduler
+    // keeps a stale cancelled entry for the id, which is harmless:
+    // the engine lists downloads from the store, not the scheduler.
+    _scheduler.cancel(downloadId);
+    // Drop the partial file so it does not linger as an orphan. The
+    // finished file (if any) is kept on disk.
+    final partial = File(record.partialPath);
+    if (partial.existsSync()) {
+      partial.deleteSync();
+    }
+    _store.deleteDownload(downloadId);
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);
