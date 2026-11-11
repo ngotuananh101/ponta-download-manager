@@ -22,6 +22,19 @@ class IpcChannel {
       onError: (_) => _close(),
       onDone: _close,
     );
+    // A write to a peer that went away fails with a broken pipe.
+    // The socket reports it through its `done` future; without a
+    // handler that error surfaces as an unhandled async error.
+    // Handling it here also closes the channel, so later sends are
+    // skipped instead of writing to the dead peer again.
+    final out = _output;
+    if (out is IOSink) {
+      unawaited(
+        out.done.catchError((_) {
+          _close();
+        }),
+      );
+    }
   }
 
   final int maxLineBytes;
@@ -39,7 +52,14 @@ class IpcChannel {
     if (_closed) {
       throw StateError('IpcChannel is closed');
     }
-    _output.add(utf8.encode('${jsonEncode(message)}\n'));
+    try {
+      _output.add(utf8.encode('${jsonEncode(message)}\n'));
+    } catch (_) {
+      // The peer is gone; close the channel so the server drops
+      // this client instead of writing to it again.
+      await close();
+      rethrow;
+    }
   }
 
   Future<void> close() async {
