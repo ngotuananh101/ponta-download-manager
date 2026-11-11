@@ -138,8 +138,25 @@ class HttpTransport implements DownloadTransport {
       headers['if-range'] = ifRange;
     }
     final response = await _openResponse(url, headers);
-    if (response.statusCode == HttpStatus.ok ||
-        response.statusCode == HttpStatus.partialContent) {
+    if (response.statusCode == HttpStatus.partialContent) {
+      yield* response;
+    } else if (response.statusCode == HttpStatus.ok) {
+      if (start != null && (start != 0 || end != null)) {
+        // A bounded range (or a resume from a non-zero offset) was
+        // requested but the server answered 200 with the whole file:
+        // it ignored the Range. Fail fast instead of streaming the
+        // full body into a segment offset, which would write wrong
+        // bytes up to the segment length and only then trigger the
+        // fallback (progress reaching 100% first, then resetting
+        // to 0). An open `bytes=0-` request is excluded: a 200 there
+        // is the full file, which is exactly what a single-stream
+        // download (and the fallback) wants.
+        await response.drain<void>();
+        throw const DownloadError(
+          'range-ignored',
+          'Server ignored Range and returned 200',
+        );
+      }
       yield* response;
     } else {
       await response.drain<void>();

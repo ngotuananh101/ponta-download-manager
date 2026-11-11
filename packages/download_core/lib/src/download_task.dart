@@ -329,6 +329,12 @@ class DownloadTask {
       } on _RangeIgnored {
         rethrow;
       } on DownloadError catch (e) {
+        if (e.code == 'range-ignored') {
+          // The transport detected a 200 answer to a Range request
+          // before any body was read: fall back to single-stream the
+          // same way as the late _RangeIgnored detection.
+          throw const _RangeIgnored();
+        }
         if (_cancelled || _aborted) {
           return;
         }

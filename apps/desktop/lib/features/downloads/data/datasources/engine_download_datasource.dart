@@ -84,11 +84,21 @@ class EngineDownloadDatasource {
         if (current == null) {
           return;
         }
+        // A progress event must not revive a paused (or terminal)
+        // download: after Pause, one in-flight chunk can still emit
+        // progress, and forcing the state to downloading would flick
+        // the row back to "Downloading" with the old % even though
+        // the download has stopped. The bytes still update (that
+        // chunk really was downloaded).
+        final stopped = current.state == DownloadState.paused ||
+            current.state == DownloadState.cancelled ||
+            current.state == DownloadState.failed ||
+            current.state == DownloadState.completed;
         _downloads[downloadId] = current.copyWith(
           downloadedBytes: downloadedBytes,
           totalBytes: totalBytes,
           bytesPerSecond: bytesPerSecond,
-          state: DownloadState.downloading,
+          state: stopped ? current.state : DownloadState.downloading,
         );
         _progressDirty = true;
       },

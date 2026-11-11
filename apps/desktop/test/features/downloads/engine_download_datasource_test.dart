@@ -124,6 +124,47 @@ void main() {
       });
     });
 
+    test('a progress event after pause does not revive the download', () {
+      fakeAsync((async) {
+        when(
+          () => engine.listDownloads(),
+        ).thenAnswer(
+          (_) async => [info(status: DownloadStatus.downloading)],
+        );
+        final source = datasource();
+        final emitted = <List<Download>>[];
+        final sub = source.watchDownloads().listen(emitted.add);
+        async.flushMicrotasks();
+        expect(emitted.last.single.state, DownloadState.downloading);
+        // Pause: the state flips to paused at once.
+        events.add(
+          DownloadEvent.stateChanged(
+            downloadId: 'dl-1',
+            status: DownloadStatus.paused,
+          ),
+        );
+        async.flushMicrotasks();
+        expect(emitted.last.single.state, DownloadState.paused);
+        // An in-flight chunk's progress arrives after the pause. The
+        // bytes update, but the row must stay paused instead of
+        // flicking back to "Downloading" with the old %.
+        events.add(
+          DownloadEvent.progress(
+            downloadId: 'dl-1',
+            downloadedBytes: 500,
+            totalBytes: 1000,
+            bytesPerSecond: 100,
+          ),
+        );
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 100));
+        expect(emitted.last.single.downloadedBytes, 500);
+        expect(emitted.last.single.state, DownloadState.paused);
+        sub.cancel();
+        unawaited(source.dispose());
+      });
+    });
+
     test('addDownload joins the list from the create response', () async {
       when(
         () => engine.listDownloads(),

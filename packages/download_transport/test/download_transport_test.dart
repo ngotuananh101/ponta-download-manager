@@ -183,6 +183,22 @@ void main() {
       );
     });
 
+    test('a 200 answer to a Range request throws range-ignored', () async {
+      // /no-range ignores Range and answers 200 with the full body.
+      // Yielding that body into a segment offset would write the
+      // wrong bytes; the task must fail fast instead, before any
+      // chunk is consumed.
+      await expectLater(
+        transport
+            .openStream(base.resolve('/no-range'), start: 0, end: 99)
+            .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk)),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'range-ignored'),
+        ),
+      );
+    });
+
     test('cancelling the stream stops the download', () async {
       final received = <int>[];
       final firstChunk = Completer<void>();
