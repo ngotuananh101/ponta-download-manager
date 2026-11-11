@@ -9,4 +9,7 @@ abstract interface class DownloadRepository {
   Future<Either<Failure, Unit>> resumeDownload(String id);
   Future<Either<Failure, Unit>> cancelDownload(String id);
   Future<Either<Failure, Unit>> retryDownload(String id);
+
+  /// Snail mode: a global speed cap in bytes/s (null = unlimited).
+  Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 }

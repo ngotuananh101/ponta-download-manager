@@ -81,6 +81,35 @@ void main() {
       );
     });
 
+    test('setGlobalBandwidthLimit delegates to the datasource', () async {
+      when(
+        () => datasource.setGlobalBandwidthLimit(any()),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.setGlobalBandwidthLimit(8192)).isRight(),
+        isTrue,
+      );
+      expect(
+        (await repository.setGlobalBandwidthLimit(null)).isRight(),
+        isTrue,
+      );
+      verify(() => datasource.setGlobalBandwidthLimit(8192)).called(1);
+      verify(() => datasource.setGlobalBandwidthLimit(null)).called(1);
+    });
+
+    test('setGlobalBandwidthLimit maps an engine error to a failure',
+        () async {
+      when(() => datasource.setGlobalBandwidthLimit(any())).thenThrow(
+        const DownloadError('internal', 'boom'),
+      );
+      final result = await repository.setGlobalBandwidthLimit(8192);
+      expect(result.isLeft(), isTrue);
+      result.fold(
+        (failure) => expect(failure.message, 'boom'),
+        (_) => fail('expected a failure'),
+      );
+    });
+
     test('resume, cancel and retry delegate to the datasource', () async {
       when(() => datasource.resumeDownload(any())).thenAnswer((_) async {});
       when(() => datasource.cancelDownload(any())).thenAnswer((_) async {});

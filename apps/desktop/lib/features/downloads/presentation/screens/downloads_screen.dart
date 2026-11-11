@@ -37,12 +37,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   final _selected = <String>{};
   bool _dragOver = false;
 
-  /// Whether the global toggle is OFF (all active downloads paused).
-  bool _globalPaused = false;
+  /// Snail mode: when ON, the global download speed is capped at
+  /// [_snailModeBytesPerSecond] to keep the connection continuous
+  /// with the server. OFF means unlimited.
+  static const _snailModeBytesPerSecond = 8192;
 
-  /// The downloads this toggle paused, so turning it back ON resumes
-  /// exactly those and not ones the user paused by hand.
-  Set<String> _globalPausedIds = {};
+  /// Whether snail mode is currently ON.
+  bool _snailMode = false;
 
   @override
   void dispose() {
@@ -119,10 +120,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               onSelected: (s) => setState(() => _sort = s),
               itemBuilder: (context) => DownloadSort.values
                   .map(
-                    (s) => PopupMenuItem(
-                      value: s,
-                      child: Text(_sortLabel(s)),
-                    ),
+                    (s) => PopupMenuItem(value: s, child: Text(_sortLabel(s))),
                   )
                   .toList(),
               child: Row(
@@ -149,10 +147,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               onSelected: (f) => setState(() => _filter = f),
               itemBuilder: (context) => DownloadFilter.values
                   .map(
-                    (f) => PopupMenuItem(
-                      value: f,
-                      child: Text(_filterLabel(f)),
-                    ),
+                    (f) =>
+                        PopupMenuItem(value: f, child: Text(_filterLabel(f))),
                   )
                   .toList(),
               child: Row(
@@ -180,10 +176,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             child: FilledButton.icon(
               onPressed: () => _showAddDialog(),
               icon: const Icon(Icons.add, size: 18),
-              label: Text(
-                'Add download',
-                style: AppTextSize.sm.textStyle(),
-              ),
+              label: Text('Add download', style: AppTextSize.xs.textStyle()),
               style: AppTheme.buttonStyle(AppButtonSize.sm).copyWith(
                 // The default padded tap target forces a 48px minimum;
                 // shrinkWrap lets the button fit in the 36px box.
@@ -233,9 +226,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 filled: false,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s2,
-                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.s2),
               ),
               onChanged: (value) => setState(() => _query = value),
             ),
@@ -249,14 +240,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               padding: EdgeInsets.zero,
               onSelected: _onMenuSelected,
               itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'pause-all',
-                  child: Text('Pause all'),
-                ),
-                PopupMenuItem(
-                  value: 'resume-all',
-                  child: Text('Resume all'),
-                ),
+                PopupMenuItem(value: 'pause-all', child: Text('Pause all')),
+                PopupMenuItem(value: 'resume-all', child: Text('Resume all')),
               ],
               // An explicit child (not the icon form): the icon form
               // builds an IconButton whose 48px minimum survives both
@@ -417,9 +402,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   Widget _buildBody(List<Download> items, List<Download> visible) {
     final Widget content;
-    if (items.isEmpty &&
-        _filter == DownloadFilter.all &&
-        _query.isEmpty) {
+    if (items.isEmpty && _filter == DownloadFilter.all && _query.isEmpty) {
       content = _buildDropZone();
     } else if (visible.isEmpty) {
       content = const Center(child: Text('No downloads match.'));
@@ -433,12 +416,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         if (_dragOver)
           Positioned.fill(
             child: Container(
-              color: Theme.of(context).colorScheme.primary.withValues(
-                alpha: 0.08,
-              ),
-              child: const Center(
-                child: Text('Drop to add download'),
-              ),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.08),
+              child: const Center(child: Text('Drop to add download')),
             ),
           ),
       ],
@@ -479,8 +460,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               height: rowsHeight,
               child: ListView.builder(
                 itemCount: visible.length,
-                itemBuilder: (context, index) =>
-                    _buildTableRow(visible[index]),
+                itemBuilder: (context, index) => _buildTableRow(visible[index]),
               ),
             ),
             Expanded(child: _buildDropZone()),
@@ -542,9 +522,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         color: selected
             ? colorScheme.surfaceContainerHigh
             : colorScheme.surfaceContainer,
-        border: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         children: [
@@ -575,10 +553,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 ),
                 const SizedBox(width: AppSpacing.s2),
                 Expanded(
-                  child: Text(
-                    item.fileName,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(item.fileName, overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
@@ -691,16 +666,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         return;
     }
     final result = await call();
-    result.fold(
-      (failure) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(failure.message)));
-        }
-      },
-      (_) {},
-    );
+    result.fold((failure) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+      }
+    }, (_) {});
   }
 
   Widget _buildDropZone() {
@@ -747,29 +719,24 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           .toList(),
     );
     if (result.hasTorrent && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Torrent chưa hỗ trợ.')),
-      );
-    } else if (result.hasOtherFile &&
-        result.urls.isEmpty &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chỉ hỗ trợ kéo-thả URL.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Torrent chưa hỗ trợ.')));
+    } else if (result.hasOtherFile && result.urls.isEmpty && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Chỉ hỗ trợ kéo-thả URL.')));
     }
     final actions = ref.read(downloadsActionsProvider);
     for (final url in result.urls) {
       final addResult = await actions.addDownload(url);
-      addResult.fold(
-        (failure) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(failure.message)));
-          }
-        },
-        (_) {},
-      );
+      addResult.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        }
+      }, (_) {});
     }
   }
 
@@ -788,7 +755,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       color: colorScheme.surface,
       child: Row(
         children: [
-          _buildGlobalToggle(items),
+          _buildGlobalToggle(),
           const SizedBox(width: AppSpacing.s4),
           Icon(
             Icons.arrow_downward,
@@ -827,18 +794,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   /// one, else the newest download.
   Download? _statusFile(List<Download> visible) {
     if (_selected.isNotEmpty) {
-      final selected =
-          visible.where((d) => _selected.contains(d.id)).toList();
+      final selected = visible.where((d) => _selected.contains(d.id)).toList();
       if (selected.isNotEmpty) return selected.first;
     }
     return visible.isNotEmpty ? visible.first : null;
   }
 
-  Widget _buildGlobalToggle(List<Download> items) {
+  Widget _buildGlobalToggle() {
     final colorScheme = Theme.of(context).colorScheme;
-    final isOff = _globalPaused;
+    final isOff = !_snailMode;
     return InkWell(
-      onTap: () => _toggleGlobalPause(items),
+      onTap: _toggleSnailMode,
       borderRadius: BorderRadius.circular(AppRadius.full),
       child: Container(
         padding: const EdgeInsets.symmetric(
@@ -873,38 +839,20 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  Future<void> _toggleGlobalPause(List<Download> items) async {
+  Future<void> _toggleSnailMode() async {
     final actions = ref.read(downloadsActionsProvider);
-    if (!_globalPaused) {
-      final active = items
-          .where(
-            (d) =>
-                d.state == DownloadState.downloading ||
-                d.state == DownloadState.queued,
-          )
-          .map((d) => d.id)
-          .toList();
-      for (final id in active) {
-        await actions.pauseDownload(id);
-      }
-      if (mounted) {
-        setState(() {
-          _globalPaused = true;
-          _globalPausedIds = active.toSet();
-        });
-      }
-    } else {
-      final ids = _globalPausedIds.toList();
-      for (final id in ids) {
-        await actions.resumeDownload(id);
-      }
-      if (mounted) {
-        setState(() {
-          _globalPaused = false;
-          _globalPausedIds = {};
-        });
-      }
+    final enabling = !_snailMode;
+    final result = await actions.setGlobalBandwidthLimit(
+      enabling ? _snailModeBytesPerSecond : null,
+    );
+    if (!mounted) {
+      return;
     }
+    result.fold((failure) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
+    }, (_) => setState(() => _snailMode = enabling));
   }
 
   Widget _buildHighBadge() {
@@ -921,11 +869,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.speed,
-            size: 14,
-            color: colorScheme.secondary,
-          ),
+          Icon(Icons.speed, size: 14, color: colorScheme.secondary),
           const SizedBox(width: AppSpacing.s1),
           Text(
             'HIGH',
@@ -944,10 +888,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return OutlinedButton.icon(
       onPressed: _openSupport,
       icon: const Icon(Icons.favorite_outline, size: 18),
-      label: Text(
-        'Support the project',
-        style: AppTextSize.sm.textStyle(),
-      ),
+      label: Text('Support the project', style: AppTextSize.sm.textStyle()),
       style: OutlinedButton.styleFrom(
         foregroundColor: colorScheme.secondary,
         side: BorderSide(color: colorScheme.secondary),
@@ -964,9 +905,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final uri = Uri.parse(_repoUrl);
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không mở được $_repoUrl')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Không mở được $_repoUrl')));
     }
   }
 
@@ -996,18 +937,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       ),
     );
     if (url != null && url.isNotEmpty) {
-      final result =
-          await ref.read(downloadsActionsProvider).addDownload(url);
-      result.fold(
-        (failure) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(failure.message)));
-          }
-        },
-        (_) {},
-      );
+      final result = await ref.read(downloadsActionsProvider).addDownload(url);
+      result.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        }
+      }, (_) {});
     }
   }
 }

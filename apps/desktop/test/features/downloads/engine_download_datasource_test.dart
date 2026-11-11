@@ -167,6 +167,19 @@ void main() {
       verify(() => engine.retryDownload('dl-1')).called(1);
     });
 
+    test('setGlobalBandwidthLimit forwards the limit to the engine',
+        () async {
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.setGlobalBandwidthLimit(any()),
+      ).thenAnswer((_) async {});
+      await source.setGlobalBandwidthLimit(8192);
+      await source.setGlobalBandwidthLimit(null);
+      verify(() => engine.setGlobalBandwidthLimit(8192)).called(1);
+      verify(() => engine.setGlobalBandwidthLimit(null)).called(1);
+    });
+
     test('dispose disposes the engine', () async {
       final source = datasource();
       await source.dispose();

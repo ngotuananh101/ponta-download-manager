@@ -52,6 +52,11 @@ class DownloadRepositoryImpl implements DownloadRepository {
   Future<Either<Failure, Unit>> retryDownload(String id) =>
       _act(() => _datasource.retryDownload(id));
 
+  @override
+  Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
+    int? bytesPerSecond,
+  ) => _act(() => _datasource.setGlobalBandwidthLimit(bytesPerSecond));
+
   Future<Either<Failure, Unit>> _act(Future<void> Function() call) async {
     try {
       await call();

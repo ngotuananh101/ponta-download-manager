@@ -155,6 +155,11 @@ class EngineDownloadDatasource {
 
   Future<void> retryDownload(String id) => engine.retryDownload(id);
 
+  /// Snail mode: a global speed cap (null = unlimited). Forwarded to
+  /// the engine's token-bucket limiter.
+  Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>
+      engine.setGlobalBandwidthLimit(bytesPerSecond);
+
   String _fileNameFromUrl(String url) {
     final uri = Uri.tryParse(url);
     final segments = uri?.pathSegments ?? const [];

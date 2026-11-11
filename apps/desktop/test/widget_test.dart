@@ -179,7 +179,26 @@ void main() {
     expect(find.text('0 B/s'), findsNWidgets(2));
     expect(find.text('HIGH'), findsOneWidget);
     expect(find.text('Support the project'), findsOneWidget);
+    // Snail mode is OFF by default (unlimited speed).
+    expect(find.text('OFF'), findsOneWidget);
+  });
+
+  testWidgets('the status bar toggle switches snail mode on and off',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.setGlobalBandwidthLimit(any()),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    expect(find.text('OFF'), findsOneWidget);
+    await tester.tap(find.text('OFF'));
+    await tester.pumpAndSettle();
+    verify(() => actions.setGlobalBandwidthLimit(8192)).called(1);
     expect(find.text('ON'), findsOneWidget);
+    await tester.tap(find.text('ON'));
+    await tester.pumpAndSettle();
+    verify(() => actions.setGlobalBandwidthLimit(null)).called(1);
+    expect(find.text('OFF'), findsOneWidget);
   });
 
   testWidgets('shows the drop zone when there are no downloads',
