@@ -119,27 +119,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                     tooltip: 'Select',
                     padding: EdgeInsets.zero,
                     onSelected: (option) => _selectBy(option, visible),
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: _SelectBy.all,
-                        child: Text('All'),
-                      ),
-                      PopupMenuItem(
-                        value: _SelectBy.downloadsOnly,
-                        child: Text('Downloads only'),
-                      ),
-                      PopupMenuItem(
-                        value: _SelectBy.uploadsOnly,
-                        child: Text('Uploads only'),
-                      ),
-                      PopupMenuItem(
-                        value: _SelectBy.completed,
-                        child: Text('Completed'),
-                      ),
-                      PopupMenuItem(
-                        value: _SelectBy.stopped,
-                        child: Text('Stopped'),
-                      ),
+                    itemBuilder: (context) => [
+                      _menuItem(_SelectBy.all, 'All'),
+                      _menuItem(_SelectBy.downloadsOnly, 'Downloads only'),
+                      _menuItem(_SelectBy.uploadsOnly, 'Uploads only'),
+                      _menuItem(_SelectBy.completed, 'Completed'),
+                      _menuItem(_SelectBy.stopped, 'Stopped'),
                     ],
                     // An explicit child (not the icon form): the icon
                     // form builds an IconButton whose 48px minimum
@@ -159,9 +144,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               padding: EdgeInsets.zero,
               onSelected: (s) => setState(() => _sort = s),
               itemBuilder: (context) => DownloadSort.values
-                  .map(
-                    (s) => PopupMenuItem(value: s, child: Text(_sortLabel(s))),
-                  )
+                  .map((s) => _menuItem(s, _sortLabel(s)))
                   .toList(),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -189,7 +172,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 for (final f in DownloadFilter.values) ...[
                   if (f == DownloadFilter.torrent)
                     const PopupMenuDivider(),
-                  PopupMenuItem(value: f, child: Text(_filterLabel(f))),
+                  _menuItem(f, _filterLabel(f)),
                 ],
               ],
               child: Row(
@@ -312,6 +295,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: child,
+    );
+  }
+
+  // One menu row for the toolbar selects: xs text like the table rows,
+  // in a compact 32px row instead of the 48px PopupMenuItem default.
+  PopupMenuItem<T> _menuItem<T>(T value, String label) {
+    return PopupMenuItem<T>(
+      value: value,
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      child: Text(label, style: AppTextSize.xs.textStyle()),
     );
   }
 

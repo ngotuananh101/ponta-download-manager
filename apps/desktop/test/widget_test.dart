@@ -6,6 +6,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pdm/app/app.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
+import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 
 class MockDownloadsActions extends Mock implements DownloadsActions {}
@@ -502,5 +503,33 @@ void main() {
     await tester.tap(find.text('Uploads only'));
     await tester.pumpAndSettle();
     expect(find.textContaining('selected'), findsNothing);
+  });
+
+  testWidgets('the toolbar select menus use xs text in compact rows',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Newest'));
+    await tester.pumpAndSettle();
+    for (final option in [
+      'Newest',
+      'Old',
+      'A-Z',
+      'Z-A',
+      'By size: large',
+      'By size: small',
+      'By status: ascending',
+      'By status: descending',
+    ]) {
+      expect(find.text(option), findsWidgets);
+    }
+    // The menu item text is xs (12px) like the table rows.
+    final menuText = tester.widget<Text>(find.text('By size: large').last);
+    expect(menuText.style?.fontSize, 12);
+    // The menu rows are compact (32px, not the 48px default).
+    final items = tester.widgetList<PopupMenuItem<DownloadSort>>(
+      find.byType(PopupMenuItem<DownloadSort>),
+    );
+    expect(items.length, 8);
+    expect(items.every((item) => item.height == 32), isTrue);
   });
 }
