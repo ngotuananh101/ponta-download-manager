@@ -3,7 +3,7 @@
   "name": "Ponta Download Manager",
   "version": "0.1.0",
   "description": "Send downloads to the PDM desktop engine.",
-  "permissions": ["contextMenus", "nativeMessaging", "notifications"],
+  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads"],
   "background": {
     "service_worker": "background.js"
   },

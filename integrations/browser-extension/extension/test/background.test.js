@@ -40,9 +40,13 @@ function fakePort(name) {
 }
 
 function fakeChrome() {
-  const listeners = {installed: [], clicked: []};
+  const listeners = {installed: [], clicked: [], created: []};
   const ports = [];
   const notifications = [];
+  const cancelled = [];
+  const erased = [];
+  const storageValues = {pdmIntercept: true};
+  const storageChangeListeners = [];
   const chromeApi = {
     runtime: {
       lastError: null,
@@ -67,8 +71,57 @@ function fakeChrome() {
         return 'notif-1';
       },
     },
+    downloads: {
+      onCreated: {addListener: (fn) => listeners.created.push(fn)},
+      cancel: (id, cb) => {
+        cancelled.push(id);
+        if (cb) cb();
+      },
+      erase: (query, cb) => {
+        erased.push(query);
+        if (cb) cb();
+      },
+    },
+    storage: {
+      local: {
+        get: (defaults, cb) => {
+          const result = {...defaults, ...storageValues};
+          if (cb) cb(result);
+        },
+        set: (items, cb) => {
+          const changes = {};
+          for (const key of Object.keys(items)) {
+            changes[key] = {
+              oldValue: storageValues[key],
+              newValue: items[key],
+            };
+            storageValues[key] = items[key];
+          }
+          if (cb) cb();
+          for (const fn of storageChangeListeners) {
+            fn(changes, 'local');
+          }
+        },
+      },
+      onChanged: {
+        addListener: (fn) => storageChangeListeners.push(fn),
+      },
+    },
   };
-  return {chromeApi, listeners, ports, notifications};
+  return {
+    chromeApi,
+    listeners,
+    ports,
+    notifications,
+    cancelled,
+    erased,
+    storageValues,
+  };
+}
+
+function emitDownloadCreated(listeners, item) {
+  assert.equal(listeners.created.length, 1);
+  listeners.created[0](item);
 }
 
 function installed(chromeApi, listeners) {
@@ -166,4 +219,79 @@ test('a click with no url posts nothing', () => {
   installed(chromeApi, listeners);
   listeners.clicked[0]({});
   assert.equal(ports.length, 0);
+});
+
+test('a browser download is intercepted: cancel + erase + post to PDM', () => {
+  const {chromeApi, listeners, ports, cancelled, erased} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 7,
+    url: 'https://example.com/files/setup.exe',
+    filename: 'setup.exe',
+    state: 'in_progress',
+  });
+  assert.deepEqual(cancelled, [7]);
+  assert.deepEqual(erased, [{id: 7}]);
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted.length, 1);
+  const message = ports[0].posted[0];
+  assert.equal(message.type, 'download.create');
+  assert.equal(message.url, 'https://example.com/files/setup.exe');
+  assert.equal(message.fileName, 'setup.exe');
+});
+
+test('a blob download is not intercepted', () => {
+  const {chromeApi, listeners, ports, cancelled, erased} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 8,
+    url: 'blob:https://example.com/1234-5678',
+    filename: 'video.mp4',
+    state: 'in_progress',
+  });
+  assert.deepEqual(cancelled, []);
+  assert.deepEqual(erased, []);
+  assert.equal(ports.length, 0);
+});
+
+test('interception off does nothing on download created', () => {
+  const {chromeApi, listeners, ports, cancelled, storageValues} = fakeChrome();
+  storageValues.pdmIntercept = false;
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 9,
+    url: 'https://example.com/a.zip',
+    filename: 'a.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(cancelled, []);
+  assert.equal(ports.length, 0);
+});
+
+test('the intercepted file name comes from the browser filename', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 10,
+    url: 'https://example.com/download?id=42',
+    filename: 'report-2026.pdf',
+    state: 'in_progress',
+  });
+  assert.equal(ports[0].posted[0].fileName, 'report-2026.pdf');
+});
+
+test('an intercepted download that PDM rejects shows the error', () => {
+  const {chromeApi, listeners, ports, notifications} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 11,
+    url: 'https://example.com/a.zip',
+    filename: 'a.zip',
+    state: 'in_progress',
+  });
+  const message = ports[0].posted[0];
+  ports[0]._emitMessage({id: message.id, ok: false, message: 'Engine is not running'});
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].title, 'PDM download failed');
+  assert.equal(notifications[0].message, 'Engine is not running');
 });

@@ -6,6 +6,9 @@
 
 const HOST_NAME = 'com.ponta.pdm';
 
+// Interception is on by default; the popup flips it in storage.
+let interceptEnabled = true;
+
 function fileNameFromUrl(url) {
   try {
     const parsed = new URL(url);
@@ -15,6 +18,27 @@ function fileNameFromUrl(url) {
   } catch {
     return undefined;
   }
+}
+
+// Only http(s) can be handed to PDM. blob: and data: URLs live only
+// in the browser's memory, so the browser keeps downloading those.
+function isInterceptableUrl(url) {
+  return (
+    typeof url === 'string' &&
+    (url.startsWith('http://') || url.startsWith('https://'))
+  );
+}
+
+// The browser's suggested file name, if any, wins over the URL;
+// it may carry a directory, so only the last segment is used.
+function fileNameFromDownloadItem(item) {
+  if (item.filename) {
+    const base = item.filename.split('/').pop().split('\\').pop();
+    if (base) {
+      return base;
+    }
+  }
+  return fileNameFromUrl(item.url);
 }
 
 function randomId() {
@@ -33,7 +57,90 @@ function showError(chromeApi, message) {
   });
 }
 
+// Sends one download to PDM through the native host. Shared by the
+// context menu and the download interceptor.
+function sendDownload(chromeApi, url, fileName) {
+  const id = randomId();
+  let port;
+  try {
+    port = chromeApi.runtime.connectNative(HOST_NAME);
+  } catch {
+    showError(
+      chromeApi,
+      'PDM native host is not installed — run install.sh',
+    );
+    return;
+  }
+  const onMessage = (reply) => {
+    if (!reply || reply.id !== id) {
+      return;
+    }
+    port.onMessage.removeListener(onMessage);
+    port.disconnect();
+    if (reply.ok) {
+      chromeApi.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'Download added',
+        message: fileName ? `${fileName} — download started` : 'Download started',
+      });
+    } else {
+      showError(chromeApi, reply.message || 'Download failed');
+    }
+  };
+  const onDisconnect = () => {
+    port.onMessage.removeListener(onMessage);
+    const error = chromeApi.runtime.lastError;
+    if (error) {
+      showError(
+        chromeApi,
+        'PDM native host is not installed — run install.sh',
+      );
+    }
+  };
+  port.onMessage.addListener(onMessage);
+  port.onDisconnect.addListener(onDisconnect);
+  port.postMessage({type: 'download.create', id, url, fileName});
+}
+
+// Intercepts one browser download: stops the browser's own download
+// and hands the URL to PDM instead.
+function interceptDownload(chromeApi, item) {
+  if (!interceptEnabled) {
+    return;
+  }
+  if (!item || !isInterceptableUrl(item.url)) {
+    return;
+  }
+  const fileName = fileNameFromDownloadItem(item);
+  if (chromeApi.downloads.cancel) {
+    chromeApi.downloads.cancel(item.id, () => {});
+  }
+  if (chromeApi.downloads.erase) {
+    chromeApi.downloads.erase({id: item.id}, () => {});
+  }
+  sendDownload(chromeApi, item.url, fileName);
+}
+
+function loadInterceptSetting(chromeApi) {
+  interceptEnabled = true;
+  if (!chromeApi.storage || !chromeApi.storage.local) {
+    return;
+  }
+  chromeApi.storage.local.get({pdmIntercept: true}, (items) => {
+    interceptEnabled = items.pdmIntercept !== false;
+  });
+  if (chromeApi.storage.onChanged) {
+    chromeApi.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.pdmIntercept) {
+        interceptEnabled = changes.pdmIntercept.newValue !== false;
+      }
+    });
+  }
+}
+
 function setupExtension(chromeApi) {
+  loadInterceptSetting(chromeApi);
   chromeApi.runtime.onInstalled.addListener(() => {
     chromeApi.contextMenus.create({
       id: 'pdm-download-link',
@@ -52,49 +159,14 @@ function setupExtension(chromeApi) {
     if (!url) {
       return;
     }
-    const fileName = fileNameFromUrl(url);
-    const id = randomId();
-    let port;
-    try {
-      port = chromeApi.runtime.connectNative(HOST_NAME);
-    } catch {
-      showError(
-        chromeApi,
-        'PDM native host is not installed — run install.sh',
-      );
-      return;
-    }
-    const onMessage = (reply) => {
-      if (!reply || reply.id !== id) {
-        return;
-      }
-      port.onMessage.removeListener(onMessage);
-      port.disconnect();
-      if (reply.ok) {
-        chromeApi.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Download added',
-          message: fileName ? `${fileName} — download started` : 'Download started',
-        });
-      } else {
-        showError(chromeApi, reply.message || 'Download failed');
-      }
-    };
-    const onDisconnect = () => {
-      port.onMessage.removeListener(onMessage);
-      const error = chromeApi.runtime.lastError;
-      if (error) {
-        showError(
-          chromeApi,
-          'PDM native host is not installed — run install.sh',
-        );
-      }
-    };
-    port.onMessage.addListener(onMessage);
-    port.onDisconnect.addListener(onDisconnect);
-    port.postMessage({type: 'download.create', id, url, fileName});
+    sendDownload(chromeApi, url, fileNameFromUrl(url));
   });
+
+  if (chromeApi.downloads && chromeApi.downloads.onCreated) {
+    chromeApi.downloads.onCreated.addListener((item) => {
+      interceptDownload(chromeApi, item);
+    });
+  }
 }
 
 // In the real extension, `chrome` is the global API object.
@@ -103,5 +175,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {setupExtension, fileNameFromUrl, HOST_NAME};
+  module.exports = {
+    setupExtension,
+    fileNameFromUrl,
+    isInterceptableUrl,
+    fileNameFromDownloadItem,
+    HOST_NAME,
+  };
 }
