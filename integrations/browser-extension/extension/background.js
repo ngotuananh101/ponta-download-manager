@@ -9,6 +9,10 @@ const HOST_NAME = 'com.ponta.pdm';
 // Interception is on by default; the popup flips it in storage.
 let interceptEnabled = true;
 
+// Media found on each tab, by tab id. Filled by content scripts,
+// cleared when a tab closes or navigates.
+const mediaByTab = new Map();
+
 function fileNameFromUrl(url) {
   try {
     const parsed = new URL(url);
@@ -139,6 +143,58 @@ function loadInterceptSetting(chromeApi) {
   }
 }
 
+function setInterceptEnabled(chromeApi, enabled) {
+  interceptEnabled = enabled;
+  if (chromeApi.storage && chromeApi.storage.local) {
+    chromeApi.storage.local.set({pdmIntercept: enabled}, () => {});
+  }
+}
+
+// Answers messages from the popup and from content scripts.
+function handleMessage(chromeApi, message, sender, sendResponse) {
+  if (!message || typeof message.type !== 'string') {
+    return false;
+  }
+  switch (message.type) {
+    case 'media.found': {
+      const tabId = sender && sender.tab && sender.tab.id;
+      if (typeof tabId === 'number' && Array.isArray(message.items)) {
+        mediaByTab.set(tabId, message.items);
+      }
+      return false;
+    }
+    case 'media.list': {
+      if (!chromeApi.tabs || !chromeApi.tabs.query) {
+        sendResponse({items: []});
+        return false;
+      }
+      chromeApi.tabs.query({active: true, currentWindow: true}, (tabs) => {
+        const tabId = tabs && tabs[0] && tabs[0].id;
+        sendResponse({items: mediaByTab.get(tabId) || []});
+      });
+      return true;
+    }
+    case 'media.download': {
+      if (typeof message.url === 'string') {
+        sendDownload(chromeApi, message.url, message.fileName);
+      }
+      sendResponse({ok: true});
+      return false;
+    }
+    case 'intercept.get': {
+      sendResponse({enabled: interceptEnabled});
+      return false;
+    }
+    case 'intercept.set': {
+      setInterceptEnabled(chromeApi, message.enabled !== false);
+      sendResponse({ok: true});
+      return false;
+    }
+    default:
+      return false;
+  }
+}
+
 function setupExtension(chromeApi) {
   loadInterceptSetting(chromeApi);
   chromeApi.runtime.onInstalled.addListener(() => {
@@ -166,6 +222,27 @@ function setupExtension(chromeApi) {
     chromeApi.downloads.onCreated.addListener((item) => {
       interceptDownload(chromeApi, item);
     });
+  }
+
+  if (chromeApi.runtime.onMessage) {
+    chromeApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      return handleMessage(chromeApi, message, sender, sendResponse);
+    });
+  }
+
+  if (chromeApi.tabs) {
+    if (chromeApi.tabs.onRemoved) {
+      chromeApi.tabs.onRemoved.addListener((tabId) => {
+        mediaByTab.delete(tabId);
+      });
+    }
+    if (chromeApi.tabs.onUpdated) {
+      chromeApi.tabs.onUpdated.addListener((tabId, changeInfo) => {
+        if (changeInfo.url) {
+          mediaByTab.delete(tabId);
+        }
+      });
+    }
   }
 }
 

@@ -3,12 +3,21 @@
   "name": "Ponta Download Manager",
   "version": "0.1.0",
   "description": "Send downloads to the PDM desktop engine.",
-  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads"],
+  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
-    "default_title": "Ponta Download Manager"
+    "default_title": "Ponta Download Manager",
+    "default_popup": "popup.html"
   },
   "browser_specific_settings": {
     "gecko": {

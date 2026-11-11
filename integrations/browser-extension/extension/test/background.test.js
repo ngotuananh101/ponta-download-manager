@@ -40,21 +40,37 @@ function fakePort(name) {
 }
 
 function fakeChrome() {
-  const listeners = {installed: [], clicked: [], created: []};
+  const listeners = {
+    installed: [],
+    clicked: [],
+    created: [],
+    message: [],
+    tabRemoved: [],
+    tabUpdated: [],
+  };
   const ports = [];
   const notifications = [];
   const cancelled = [];
   const erased = [];
   const storageValues = {pdmIntercept: true};
   const storageChangeListeners = [];
+  let activeTabId = 1;
   const chromeApi = {
     runtime: {
       lastError: null,
       onInstalled: {addListener: (fn) => listeners.installed.push(fn)},
+      onMessage: {addListener: (fn) => listeners.message.push(fn)},
       connectNative: (name) => {
         const port = fakePort(name);
         ports.push(port);
         return port;
+      },
+    },
+    tabs: {
+      onRemoved: {addListener: (fn) => listeners.tabRemoved.push(fn)},
+      onUpdated: {addListener: (fn) => listeners.tabUpdated.push(fn)},
+      query: (queryInfo, cb) => {
+        cb([{id: activeTabId}]);
       },
     },
     contextMenus: {
@@ -116,7 +132,24 @@ function fakeChrome() {
     cancelled,
     erased,
     storageValues,
+    setActiveTabId: (id) => {
+      activeTabId = id;
+    },
   };
+}
+
+function emitMessage(listeners, message, sender = {}) {
+  assert.equal(listeners.message.length, 1);
+  let response;
+  let async = false;
+  const sendResponse = (value) => {
+    response = value;
+  };
+  const result = listeners.message[0](message, sender, sendResponse);
+  if (result === true) {
+    async = true;
+  }
+  return {response: () => response, async};
 }
 
 function emitDownloadCreated(listeners, item) {
@@ -294,4 +327,82 @@ test('an intercepted download that PDM rejects shows the error', () => {
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].title, 'PDM download failed');
   assert.equal(notifications[0].message, 'Engine is not running');
+});
+
+test('media.found stores items per tab and media.list returns them', () => {
+  const {chromeApi, listeners, setActiveTabId} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitMessage(
+    listeners,
+    {
+      type: 'media.found',
+      items: [{url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'}],
+    },
+    {tab: {id: 3}},
+  );
+  emitMessage(
+    listeners,
+    {
+      type: 'media.found',
+      items: [{url: 'https://cdn.example.com/song.mp3', fileName: 'song.mp3', type: 'audio'}],
+    },
+    {tab: {id: 4}},
+  );
+  setActiveTabId(3);
+  const reply = emitMessage(listeners, {type: 'media.list'});
+  assert.deepEqual(reply.response(), {
+    items: [{url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'}],
+  });
+});
+
+test('media.list returns an empty list when the tab has no media', () => {
+  const {chromeApi, listeners} = fakeChrome();
+  installed(chromeApi, listeners);
+  const reply = emitMessage(listeners, {type: 'media.list'});
+  assert.deepEqual(reply.response(), {items: []});
+});
+
+test('media.download posts a download.create to PDM', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  const reply = emitMessage(listeners, {
+    type: 'media.download',
+    url: 'https://cdn.example.com/clip.mp4',
+    fileName: 'clip.mp4',
+  });
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].type, 'download.create');
+  assert.equal(ports[0].posted[0].url, 'https://cdn.example.com/clip.mp4');
+  assert.equal(ports[0].posted[0].fileName, 'clip.mp4');
+  assert.deepEqual(reply.response(), {ok: true});
+});
+
+test('closing a tab clears its stored media', () => {
+  const {chromeApi, listeners, setActiveTabId} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitMessage(
+    listeners,
+    {
+      type: 'media.found',
+      items: [{url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'}],
+    },
+    {tab: {id: 5}},
+  );
+  assert.equal(listeners.tabRemoved.length, 1);
+  listeners.tabRemoved[0](5);
+  setActiveTabId(5);
+  const reply = emitMessage(listeners, {type: 'media.list'});
+  assert.deepEqual(reply.response(), {items: []});
+});
+
+test('intercept get and set round-trip through storage', () => {
+  const {chromeApi, listeners, storageValues} = fakeChrome();
+  installed(chromeApi, listeners);
+  let reply = emitMessage(listeners, {type: 'intercept.get'});
+  assert.deepEqual(reply.response(), {enabled: true});
+  reply = emitMessage(listeners, {type: 'intercept.set', enabled: false});
+  assert.deepEqual(reply.response(), {ok: true});
+  assert.equal(storageValues.pdmIntercept, false);
+  reply = emitMessage(listeners, {type: 'intercept.get'});
+  assert.deepEqual(reply.response(), {enabled: false});
 });
