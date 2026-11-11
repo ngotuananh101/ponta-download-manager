@@ -89,6 +89,21 @@ String downloadSizeText(Download download) {
   return formatBytes(bytes);
 }
 
+/// The icon shown before the file name, by state. The file/folder
+/// icon only appears for a finished or failed download; while a
+/// download is running or paused it shows a state icon instead (a down
+/// arrow while downloading, a play arrow while paused, as in FDM).
+IconData downloadStateIcon(DownloadState state) {
+  return switch (state) {
+    DownloadState.downloading => Icons.arrow_downward,
+    DownloadState.paused => Icons.play_arrow,
+    DownloadState.completed => Icons.folder,
+    DownloadState.failed ||
+    DownloadState.queued ||
+    DownloadState.cancelled => Icons.insert_drive_file,
+  };
+}
+
 /// The color for the Status column, from the FDM palette.
 Color downloadStatusColor(ColorScheme scheme, DownloadState state) {
   return switch (state) {

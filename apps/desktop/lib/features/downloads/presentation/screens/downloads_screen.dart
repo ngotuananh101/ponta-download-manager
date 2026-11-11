@@ -521,9 +521,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
       decoration: BoxDecoration(
-        color: selected
-            ? colorScheme.surfaceContainerHigh
-            : colorScheme.surfaceContainer,
+        // Only a selected row keeps a fill; unselected rows are
+        // transparent so the uniform window background shows through.
+        color: selected ? colorScheme.surfaceContainerHigh : Colors.transparent,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
@@ -549,9 +549,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             child: Row(
               children: [
                 Icon(
-                  Icons.insert_drive_file,
+                  downloadStateIcon(item.state),
                   size: 18,
-                  color: colorScheme.primary,
+                  color: downloadStatusColor(colorScheme, item.state),
                 ),
                 const SizedBox(width: AppSpacing.s2),
                 Expanded(
@@ -692,27 +692,25 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       child: DashedBorder(
         color: _dragOver ? colorScheme.primary : colorScheme.outline,
         radius: AppRadius.lg,
-        child: InkWell(
-          onTap: () => _showAddDialog(),
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.mouse,
-                  size: 20,
+        // Drop-only: no tap handler, so clicking the zone does nothing.
+        // A download is added from the toolbar or by dropping a URL.
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.mouse,
+                size: 20,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.s2),
+              Text(
+                'Drag-and-drop URL or torrent file',
+                style: AppTextSize.base.textStyle(
                   color: colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: AppSpacing.s2),
-                Text(
-                  'Drag-and-drop URL or torrent file',
-                  style: AppTextSize.base.textStyle(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

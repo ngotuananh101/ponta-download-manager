@@ -255,4 +255,88 @@ void main() {
     expect(find.text('Downloading'), findsOneWidget);
     expect(find.text('1.0 KiB'), findsOneWidget);
   });
+
+  testWidgets('tapping the drop zone does not open the add dialog',
+      (tester) async {
+    await pumpApp(tester, downloads: const []);
+    await tester.tap(find.text('Drag-and-drop URL or torrent file'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('only a selected row has a background fill',
+      (tester) async {
+    await pumpApp(tester);
+    // The innermost Container ancestor of the row's file name is the
+    // row itself (the name also shows in the status bar, so .first
+    // picks the table row's text).
+    final rowFinder = find
+        .ancestor(of: find.text('f.bin').first, matching: find.byType(Container))
+        .last;
+    BoxDecoration? decoration() =>
+        tester.widget<Container>(rowFinder).decoration as BoxDecoration?;
+    expect(decoration()?.color, Colors.transparent);
+    await tester.tap(
+      find.descendant(of: rowFinder, matching: find.byType(Checkbox)),
+    );
+    await tester.pumpAndSettle();
+    final scheme =
+        Theme.of(tester.element(find.text('f.bin').first)).colorScheme;
+    expect(decoration()?.color, scheme.surfaceContainerHigh);
+  });
+
+  testWidgets('the row icon follows the download state',
+      (tester) async {
+    const downloading = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const paused = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.paused,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const completed = Download(
+      id: 'dl-3',
+      url: 'http://127.0.0.1:9/c.bin',
+      fileName: 'c.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    const failed = Download(
+      id: 'dl-4',
+      url: 'http://127.0.0.1:9/d.bin',
+      fileName: 'd.bin',
+      state: DownloadState.failed,
+      downloadedBytes: 100,
+      totalBytes: 1000,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [downloading, paused, completed, failed],
+    );
+    // The icon sits in the name cell's Row, right before the name.
+    IconData iconBefore(String name) {
+      final nameRow = find
+          .ancestor(of: find.text(name).first, matching: find.byType(Row))
+          .last;
+      final icon = tester.widget<Icon>(
+        find.descendant(of: nameRow, matching: find.byType(Icon)).first,
+      );
+      return icon.icon!;
+    }
+
+    expect(iconBefore('a.bin'), Icons.arrow_downward);
+    expect(iconBefore('b.bin'), Icons.play_arrow);
+    expect(iconBefore('c.bin'), Icons.folder);
+    expect(iconBefore('d.bin'), Icons.insert_drive_file);
+  });
 }

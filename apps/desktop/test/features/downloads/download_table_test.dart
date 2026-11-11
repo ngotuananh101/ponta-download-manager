@@ -102,6 +102,32 @@ void main() {
     });
   });
 
+  group('downloadStateIcon', () {
+    test('downloading shows a down arrow, paused a play arrow', () {
+      expect(
+        downloadStateIcon(DownloadState.downloading),
+        Icons.arrow_downward,
+      );
+      expect(downloadStateIcon(DownloadState.paused), Icons.play_arrow);
+    });
+
+    test('completed shows a folder, failed/queued/cancelled a file', () {
+      expect(downloadStateIcon(DownloadState.completed), Icons.folder);
+      expect(
+        downloadStateIcon(DownloadState.failed),
+        Icons.insert_drive_file,
+      );
+      expect(
+        downloadStateIcon(DownloadState.queued),
+        Icons.insert_drive_file,
+      );
+      expect(
+        downloadStateIcon(DownloadState.cancelled),
+        Icons.insert_drive_file,
+      );
+    });
+  });
+
   group('downloadStatusColor', () {
     test('each state has its FDM color', () {
       final scheme = AppTheme.dark.colorScheme;
