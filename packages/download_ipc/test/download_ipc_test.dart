@@ -219,6 +219,29 @@ void main() {
       expect(downloads.map((d) => d.id), ['dl-1']);
     });
 
+    test('segments round-trip through the server and client', () async {
+      final client = await connectClient();
+      final info = await client.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: '/tmp/f.bin',
+        ),
+      );
+      engine.segments[info.id] = [
+        const DownloadSegment(segmentId: 0, start: 0, end: 499, downloaded: 500),
+        const DownloadSegment(segmentId: 1, start: 500, end: 999, downloaded: 0),
+      ];
+      final segments = await client.getSegments(info.id);
+      expect(segments.length, 2);
+      expect(segments.first.segmentId, 0);
+      expect(segments.first.end, 499);
+      expect(segments.first.downloaded, 500);
+      expect(segments.last.segmentId, 1);
+      expect(segments.last.start, 500);
+      expect(segments.last.downloaded, 0);
+      expect(engine.calls, contains('segments:${info.id}'));
+    });
+
     test('a second client gets the current downloads in its sync snapshot',
         () async {
       final first = await connectClient();

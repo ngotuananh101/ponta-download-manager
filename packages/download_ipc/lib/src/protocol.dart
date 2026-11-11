@@ -28,6 +28,7 @@ Map<String, Object?> downloadInfoToJson(DownloadInfo info) {
     'downloadedBytes': info.downloadedBytes,
     'totalBytes': info.totalBytes,
     'bytesPerSecond': info.bytesPerSecond,
+    'priority': info.priority,
   };
 }
 
@@ -40,6 +41,26 @@ DownloadInfo downloadInfoFromJson(Map<String, Object?> json) {
     downloadedBytes: (json['downloadedBytes'] as num?)?.toInt() ?? 0,
     totalBytes: (json['totalBytes'] as num).toInt(),
     bytesPerSecond: (json['bytesPerSecond'] as num?)?.toInt() ?? 0,
+    priority: (json['priority'] as num?)?.toInt() ?? 0,
+  );
+}
+
+/// Encodes one [DownloadSegment] as JSON for `download.segments`.
+Map<String, Object?> downloadSegmentToJson(DownloadSegment segment) {
+  return {
+    'segmentId': segment.segmentId,
+    'start': segment.start,
+    'end': segment.end,
+    'downloaded': segment.downloaded,
+  };
+}
+
+DownloadSegment downloadSegmentFromJson(Map<String, Object?> json) {
+  return DownloadSegment(
+    segmentId: (json['segmentId'] as num).toInt(),
+    start: (json['start'] as num).toInt(),
+    end: (json['end'] as num?)?.toInt(),
+    downloaded: (json['downloaded'] as num?)?.toInt() ?? 0,
   );
 }
 

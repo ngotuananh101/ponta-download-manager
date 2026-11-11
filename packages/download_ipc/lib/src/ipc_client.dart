@@ -169,6 +169,23 @@ class IpcClient {
         .toList();
   }
 
+  Future<List<DownloadSegment>> getSegments(String downloadId) async {
+    final result = await request('download.segments', {
+      'downloadId': downloadId,
+    });
+    final segments = result['segments'];
+    if (segments is! List) {
+      throw DownloadError(
+        IpcErrorCode.invalidMessage,
+        'download.segments returned no segments list',
+      );
+    }
+    return segments
+        .whereType<Map<String, Object?>>()
+        .map(downloadSegmentFromJson)
+        .toList();
+  }
+
   /// Drops the current channel and connects again with the same
   /// factory and token. The server answers with a fresh sync
   /// snapshot, so no state is lost.

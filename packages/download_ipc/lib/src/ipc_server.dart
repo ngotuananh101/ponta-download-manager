@@ -318,6 +318,11 @@ class _ClientConnection {
         return {
           'downloads': downloads.map(downloadInfoToJson).toList(),
         };
+      case 'download.segments':
+        final segments = await engine.getSegments(_downloadId(params));
+        return {
+          'segments': segments.map(downloadSegmentToJson).toList(),
+        };
       default:
         throw DownloadError(
           IpcErrorCode.unknownMethod,
