@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:flutter/material.dart';
@@ -9,14 +10,16 @@ import 'package:pdm/shared/theme/app_tokens.dart';
 
 import '../domain/entities/download.dart';
 import '../providers/download_providers.dart';
+import '../data/services/thumbnail_service.dart';
 import 'download_table.dart';
 
 /// The tab shown in the details panel.
 enum DetailsTab { general, progress, connections }
 
 /// The FDM-style details panel for the selected download, shown below
-/// the table and above the status bar. Three tabs: GENERAL (name, path,
-/// progress, downloaded, added, priority, URL), PROGRESS (a segment
+/// the table and above the status bar. Three tabs: GENERAL (a large
+/// thumbnail on the left, name and info on the right, progress below),
+/// PROGRESS (a segment
 /// bitmap), CONNECTIONS (host, port, connection count). The PROGRESS
 /// and CONNECTIONS tabs fetch per-segment progress when they are
 /// opened and whenever the download's bytes change; GENERAL needs no
@@ -40,6 +43,8 @@ class _DownloadDetailsPanelState
     extends ConsumerState<DownloadDetailsPanel> {
   DetailsTab _tab = DetailsTab.general;
   List<DownloadSegment> _segments = [];
+  final _thumbnails = ThumbnailService();
+  String? _thumbPath;
 
   Future<void> _fetchSegments() async {
     final result = await ref
@@ -60,6 +65,24 @@ class _DownloadDetailsPanelState
   }
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_loadThumbnail());
+  }
+
+  /// Resolves the thumbnail for the selected download (an image
+  /// itself, or a video frame via ffmpeg). A stale result from a
+  /// previous selection is ignored.
+  Future<void> _loadThumbnail() async {
+    final id = widget.download.id;
+    final thumbPath = await _thumbnails.thumbnailFor(widget.download);
+    if (!mounted || widget.download.id != id) return;
+    if (thumbPath != _thumbPath) {
+      setState(() => _thumbPath = thumbPath);
+    }
+  }
+
+  @override
   void didUpdateWidget(DownloadDetailsPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The panel follows the selected download: when the selection
@@ -76,6 +99,14 @@ class _DownloadDetailsPanelState
     }
     if ((idChanged || bytesChanged) && _tab != DetailsTab.general) {
       unawaited(_fetchSegments());
+    }
+    final thumbChanged =
+        idChanged ||
+        oldWidget.download.state != widget.download.state ||
+        oldWidget.download.filePath != widget.download.filePath;
+    if (thumbChanged) {
+      if (idChanged) _thumbPath = null;
+      unawaited(_loadThumbnail());
     }
   }
 
@@ -172,33 +203,67 @@ class _DownloadDetailsPanelState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.folder,
-              size: 20,
-              color: downloadStatusColor(colorScheme, download.state),
-            ),
-            const SizedBox(width: AppSpacing.s2),
+            _buildThumb(colorScheme),
+            const SizedBox(width: AppSpacing.s3),
             Expanded(
-              child: Text(
-                download.fileName,
-                style: AppTextSize.base.textStyle(
-                  weight: AppFontWeight.semibold,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    download.fileName,
+                    style: AppTextSize.base.textStyle(
+                      weight: AppFontWeight.semibold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildCopyRow(
+                    label: 'Path',
+                    value: directory,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                    colorScheme: colorScheme,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildLabelValue(
+                    'Downloaded',
+                    download.totalBytes > 0
+                        ? '${formatBytes(download.downloadedBytes)} / '
+                              '${formatBytes(download.totalBytes)}'
+                        : formatBytes(download.downloadedBytes),
+                    labelStyle,
+                    valueStyle,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildLabelValue(
+                    'Added at',
+                    formatAddedFull(download.createdAt),
+                    labelStyle,
+                    valueStyle,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildLabelValue(
+                    'Priority',
+                    priorityLabel(download.priority),
+                    labelStyle,
+                    valueStyle,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildCopyRow(
+                    label: 'File',
+                    value: download.url,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                    colorScheme: colorScheme,
+                  ),
+                ],
               ),
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.s2),
-        _buildCopyRow(
-          label: 'Path',
-          value: directory,
-          labelStyle: labelStyle,
-          valueStyle: valueStyle,
-          colorScheme: colorScheme,
-        ),
-        const SizedBox(height: AppSpacing.s1),
         Row(
           children: [
             Expanded(
@@ -213,43 +278,50 @@ class _DownloadDetailsPanelState
             Text('$percent%', style: valueStyle),
           ],
         ),
-        const SizedBox(height: AppSpacing.s1),
-        _buildLabelValue(
-          'Downloaded',
-          download.totalBytes > 0
-              ? '${formatBytes(download.downloadedBytes)} / '
-                    '${formatBytes(download.totalBytes)}'
-              : formatBytes(download.downloadedBytes),
-          labelStyle,
-          valueStyle,
-        ),
-        const SizedBox(height: AppSpacing.s1),
-        _buildLabelValue(
-          'Added at',
-          formatAddedFull(download.createdAt),
-          labelStyle,
-          valueStyle,
-        ),
-        const SizedBox(height: AppSpacing.s1),
-        _buildLabelValue(
-          'Priority',
-          priorityLabel(download.priority),
-          labelStyle,
-          valueStyle,
-        ),
-        const SizedBox(height: AppSpacing.s1),
-        _buildCopyRow(
-          label: 'File',
-          value: download.url,
-          labelStyle: labelStyle,
-          valueStyle: valueStyle,
-          colorScheme: colorScheme,
-        ),
       ],
     );
   }
 
+  /// The 120x120 thumbnail tile: the image itself, a cached video
+  /// frame, or the large state icon when no thumbnail is available.
+  Widget _buildThumb(ColorScheme colorScheme) {
+    final thumbPath = _thumbPath;
+    final Widget child;
+    if (thumbPath == null) {
+      child = Icon(
+        downloadStateIcon(widget.download.state),
+        size: 56,
+        color: downloadStatusColor(colorScheme, widget.download.state),
+      );
+    } else {
+      child = Image.file(
+        File(thumbPath),
+        width: 120,
+        height: 120,
+        fit: BoxFit.cover,
+        cacheWidth: 240,
+        errorBuilder: (_, _, _) => Icon(
+          downloadStateIcon(widget.download.state),
+          size: 56,
+          color: downloadStatusColor(colorScheme, widget.download.state),
+        ),
+      );
+    }
+    return Container(
+      key: const Key('details-thumb'),
+      width: 120,
+      height: 120,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildLabelValue(
+
     String label,
     String value,
     TextStyle labelStyle,

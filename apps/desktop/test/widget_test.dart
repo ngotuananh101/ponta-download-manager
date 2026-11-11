@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:download_api/download_api.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -644,10 +648,13 @@ void main() {
 
   // Opens the details panel: tap the row to select it, then tap the
   // file name button in the status bar.
-  Future<void> openDetailsPanel(WidgetTester tester) async {
-    await tester.tap(find.text('f.bin').first);
+  Future<void> openDetailsPanel(
+    WidgetTester tester, [
+    String fileName = 'f.bin',
+  ]) async {
+    await tester.tap(find.text(fileName).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('f.bin').last);
+    await tester.tap(find.text(fileName).last);
     await tester.pumpAndSettle();
   }
 
@@ -711,6 +718,118 @@ void main() {
       find.descendant(
         of: panel,
         matching: find.text('http://127.0.0.1:9/f.bin'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'the details panel GENERAL tab shows a large thumbnail on the left',
+      (tester) async {
+    final detailed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      createdAt: DateTime(2026, 11, 11, 17, 10),
+      filePath: '/tmp/downloads/f.bin',
+      priority: 2,
+    );
+    await pumpApp(tester, downloads: [detailed]);
+    await openDetailsPanel(tester);
+    final panel = find.byType(DownloadDetailsPanel);
+    final thumb = find.descendant(
+      of: panel,
+      matching: find.byWidgetPredicate(
+        (w) => w is Icon && w.icon == Icons.arrow_downward && w.size == 56,
+      ),
+    );
+    expect(thumb, findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('details-thumb'))),
+      const Size(120, 120),
+    );
+    final thumbRect = tester.getRect(thumb);
+    final name = find.descendant(of: panel, matching: find.text('f.bin'));
+    expect(name, findsOneWidget);
+    final nameRect = tester.getRect(name);
+    expect(thumbRect.right, lessThanOrEqualTo(nameRect.left));
+    expect(thumbRect.top, lessThanOrEqualTo(nameRect.top + 1));
+  });
+
+  testWidgets('the details panel GENERAL tab shows the image itself',
+      (tester) async {
+    // Real file I/O awaited directly in a testWidgets body deadlocks
+    // on the fake-async zone, so the fixture file is created inside
+    // runAsync. The tearDown deletes it synchronously for the same
+    // reason.
+    late final Directory tempDir;
+    late final File imageFile;
+    await tester.runAsync(() async {
+      tempDir = await Directory.systemTemp.createTemp('pdm-thumb-test-');
+      // A 1x1 transparent PNG.
+      const pngBase64 =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      imageFile = File(p.join(tempDir.path, 'pic.png'));
+      await imageFile.writeAsBytes(base64Decode(pngBase64));
+    });
+    addTearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+    final detailed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/pic.png',
+      fileName: 'pic.png',
+      state: DownloadState.completed,
+      downloadedBytes: 100,
+      totalBytes: 100,
+      bytesPerSecond: 0,
+      createdAt: DateTime(2026, 11, 11, 17, 10),
+      filePath: imageFile.path,
+      priority: 0,
+    );
+    await pumpApp(tester, downloads: [detailed]);
+    await openDetailsPanel(tester, 'pic.png');
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(of: panel, matching: find.byType(Image)),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('details-thumb'))),
+      const Size(120, 120),
+    );
+  });
+
+  testWidgets(
+      'the details panel GENERAL tab falls back to the icon when no thumbnail is available',
+      (tester) async {
+    final detailed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/clip.mp4',
+      fileName: 'clip.mp4',
+      state: DownloadState.completed,
+      downloadedBytes: 100,
+      totalBytes: 100,
+      bytesPerSecond: 0,
+      createdAt: DateTime(2026, 11, 11, 17, 10),
+      filePath: '/tmp/downloads/clip.mp4',
+      priority: 0,
+    );
+    await pumpApp(tester, downloads: [detailed]);
+    await openDetailsPanel(tester, 'clip.mp4');
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(
+        of: panel,
+        matching: find.byWidgetPredicate(
+          (w) => w is Icon && w.icon == Icons.folder && w.size == 56,
+        ),
       ),
       findsOneWidget,
     );

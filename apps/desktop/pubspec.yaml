@@ -26,6 +26,8 @@ dependencies:
     path: ../../packages/download_api
   download_ipc:
     path: ../../packages/download_ipc
+  download_external:
+    path: ../../packages/download_external
   pdm_engine:
     path: ../../apps/engine
   window_manager: ^0.6.0
