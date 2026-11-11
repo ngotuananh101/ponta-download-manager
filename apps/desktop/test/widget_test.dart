@@ -51,8 +51,9 @@ Future<void> pumpApp(
   WidgetTester tester, {
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
+  Size size = const Size(950, 650),
 }) async {
-  tester.view.physicalSize = const Size(950, 650);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -231,6 +232,18 @@ void main() {
       (tester) async {
     await pumpApp(tester, downloads: const []);
     expect(find.text('Drag-and-drop URL or torrent file'), findsOneWidget);
+  });
+
+  testWidgets('the drop zone hides when its area is too small',
+      (tester) async {
+    await pumpApp(tester);
+    expect(find.text('Drag-and-drop URL or torrent file'), findsOneWidget);
+    // At 260px tall the body leaves less than the 120px the zone
+    // needs under the 32px table header: the zone hides and the row
+    // keeps the space instead.
+    await pumpApp(tester, size: const Size(950, 260));
+    expect(find.text('f.bin'), findsOneWidget);
+    expect(find.text('Drag-and-drop URL or torrent file'), findsNothing);
   });
 
   testWidgets('an unknown total shows the downloaded size, not -1 B',
@@ -598,10 +611,61 @@ void main() {
     await tester.tap(find.text('f.bin'));
     await tester.pumpAndSettle();
     expect(find.text('f.bin'), findsNWidgets(2));
-    // The status bar name is xs and flush to the right edge.
+    // The status bar name is xs and its button sits flush to the
+    // right edge (950px wide minus the 12px bar padding).
     final statusName = tester.widget<Text>(find.text('f.bin').last);
     expect(statusName.style?.fontSize, 12);
-    expect(statusName.textAlign, TextAlign.right);
+    final statusButton = find.ancestor(
+      of: find.text('f.bin').last,
+      matching: find.byType(InkWell),
+    );
+    expect(tester.getBottomRight(statusButton).dx, closeTo(938, 1));
+  });
+
+  testWidgets(
+      'the status bar file name button is a compact select-like button',
+      (tester) async {
+    await pumpApp(tester);
+    // Nothing selected: no name button at all.
+    expect(find.byIcon(Icons.arrow_drop_up), findsNothing);
+    // Select the row: the button appears at the far right.
+    await tester.tap(find.text('f.bin').first);
+    await tester.pumpAndSettle();
+    final button = find.ancestor(
+      of: find.text('f.bin').last,
+      matching: find.byType(InkWell),
+    );
+    // Compact: far narrower than the 950px-wide status bar.
+    expect(tester.getSize(button).width, lessThan(400));
+    // Text on the left, chevron on the right.
+    expect(
+      find.descendant(
+        of: button,
+        matching: find.byIcon(Icons.arrow_drop_up),
+      ),
+      findsOneWidget,
+    );
+    final nameCenter = tester.getCenter(find.text('f.bin').last);
+    final iconCenter = tester.getCenter(find.byIcon(Icons.arrow_drop_up));
+    expect(nameCenter.dx, lessThan(iconCenter.dx));
+    // Opening the panel flips the chevron down.
+    await tester.tap(find.text('f.bin').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: button,
+        matching: find.byIcon(Icons.arrow_drop_down),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: button,
+        matching: find.byIcon(Icons.arrow_drop_up),
+      ),
+      findsNothing,
+    );
+    expect(find.byType(DownloadDetailsPanel), findsOneWidget);
   });
 
   testWidgets('the bulk bar uses xs text', (tester) async {

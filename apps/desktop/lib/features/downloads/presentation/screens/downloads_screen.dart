@@ -546,7 +546,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   /// The FDM table on top, the drop zone filling the rest below it.
   /// The rows area is capped so the drop zone always keeps at least
-  /// 120px; with more rows than fit, the table scrolls.
+  /// 120px; with more rows than fit, the table scrolls. When the body
+  /// is too short for the zone to keep its 120px, the zone hides
+  /// entirely and the rows take the space instead: a squished strip
+  /// helps nobody, and the old cap squeezed the rows to zero height.
   Widget _buildTable(List<Download> visible) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -554,12 +557,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         const rowHeight = 40.0;
         const minDropZoneHeight = 120.0;
         final available = constraints.maxHeight;
+        final showDropZone =
+            available - headerHeight >= minDropZoneHeight;
+        final rowsCap = showDropZone
+            ? available - headerHeight - minDropZoneHeight
+            : available - headerHeight;
         final rowsHeight = (visible.length * rowHeight).clamp(
           0.0,
-          (available - headerHeight - minDropZoneHeight).clamp(
-            0.0,
-            double.infinity,
-          ),
+          rowsCap.clamp(0.0, double.infinity),
         );
         return Column(
           children: [
@@ -571,7 +576,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 itemBuilder: (context, index) => _buildTableRow(visible[index]),
               ),
             ),
-            Expanded(child: _buildDropZone()),
+            if (showDropZone) Expanded(child: _buildDropZone()),
           ],
         );
       },
@@ -917,28 +922,58 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               color: colorScheme.onSurfaceVariant,
             ),
           ),
+          if (statusFile != null) const Spacer(),
           if (statusFile != null)
-            Expanded(
-              child: TextButton(
-                onPressed: () =>
-                    setState(() => _detailsOpen = !_detailsOpen),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  alignment: Alignment.centerRight,
-                ),
+            _buildStatusFileButton(statusFile, colorScheme),
+        ],
+      ),
+    );
+  }
+
+  /// The selected file name at the far right of the status bar,
+  /// built like a toolbar select: file name on the left, a chevron on
+  /// the right that shows whether the details panel is open (up: tap
+  /// to open it above the bar, down: tap to close it). Compact: it
+  /// sizes to its content (capped at 320px) instead of filling the
+  /// rest of the bar.
+  Widget _buildStatusFileButton(Download file, ColorScheme colorScheme) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: InkWell(
+        onTap: () => setState(() => _detailsOpen = !_detailsOpen),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s2,
+            vertical: AppSpacing.s1,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
                 child: Text(
-                  statusFile.fileName,
+                  file.fileName,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
                   style: AppTextSize.xs.textStyle(
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
-            ),
-        ],
+              const SizedBox(width: AppSpacing.s1),
+              Icon(
+                _detailsOpen
+                    ? Icons.arrow_drop_down
+                    : Icons.arrow_drop_up,
+                size: 18,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
