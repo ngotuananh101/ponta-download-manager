@@ -597,4 +597,18 @@ void main() {
     expect(statusName.style?.fontSize, 12);
     expect(statusName.textAlign, TextAlign.right);
   });
+
+  testWidgets('the bulk bar uses xs text', (tester) async {
+    await pumpApp(tester);
+    // Select the row so the bulk bar appears.
+    await tester.tap(find.text('f.bin'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    final count = tester.widget<Text>(find.text('1 selected'));
+    expect(count.style?.fontSize, 12);
+    for (final label in ['Pause', 'Cancel', 'Delete']) {
+      final buttonText = tester.widget<Text>(find.text(label));
+      expect(buttonText.style?.fontSize, 12);
+    }
+  });
 }

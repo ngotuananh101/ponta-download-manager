@@ -438,22 +438,25 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Row(
         children: [
-          Text('${_selected.length} selected'),
+          Text(
+            '${_selected.length} selected',
+            style: AppTextSize.xs.textStyle(),
+          ),
           const SizedBox(width: AppSpacing.s3),
           TextButton.icon(
             onPressed: () => _bulkPause(),
             icon: const Icon(Icons.pause, size: 18),
-            label: Text('Pause', style: AppTextSize.sm.textStyle()),
+            label: Text('Pause', style: AppTextSize.xs.textStyle()),
           ),
           TextButton.icon(
             onPressed: () => _bulkCancel(),
             icon: const Icon(Icons.cancel, size: 18),
-            label: Text('Cancel', style: AppTextSize.sm.textStyle()),
+            label: Text('Cancel', style: AppTextSize.xs.textStyle()),
           ),
           TextButton.icon(
             onPressed: () => _bulkDelete(),
             icon: const Icon(Icons.delete, size: 18),
-            label: Text('Delete', style: AppTextSize.sm.textStyle()),
+            label: Text('Delete', style: AppTextSize.xs.textStyle()),
           ),
           const Spacer(),
           IconButton(
