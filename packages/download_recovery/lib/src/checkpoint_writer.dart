@@ -29,6 +29,12 @@ class _TrackedTask {
 
 /// Persists download checkpoints to SQLite while tasks run (§9.2):
 /// progress at a controlled interval, lifecycle transitions promptly.
+///
+/// A task reports completion before its sink is renamed to the final
+/// file, so the writer never persists completed from task events
+/// alone: it keeps the download as downloading with full bytes until
+/// complete() finalizes it (called from the scheduler's post-rename
+/// completed event), or fail() when finalization fails.
 class CheckpointWriter {
   CheckpointWriter(
     this.store, {
@@ -76,14 +82,19 @@ class CheckpointWriter {
           }
           // The failed event still has to arrive with its error code,
           // so the subscription stays alive until then.
-          if (status == DownloadStatus.completed ||
-              status == DownloadStatus.cancelled) {
+          // Completed does not untrack: the task reports completion
+          // before the sink rename, so the store must not say
+          // completed yet. complete() finalizes it once the final
+          // file exists, and _write keeps the status downloading
+          // until then.
+          if (status == DownloadStatus.cancelled) {
             _untrack(task.id);
           }
         },
         completed: (downloadId, filePath) {
+          // Also pre-rename: only persist the final bytes, never the
+          // completed status. See complete().
           _write(tracked);
-          _untrack(task.id);
         },
         failed: (downloadId, code, message) {
           tracked.record = tracked.record.copyWith(
@@ -133,10 +144,52 @@ class CheckpointWriter {
     }
   }
 
+  /// Finalizes a tracked download as completed. Call only after its
+  /// final file exists: the scheduler emits its completed events
+  /// after the sink rename, while the task's own completed events
+  /// arrive before it. No-op when the download is not tracked.
+  void complete(String downloadId) {
+    final tracked = _tracked[downloadId];
+    if (tracked == null) {
+      return;
+    }
+    _writeStatus(tracked, DownloadStatus.completed);
+    _untrack(downloadId);
+  }
+
+  /// Marks a tracked download failed, e.g. when finalization fails
+  /// after the task reported completion (the sink rename failed).
+  /// No-op when the download is not tracked.
+  void fail(String downloadId, String code, String message) {
+    final tracked = _tracked[downloadId];
+    if (tracked == null) {
+      return;
+    }
+    tracked.record = tracked.record.copyWith(
+      errorCode: code,
+      errorMessage: message,
+    );
+    _writeStatus(tracked, DownloadStatus.failed);
+    _untrack(downloadId);
+  }
+
   void _write(_TrackedTask tracked) {
+    _writeStatus(tracked, _persistedStatus(tracked.task.status));
+  }
+
+  /// The status that may be persisted from task state alone. A task
+  /// reports completion before the sink rename, so completed is kept
+  /// as downloading (with full bytes) until complete() finalizes it.
+  DownloadStatus _persistedStatus(DownloadStatus status) {
+    return status == DownloadStatus.completed
+        ? DownloadStatus.downloading
+        : status;
+  }
+
+  void _writeStatus(_TrackedTask tracked, DownloadStatus status) {
     final task = tracked.task;
     final record = tracked.record.copyWith(
-      status: task.status,
+      status: status,
       downloadedBytes: task.downloadedBytes,
       totalBytes: task.totalBytes,
       eTag: task.eTag,

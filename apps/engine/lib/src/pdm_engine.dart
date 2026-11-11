@@ -84,7 +84,7 @@ class PdmEngine implements DownloadEngine {
       ytDlpDownloader: ytDlpDownloader,
     );
     engine._schedulerSub = engine._scheduler.events.listen(
-      engine._events.add,
+      engine._onSchedulerEvent,
     );
     engine._recover();
     return engine;
@@ -173,6 +173,26 @@ class PdmEngine implements DownloadEngine {
         )
         .listen(_onYtDlpEvent);
     _ytDlpSubs[record.id] = sub;
+  }
+
+  /// Forwards scheduler events to the engine stream and finalizes
+  /// native downloads in the store. The scheduler emits completed
+  /// only after the sink rename, so this is where the writer learns
+  /// the final file exists; the writer deliberately ignores the
+  /// task's own (pre-rename) completed events.
+  void _onSchedulerEvent(DownloadEvent event) {
+    _events.add(event);
+    event.when(
+      progress: (_, _, _, _) {},
+      stateChanged: (downloadId, status) {
+        if (status == DownloadStatus.completed) {
+          _writer.complete(downloadId);
+        }
+      },
+      completed: (downloadId, _) => _writer.complete(downloadId),
+      failed: (downloadId, code, message) =>
+          _writer.fail(downloadId, code, message),
+    );
   }
 
   /// Forwards a yt-dlp event to the engine stream and updates the

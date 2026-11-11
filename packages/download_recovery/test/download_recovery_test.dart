@@ -238,6 +238,10 @@ void main() {
       writer.track(task, directory: tempDir.path, fileName: 'f.bin');
       await task.run();
       await Future<void>.delayed(const Duration(milliseconds: 50));
+      // The task alone must not finalize completion: complete() is
+      // what the engine calls from the scheduler's post-rename
+      // completed event.
+      writer.complete('dl-1');
       final record = store.getDownload('dl-1')!;
       expect(record.status, DownloadStatus.completed);
       expect(record.downloadedBytes, 1024);
@@ -248,6 +252,83 @@ void main() {
         segments.fold(0, (sum, s) => sum + s.downloaded),
         1024,
       );
+    });
+
+    test('does not report completed before the download is finalized',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-recovery-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final sink = _MemorySink();
+      final task = DownloadTask(
+        transport: transport,
+        sink: sink,
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 2,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: tempDir.path, fileName: 'f.bin');
+      await task.run();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // The task reports completion before the sink rename, so the
+      // store must not say completed yet: the final file does not
+      // exist at this point. Completion is finalized by complete(),
+      // which the engine calls from the scheduler's post-rename
+      // completed event.
+      final before = store.getDownload('dl-1')!;
+      expect(before.status, DownloadStatus.downloading);
+      expect(before.downloadedBytes, 1024);
+      expect(() => writer.complete('missing'), returnsNormally);
+      writer.complete('dl-1');
+      final after = store.getDownload('dl-1')!;
+      expect(after.status, DownloadStatus.completed);
+      expect(after.downloadedBytes, 1024);
+      expect(after.totalBytes, 1024);
+    });
+
+    test('reports a failed finalization instead of completed', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-recovery-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final sink = _MemorySink();
+      final task = DownloadTask(
+        transport: transport,
+        sink: sink,
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 2,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: tempDir.path, fileName: 'f.bin');
+      await task.run();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(store.getDownload('dl-1')!.status, DownloadStatus.downloading);
+      writer.fail('dl-1', 'finish-failed', 'rename failed');
+      final record = store.getDownload('dl-1')!;
+      expect(record.status, DownloadStatus.failed);
+      expect(record.errorCode, 'finish-failed');
+      expect(record.errorMessage, 'rename failed');
     });
 
     test('writes promptly on pause', () async {
