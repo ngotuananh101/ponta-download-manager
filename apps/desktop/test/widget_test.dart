@@ -939,8 +939,7 @@ void main() {
     );
   });
 
-  testWidgets(
-      'the details panel CONNECTIONS tab shows host, port and count',
+  testWidgets('the details panel CONNECTIONS tab shows a connections table',
       (tester) async {
     final actions = MockDownloadsActions();
     when(() => actions.getSegments(any())).thenAnswer(
@@ -954,28 +953,65 @@ void main() {
     await tester.tap(find.text('CONNECTIONS'));
     await tester.pumpAndSettle();
     final panel = find.byType(DownloadDetailsPanel);
+    // Header columns.
+    for (final header in ['#', 'Host', 'Port', 'Downloaded', 'Progress']) {
+      expect(
+        find.descendant(of: panel, matching: find.text(header)),
+        findsOneWidget,
+      );
+    }
+    // One row per segment: the first is fully downloaded, the second
+    // has not started. Both connect to the download's host and port.
     expect(
-      find.descendant(of: panel, matching: find.text('Host')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: panel, matching: find.text('127.0.0.1')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: panel, matching: find.text('Port')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: panel, matching: find.text('9')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: panel, matching: find.text('Connection count')),
+      find.descendant(of: panel, matching: find.text('1')),
       findsOneWidget,
     );
     expect(
       find.descendant(of: panel, matching: find.text('2')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('127.0.0.1')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('9')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('500 B')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('0 B')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('100%')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('0%')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'the details panel CONNECTIONS tab shows no connections when empty',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(() => actions.getSegments(any())).thenAnswer(
+      (_) async => const Right(<DownloadSegment>[]),
+    );
+    await pumpApp(tester, actions: actions);
+    await openDetailsPanel(tester);
+    await tester.tap(find.text('CONNECTIONS'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(DownloadDetailsPanel),
+        matching: find.text('No connections yet.'),
+      ),
       findsOneWidget,
     );
   });

@@ -20,7 +20,9 @@ enum DetailsTab { general, progress, connections }
 /// the table and above the status bar. Three tabs: GENERAL (a large
 /// thumbnail on the left, name and info on the right, progress below),
 /// PROGRESS (a segment
-/// bitmap), CONNECTIONS (host, port, connection count). The PROGRESS
+/// bitmap), CONNECTIONS (a table of connections: # / host / port /
+/// downloaded / progress, one row per segment; torrent downloads
+/// will list one row per peer in the same table). The PROGRESS
 /// and CONNECTIONS tabs fetch per-segment progress when they are
 /// opened and whenever the download's bytes change; GENERAL needs no
 /// segment data.
@@ -88,7 +90,7 @@ class _DownloadDetailsPanelState
     // The panel follows the selected download: when the selection
     // changes, drop the old segments and fetch the new ones. When
     // the same download's bytes change, refresh the segments so the
-    // bitmap and the connection count track the progress.
+    // bitmap and the connections table track the progress.
     final idChanged = oldWidget.download.id != widget.download.id;
     final bytesChanged =
         oldWidget.download.downloadedBytes !=
@@ -430,31 +432,147 @@ class _DownloadDetailsPanelState
   // --- CONNECTIONS ---
 
   Widget _buildConnections(ColorScheme colorScheme) {
+    if (_segments.isEmpty) {
+      return Center(
+        child: Text(
+          'No connections yet.',
+          style: AppTextSize.xs.textStyle(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
     final uri = Uri.tryParse(widget.download.url);
     final host = uri?.host ?? '';
     final port = uri == null ? 0 : uri.port;
-    final labelStyle = AppTextSize.xs.textStyle(
+    final rows = _segments.indexed.map((entry) {
+      final segment = entry.$2;
+      final size = segment.end == null
+          ? null
+          : segment.end! - segment.start + 1;
+      return ConnectionRowData(
+        number: entry.$1 + 1,
+        host: host,
+        port: port,
+        downloadedBytes: segment.downloaded,
+        progress: size == null || size <= 0
+            ? null
+            : (segment.downloaded / size).clamp(0.0, 1.0),
+      );
+    }).toList();
+    return _buildConnectionsTable(rows, colorScheme);
+  }
+
+  /// The connections table: a header row plus one scrollable row per
+  /// connection. The rows are plain ConnectionRowData, so a torrent
+  /// download can fill the same table from its peers later.
+  Widget _buildConnectionsTable(
+    List<ConnectionRowData> rows,
+    ColorScheme colorScheme,
+  ) {
+    final headerStyle = AppTextSize.xs.textStyle(
+      weight: AppFontWeight.semibold,
       color: colorScheme.onSurfaceVariant,
     );
-    final valueStyle = AppTextSize.xs.textStyle(
-      weight: AppFontWeight.semibold,
-    );
+    final cellStyle = AppTextSize.xs.textStyle();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildLabelValue('Host', host, labelStyle, valueStyle),
-        const SizedBox(height: AppSpacing.s1),
-        _buildLabelValue('Port', '$port', labelStyle, valueStyle),
-        const SizedBox(height: AppSpacing.s1),
-        _buildLabelValue(
-          'Connection count',
-          '${_segments.length}',
-          labelStyle,
-          valueStyle,
+        _connectionRow(
+          number: '#',
+          host: 'Host',
+          port: 'Port',
+          downloaded: 'Downloaded',
+          progress: 'Progress',
+          style: headerStyle,
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: rows.length,
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              return _connectionRow(
+                number: '${row.number}',
+                host: row.host,
+                port: '${row.port}',
+                downloaded: formatBytes(row.downloadedBytes),
+                progress: row.progress == null
+                    ? '—'
+                    : '${(row.progress! * 100).round()}%',
+                style: cellStyle,
+              );
+            },
+          ),
         ),
       ],
     );
   }
+
+  /// One row of the connections table (header or data). The columns
+  /// are # / Host / Port / Downloaded / Progress, matching the main
+  /// downloads table's widths where they overlap.
+  Widget _connectionRow({
+    required String number,
+    required String host,
+    required String port,
+    required String downloaded,
+    required String progress,
+    required TextStyle style,
+  }) {
+    return SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          SizedBox(width: 40, child: Text(number, style: style)),
+          Expanded(
+            child: Text(
+              host,
+              style: style,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(width: 60, child: Text(port, style: style)),
+          SizedBox(
+            width: 90,
+            child: Text(
+              downloaded,
+              style: style,
+              textAlign: TextAlign.right,
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(
+              progress,
+              style: style,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the connections table: a single connection to a host.
+/// HTTP downloads list one row per segment; torrent downloads will
+/// list one row per peer with the same columns.
+class ConnectionRowData {
+  const ConnectionRowData({
+    required this.number,
+    required this.host,
+    required this.port,
+    required this.downloadedBytes,
+    this.progress,
+  });
+
+  final int number;
+  final String host;
+  final int port;
+  final int downloadedBytes;
+
+  /// 0..1 when the connection's total size is known, null otherwise.
+  final double? progress;
 }
 
 /// The priority as FDM shows it: high / normal / low.
