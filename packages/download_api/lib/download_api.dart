@@ -4,3 +4,4 @@ export 'src/models/download_error.dart';
 export 'src/models/download_event.dart';
 export 'src/models/download_info.dart';
 export 'src/models/download_segment.dart';
+export 'src/models/file_conflict_policy.dart';

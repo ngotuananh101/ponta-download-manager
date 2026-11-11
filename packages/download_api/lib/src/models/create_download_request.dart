@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'file_conflict_policy.dart';
+
 part 'create_download_request.freezed.dart';
 part 'create_download_request.g.dart';
 
@@ -10,6 +12,7 @@ abstract class CreateDownloadRequest with _$CreateDownloadRequest {
     required String destination,
     int? maxConnections,
     int? priority,
+    FileConflictPolicy? conflictPolicy,
   }) = _CreateDownloadRequest;
 
   factory CreateDownloadRequest.fromJson(Map<String, dynamic> json) =>

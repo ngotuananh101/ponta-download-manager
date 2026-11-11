@@ -33,6 +33,27 @@ void main() {
     });
   });
 
+  group('CreateDownloadRequest', () {
+    test('round-trips the conflict policy through JSON', () {
+      const request = CreateDownloadRequest(
+        url: 'https://example.com/file.zip',
+        destination: '/tmp/file.zip',
+        conflictPolicy: FileConflictPolicy.rename,
+      );
+      final restored = CreateDownloadRequest.fromJson(request.toJson());
+      expect(restored, request);
+      expect(restored.conflictPolicy, FileConflictPolicy.rename);
+    });
+
+    test('defaults to no conflict policy', () {
+      const request = CreateDownloadRequest(
+        url: 'https://example.com/file.zip',
+        destination: '/tmp/file.zip',
+      );
+      expect(request.conflictPolicy, isNull);
+    });
+  });
+
   group('DownloadEvent', () {
     test('progress event round-trips through JSON', () {
       const event = DownloadEvent.progress(

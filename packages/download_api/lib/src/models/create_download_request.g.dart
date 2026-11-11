@@ -13,6 +13,10 @@ _CreateDownloadRequest _$CreateDownloadRequestFromJson(
   destination: json['destination'] as String,
   maxConnections: (json['maxConnections'] as num?)?.toInt(),
   priority: (json['priority'] as num?)?.toInt(),
+  conflictPolicy: $enumDecodeNullable(
+    _$FileConflictPolicyEnumMap,
+    json['conflictPolicy'],
+  ),
 );
 
 Map<String, dynamic> _$CreateDownloadRequestToJson(
@@ -22,4 +26,10 @@ Map<String, dynamic> _$CreateDownloadRequestToJson(
   'destination': instance.destination,
   'maxConnections': instance.maxConnections,
   'priority': instance.priority,
+  'conflictPolicy': _$FileConflictPolicyEnumMap[instance.conflictPolicy],
+};
+
+const _$FileConflictPolicyEnumMap = {
+  FileConflictPolicy.overwrite: 'overwrite',
+  FileConflictPolicy.rename: 'rename',
 };
