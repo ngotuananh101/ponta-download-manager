@@ -2,11 +2,14 @@
 // audio URLs — <video>/<audio> src and <source> children, plus links
 // to media files — and reports them to the background script, which
 // the popup lists per tab. Images are deliberately not captured.
+// Streaming playlists (m3u8 for HLS, mpd for DASH) are caught as
+// video too: downloading one saves the playlist file itself.
 // Only http(s) URLs are reported: blob: and data: URLs cannot be
 // downloaded by PDM.
 
 const VIDEO_EXTS = new Set([
   'mp4', 'webm', 'mkv', 'mov', 'avi', 'm4v', 'mpg', 'mpeg', '3gp',
+  'm3u8', 'mpd',
 ]);
 const AUDIO_EXTS = new Set([
   'mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'wma', 'opus',

@@ -39,6 +39,12 @@ test('mediaType classifies video and audio by extension', () => {
   assert.equal(mediaType('not a url'), null);
 });
 
+test('mediaType classifies streaming playlists as video', () => {
+  assert.equal(mediaType('https://example.com/stream.m3u8'), 'video');
+  assert.equal(mediaType('https://example.com/STREAM.M3U8'), 'video');
+  assert.equal(mediaType('https://example.com/manifest.mpd'), 'video');
+});
+
 test('fileNameFromMediaUrl takes the last path segment', () => {
   assert.equal(
     fileNameFromMediaUrl('https://example.com/v/clip.mp4'),
@@ -88,6 +94,26 @@ test('collectMedia finds media links and resolves relative urls', () => {
     'https://example.com/files/movie.mkv',
     'https://example.com/files/song.flac',
   ]);
+});
+
+test('collectMedia finds streaming playlist links', () => {
+  const doc = fakeDoc([
+    el('a', {href: '/streams/live.m3u8'}),
+    el('a', {href: 'https://example.com/streams/manifest.mpd'}),
+    el('a', {href: 'https://example.com/page.html'}),
+  ]);
+  const items = collectMedia(doc);
+  assert.equal(items.length, 2);
+  const byUrl = new Map(items.map((i) => [i.url, i]));
+  assert.equal(byUrl.get('https://example.com/streams/live.m3u8').type, 'video');
+  assert.equal(
+    byUrl.get('https://example.com/streams/live.m3u8').fileName,
+    'live.m3u8',
+  );
+  assert.equal(
+    byUrl.get('https://example.com/streams/manifest.mpd').type,
+    'video',
+  );
 });
 
 test('collectMedia dedups the same url and drops blob and data urls', () => {
