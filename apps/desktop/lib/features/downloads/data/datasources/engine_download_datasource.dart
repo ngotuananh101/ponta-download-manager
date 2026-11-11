@@ -42,6 +42,7 @@ class EngineDownloadDatasource {
   Timer? _progressTimer;
   var _progressDirty = false;
   var _disposed = false;
+  final _refreshing = <String>{};
 
   /// The current list first, then every update.
   ///
@@ -77,11 +78,37 @@ class EngineDownloadDatasource {
     }
   }
 
+  // Downloads created outside this datasource (e.g. via the IPC
+  // server when the browser extension adds one) are not in
+  // [_downloads]: their events would be dropped and the row would
+  // never appear until the next full reload. When an event arrives
+  // for an unknown id, refresh that download from the engine.
+  Future<void> _refreshDownload(String downloadId) async {
+    if (!_refreshing.add(downloadId)) {
+      return;
+    }
+    try {
+      final infos = await engine.listDownloads();
+      for (final info in infos) {
+        if (info.id == downloadId) {
+          _downloads[downloadId] = downloadFromInfo(info);
+          _emit();
+          break;
+        }
+      }
+    } catch (e) {
+      _log.warning('Failed to refresh download $downloadId: $e');
+    } finally {
+      _refreshing.remove(downloadId);
+    }
+  }
+
   void _onEvent(DownloadEvent event) {
     event.when(
       progress: (downloadId, downloadedBytes, totalBytes, bytesPerSecond) {
         final current = _downloads[downloadId];
         if (current == null) {
+          unawaited(_refreshDownload(downloadId));
           return;
         }
         // A progress event must not revive a paused (or terminal)
@@ -108,6 +135,7 @@ class EngineDownloadDatasource {
       stateChanged: (downloadId, status) {
         final current = _downloads[downloadId];
         if (current == null) {
+          unawaited(_refreshDownload(downloadId));
           return;
         }
         final state = downloadStateFromStatus(status);
@@ -130,6 +158,7 @@ class EngineDownloadDatasource {
       completed: (downloadId, filePath) {
         final current = _downloads[downloadId];
         if (current == null) {
+          unawaited(_refreshDownload(downloadId));
           return;
         }
         _downloads[downloadId] = current.copyWith(
@@ -142,6 +171,7 @@ class EngineDownloadDatasource {
       failed: (downloadId, code, message) {
         final current = _downloads[downloadId];
         if (current == null) {
+          unawaited(_refreshDownload(downloadId));
           return;
         }
         _downloads[downloadId] = current.copyWith(

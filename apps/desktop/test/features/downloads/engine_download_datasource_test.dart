@@ -264,6 +264,35 @@ void main() {
       verify(() => engine.setGlobalBandwidthLimit(null)).called(1);
     });
 
+    test('a download created outside the UI appears when its events arrive',
+        () async {
+      // The list starts empty; the engine later creates a download
+      // (e.g. via IPC from the browser extension) and emits a
+      // stateChanged event for it. The datasource never called
+      // addDownload, so the id is unknown until the refresh.
+      var stored = <DownloadInfo>[];
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer((_) async => stored);
+      final source = datasource();
+      addTearDown(source.dispose);
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(emitted.last, isEmpty);
+      stored = [info(id: 'dl-2')];
+      events.add(
+        DownloadEvent.stateChanged(
+          downloadId: 'dl-2',
+          status: DownloadStatus.queued,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(emitted.last.single.id, 'dl-2');
+      expect(emitted.last.single.fileName, 'f.bin');
+    });
+
     test('dispose disposes the engine', () async {
       final source = datasource();
       await source.dispose();
