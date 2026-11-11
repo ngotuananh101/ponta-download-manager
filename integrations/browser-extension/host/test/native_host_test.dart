@@ -89,6 +89,7 @@ void main() {
               as CreateDownloadRequest;
       expect(captured.url, 'http://127.0.0.1:9/f.bin');
       expect(captured.destination, '/tmp/dl/f.bin');
+      expect(captured.conflictPolicy, FileConflictPolicy.rename);
     });
 
     test('an unknown type is rejected and never calls the client', () async {

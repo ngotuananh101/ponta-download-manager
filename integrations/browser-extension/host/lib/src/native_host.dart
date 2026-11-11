@@ -105,9 +105,13 @@ class NativeHost {
   }
 
   Future<DownloadInfo> _create(String url, String fileName) async {
+    // The extension cannot show the app's file-exists dialog, so a
+    // browser download never overwrites and never fails on an
+    // existing file: it renames to the first free name instead.
     final request = CreateDownloadRequest(
       url: url,
       destination: p.join(downloadDirectory, fileName),
+      conflictPolicy: FileConflictPolicy.rename,
     );
     try {
       final client = await _ensureClient();
