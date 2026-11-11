@@ -74,8 +74,11 @@ like FDM: GENERAL, PROGRESS, CONNECTIONS, with an X to close it.
 - GENERAL: as above. PROGRESS: bitmap grid from segments (cell = equal
   slice; blue when its start byte is inside a downloaded range).
   CONNECTIONS: Host / Port / connection count table.
-- The panel refreshes segments while open (poll ~500ms) and on tab
-  switch; it follows the selected download.
+- The panel fetches segments when the PROGRESS or CONNECTIONS tab
+  is opened and whenever the download's bytes change (via
+  didUpdateWidget); no polling timer. It follows the selected
+  download (segments reset when the selection changes). Panel height
+  264px so the GENERAL tab fits without overflow.
 
 ## Verification
 - Per part: the owning package's `dart test` + `flutter analyze`

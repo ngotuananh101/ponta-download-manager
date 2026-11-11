@@ -6,6 +6,7 @@ import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
+import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
@@ -34,6 +35,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   final _searchController = TextEditingController();
   final _selected = <String>{};
   bool _dragOver = false;
+
+  /// Whether the details panel for the selected download is open.
+  bool _detailsOpen = false;
 
   /// Snail mode: when ON, the global download speed is capped at
   /// [_snailModeBytesPerSecond] to keep the connection continuous
@@ -78,11 +82,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final totalSpeed = items
         .where((d) => d.state == DownloadState.downloading)
         .fold<int>(0, (sum, d) => sum + d.bytesPerSecond);
+    final statusFile = _statusFile(visible);
     return Column(
       children: [
         _buildToolbar(visible),
         if (_selected.isNotEmpty) _buildBulkBar(),
         Expanded(child: _buildBody(items, visible)),
+        if (_detailsOpen && statusFile != null)
+          DownloadDetailsPanel(
+            download: statusFile,
+            onClose: () => setState(() => _detailsOpen = false),
+          ),
         _buildStatusBar(items, visible, totalSpeed),
       ],
     );
@@ -909,12 +919,22 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           if (statusFile != null)
             Expanded(
-              child: Text(
-                statusFile.fileName,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: AppTextSize.xs.textStyle(
-                  color: colorScheme.onSurfaceVariant,
+              child: TextButton(
+                onPressed: () =>
+                    setState(() => _detailsOpen = !_detailsOpen),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  alignment: Alignment.centerRight,
+                ),
+                child: Text(
+                  statusFile.fileName,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: AppTextSize.xs.textStyle(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),

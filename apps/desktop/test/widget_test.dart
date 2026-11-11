@@ -1,3 +1,4 @@
+import 'package:download_api/download_api.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pdm/app/app.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
+import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 
@@ -638,5 +640,177 @@ void main() {
     expect(rowContainers.length, 1);
     final decoration = rowContainers.single.decoration as BoxDecoration?;
     expect(decoration?.border, isNull);
+  });
+
+  // Opens the details panel: tap the row to select it, then tap the
+  // file name button in the status bar.
+  Future<void> openDetailsPanel(WidgetTester tester) async {
+    await tester.tap(find.text('f.bin').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('f.bin').last);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the status bar file name opens the details panel',
+      (tester) async {
+    await pumpApp(tester);
+    // Nothing selected: no name in the status bar, no panel.
+    expect(find.byType(DownloadDetailsPanel), findsNothing);
+    await openDetailsPanel(tester);
+    expect(find.byType(DownloadDetailsPanel), findsOneWidget);
+    expect(find.text('GENERAL'), findsOneWidget);
+    expect(find.text('PROGRESS'), findsOneWidget);
+    expect(find.text('CONNECTIONS'), findsOneWidget);
+    // GENERAL tab: the downloaded / total and the percent.
+    expect(find.text('Downloaded'), findsOneWidget);
+    expect(find.text('500 B / 1000 B'), findsOneWidget);
+    expect(find.text('50%'), findsOneWidget);
+  });
+
+  testWidgets('the details panel GENERAL tab shows the download fields',
+      (tester) async {
+    final detailed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      createdAt: DateTime(2026, 11, 11, 17, 10),
+      filePath: '/tmp/downloads/f.bin',
+      priority: 2,
+    );
+    await pumpApp(tester, downloads: [detailed]);
+    await openDetailsPanel(tester);
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(of: panel, matching: find.text('/tmp/downloads')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('Priority')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('high')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('Added at')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: panel,
+        matching: find.text('11 thg 11 2026, 17:10'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: panel,
+        matching: find.text('http://127.0.0.1:9/f.bin'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the details panel PROGRESS tab shows the segment bitmap',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(() => actions.getSegments(any())).thenAnswer(
+      (_) async => const Right([
+        DownloadSegment(segmentId: 0, start: 0, end: 499, downloaded: 500),
+        DownloadSegment(segmentId: 1, start: 500, end: 999, downloaded: 0),
+      ]),
+    );
+    await pumpApp(tester, actions: actions);
+    await openDetailsPanel(tester);
+    await tester.tap(find.text('PROGRESS'));
+    await tester.pumpAndSettle();
+    verify(() => actions.getSegments('dl-1')).called(1);
+    final panel = find.byType(DownloadDetailsPanel);
+    final context = tester.element(panel);
+    final primary = Theme.of(context).colorScheme.primary;
+    final dark = Theme.of(context).colorScheme.surfaceContainerHighest;
+    // The first half of the file is downloaded (blue), the rest is
+    // not (dark): both colors must appear in the bitmap.
+    expect(
+      find.descendant(
+        of: panel,
+        matching: find.byWidgetPredicate(
+          (w) => w is Container && w.color == primary,
+        ),
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.descendant(
+        of: panel,
+        matching: find.byWidgetPredicate(
+          (w) => w is Container && w.color == dark,
+        ),
+      ),
+      findsWidgets,
+    );
+  });
+
+  testWidgets(
+      'the details panel CONNECTIONS tab shows host, port and count',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(() => actions.getSegments(any())).thenAnswer(
+      (_) async => const Right([
+        DownloadSegment(segmentId: 0, start: 0, end: 499, downloaded: 500),
+        DownloadSegment(segmentId: 1, start: 500, end: 999, downloaded: 0),
+      ]),
+    );
+    await pumpApp(tester, actions: actions);
+    await openDetailsPanel(tester);
+    await tester.tap(find.text('CONNECTIONS'));
+    await tester.pumpAndSettle();
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(of: panel, matching: find.text('Host')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('127.0.0.1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('Port')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('9')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('Connection count')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('2')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the details panel closes with the X button',
+      (tester) async {
+    await pumpApp(tester);
+    await openDetailsPanel(tester);
+    expect(find.byType(DownloadDetailsPanel), findsOneWidget);
+    // The panel's X is the close button inside the panel; the window
+    // title bar has its own close button.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(DownloadDetailsPanel),
+        matching: find.byTooltip('Close'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(DownloadDetailsPanel), findsNothing);
   });
 }
