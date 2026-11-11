@@ -94,6 +94,20 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
+# Bundle the external tools (ffmpeg + yt-dlp) next to the executable,
+# so ExternalTools finds them at <bundle>/bin/. The binaries are
+# fetched by tools/fetch_external_tools.sh and are not committed; a
+# build without them still works, yt-dlp downloads just fail with a
+# clear error at runtime. USE_SOURCE_PERMISSIONS keeps the +x bit.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bundle/bin")
+  # Trailing slash: install the CONTENTS of bundle/bin, not the
+  # bin directory itself, so the tools land in <bundle>/bin/.
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../bundle/bin/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+    COMPONENT Runtime
+    USE_SOURCE_PERMISSIONS)
+endif()
+
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 

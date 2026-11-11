@@ -7,9 +7,11 @@ import 'package:path/path.dart' as p;
 ///
 /// Resolution order per tool: (1) bundled next to the app executable
 /// (`<exe_dir>/bin/ffmpeg`, `<exe_dir>/bin/yt-dlp`, `.exe` on
-/// Windows); (2) system PATH. A candidate only counts when
-/// `<tool> --version` exits 0, so a non-executable or broken file
-/// falls through to the next candidate.
+/// Windows); (2) system PATH. A candidate only counts when its
+/// version flag exits 0, so a non-executable or broken file falls
+/// through to the next candidate. Note the flags differ: ffmpeg
+/// takes a single-dash `-version` (its `--version` exits 8 and
+/// prints to stderr), yt-dlp takes `--version`.
 class ExternalTools {
   const ExternalTools({required this.ffmpegPath, required this.ytDlpPath});
 
@@ -24,8 +26,8 @@ class ExternalTools {
 
   /// Resolves both tools. [executableDir] defaults to the directory
   /// holding the current executable. [pathLookup] finds a tool on
-  /// PATH (defaults to `which` / `where`). [versionCheck] runs
-  /// `<tool> --version` and returns true when it exits 0.
+  /// PATH (defaults to `which` / `where`). [versionCheck] runs the
+  /// tool's version flag and returns true when it exits 0.
   static Future<ExternalTools> resolve({
     String? executableDir,
     Future<String?> Function(String name)? pathLookup,
@@ -71,8 +73,14 @@ class ExternalTools {
   }
 
   static Future<bool> _defaultVersionCheck(String path) async {
+    // ffmpeg takes -version; --version exits 8. yt-dlp takes
+    // --version. The basename is the tool name (ffmpeg, ffmpeg.exe,
+    // yt-dlp, yt-dlp.exe).
+    final args = p.basename(path).startsWith('ffmpeg')
+        ? ['-version']
+        : ['--version'];
     try {
-      final result = await Process.run(path, ['--version']);
+      final result = await Process.run(path, args);
       return result.exitCode == 0;
     } catch (_) {
       return false;

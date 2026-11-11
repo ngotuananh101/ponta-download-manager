@@ -83,6 +83,30 @@ void main() {
     expect(tools.ffmpegPath, isNull);
   });
 
+  test('the default check accepts ffmpeg with its -version flag',
+      () async {
+    // Real ffmpeg exits 8 for --version and 0 for -version. The
+    // default check must use -version or the bundled ffmpeg never
+    // resolves. No versionCheck injection here: this exercises the
+    // real default.
+    final bin = Directory(p.join(tmp.path, 'bin'));
+    await bin.create(recursive: true);
+    final file = File(p.join(bin.path, 'ffmpeg'));
+    await file.writeAsString(
+      '#!/bin/sh\n'
+      'if [ "\$1" = "-version" ]; then\n'
+      '  echo "ffmpeg version 7.0.2-static"\n'
+      '  exit 0\n'
+      'else\n'
+      '  echo "ffmpeg version 7.0.2-static" >&2\n'
+      '  exit 8\n'
+      'fi\n',
+    );
+    await Process.run('chmod', ['+x', file.path]);
+    final tools = await ExternalTools.resolve(executableDir: tmp.path);
+    expect(tools.ffmpegPath, file.path);
+  });
+
   test('available is true only when both tools resolve', () async {
     await makeBundled('ffmpeg');
     await makeBundled('yt-dlp');

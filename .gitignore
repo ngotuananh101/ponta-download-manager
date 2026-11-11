@@ -13,3 +13,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# External tools (ffmpeg + yt-dlp) fetched by
+# tools/fetch_external_tools.sh; not committed, see tools/THIRD_PARTY.md
+apps/desktop/bundle/
