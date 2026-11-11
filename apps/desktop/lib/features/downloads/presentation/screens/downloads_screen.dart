@@ -176,7 +176,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             child: FilledButton.icon(
               onPressed: () => _showAddDialog(),
               icon: const Icon(Icons.add, size: 18),
-              label: Text('Add download', style: AppTextSize.xs.textStyle()),
+              label: Text(
+                'Add download',
+                style: AppTextSize.xs.textStyle(weight: AppFontWeight.semibold),
+              ),
               style: AppTheme.buttonStyle(AppButtonSize.sm).copyWith(
                 // The default padded tap target forces a 48px minimum;
                 // shrinkWrap lets the button fit in the 36px box.
@@ -197,7 +200,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           // decoration measured taller than 36px and off-center in the
           // rebuilt app even though the SizedBox was 36px.
           Container(
-            width: 200,
+            width: 240,
             height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
@@ -515,6 +518,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   Widget _buildTableRow(Download item) {
     final colorScheme = Theme.of(context).colorScheme;
     final selected = _selected.contains(item.id);
+    final rowStyle = AppTextSize.xs.textStyle(weight: AppFontWeight.semibold);
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
@@ -553,20 +557,24 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 ),
                 const SizedBox(width: AppSpacing.s2),
                 Expanded(
-                  child: Text(item.fileName, overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    item.fileName,
+                    style: rowStyle,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ),
           SizedBox(
             width: DownloadTableColumns.size,
-            child: Text(downloadSizeText(item)),
+            child: Text(downloadSizeText(item), style: rowStyle),
           ),
           SizedBox(
             width: DownloadTableColumns.status,
             child: Text(
               downloadStatusText(item),
-              style: TextStyle(
+              style: rowStyle.copyWith(
                 color: downloadStatusColor(colorScheme, item.state),
               ),
               overflow: TextOverflow.ellipsis,
@@ -578,16 +586,20 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           SizedBox(
             width: DownloadTableColumns.speed,
-            child: Text('${formatBytes(item.bytesPerSecond)}/s'),
+            child: Text(
+              '${formatBytes(item.bytesPerSecond)}/s',
+              style: rowStyle,
+            ),
           ),
           SizedBox(
             width: DownloadTableColumns.speed,
-            child: const Text('0 B/s'),
+            child: Text('0 B/s', style: rowStyle),
           ),
           SizedBox(
             width: DownloadTableColumns.added,
             child: Text(
               formatAdded(item.createdAt),
+              style: rowStyle,
               overflow: TextOverflow.ellipsis,
             ),
           ),

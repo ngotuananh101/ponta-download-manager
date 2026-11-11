@@ -79,6 +79,22 @@ void main() {
     expect(find.text('0 B/s'), findsNWidgets(2));
   });
 
+  testWidgets('the download table rows use xs semibold text',
+      (tester) async {
+    await pumpApp(tester);
+    // 'f.bin' also shows in the status bar; the first match is the
+    // table row's name cell.
+    final nameStyle =
+        tester.widget<Text>(find.text('f.bin').first).style;
+    expect(nameStyle?.fontSize, 12);
+    expect(nameStyle?.fontWeight, FontWeight.w600);
+    final statusStyle = tester
+        .widget<Text>(find.text('Downloading 50%'))
+        .style;
+    expect(statusStyle?.fontSize, 12);
+    expect(statusStyle?.fontWeight, FontWeight.w600);
+  });
+
   testWidgets('the toolbar right group is flush to the right edge',
       (tester) async {
     await pumpApp(tester);
@@ -147,9 +163,10 @@ void main() {
     expect(searchField.style?.fontSize, 12);
     expect(tester.widget<Text>(find.text('Newest')).style?.fontSize, 12);
     expect(tester.widget<Text>(find.text('All files')).style?.fontSize, 12);
+    // The Add button label is xs semibold, like the table rows.
     expect(
       tester.widget<Text>(find.text('Add download')).style?.fontSize,
-      14,
+      12,
     );
     expect(
       tester.widget<Text>(find.text('Support the project')).style?.fontSize,
