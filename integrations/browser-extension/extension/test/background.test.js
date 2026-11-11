@@ -44,6 +44,7 @@ function fakeChrome() {
     installed: [],
     clicked: [],
     created: [],
+    determiningFilename: [],
     message: [],
     tabRemoved: [],
     tabUpdated: [],
@@ -52,6 +53,8 @@ function fakeChrome() {
   const notifications = [];
   const cancelled = [];
   const erased = [];
+  const paused = [];
+  const resumed = [];
   const storageValues = {pdmIntercept: true};
   const storageChangeListeners = [];
   let activeTabId = 1;
@@ -89,12 +92,23 @@ function fakeChrome() {
     },
     downloads: {
       onCreated: {addListener: (fn) => listeners.created.push(fn)},
+      onDeterminingFilename: {
+        addListener: (fn) => listeners.determiningFilename.push(fn),
+      },
       cancel: (id, cb) => {
         cancelled.push(id);
         if (cb) cb();
       },
       erase: (query, cb) => {
         erased.push(query);
+        if (cb) cb();
+      },
+      pause: (id, cb) => {
+        paused.push(id);
+        if (cb) cb();
+      },
+      resume: (id, cb) => {
+        resumed.push(id);
         if (cb) cb();
       },
     },
@@ -131,6 +145,8 @@ function fakeChrome() {
     notifications,
     cancelled,
     erased,
+    paused,
+    resumed,
     storageValues,
     setActiveTabId: (id) => {
       activeTabId = id;
@@ -155,6 +171,16 @@ function emitMessage(listeners, message, sender = {}) {
 function emitDownloadCreated(listeners, item) {
   assert.equal(listeners.created.length, 1);
   listeners.created[0](item);
+}
+
+function emitDeterminingFilename(listeners, item) {
+  assert.equal(listeners.determiningFilename.length, 1);
+  let suggested = false;
+  const suggest = () => {
+    suggested = true;
+  };
+  const deferred = listeners.determiningFilename[0](item, suggest);
+  return {deferred, suggested};
 }
 
 function installed(chromeApi, listeners) {
@@ -255,7 +281,8 @@ test('a click with no url posts nothing', () => {
 });
 
 test('a browser download is intercepted: cancel + erase + post to PDM', () => {
-  const {chromeApi, listeners, ports, cancelled, erased} = fakeChrome();
+  const {chromeApi, listeners, ports, cancelled, erased, paused} =
+    fakeChrome();
   installed(chromeApi, listeners);
   emitDownloadCreated(listeners, {
     id: 7,
@@ -263,6 +290,20 @@ test('a browser download is intercepted: cancel + erase + post to PDM', () => {
     filename: 'setup.exe',
     state: 'in_progress',
   });
+  // Created only pauses and holds the download; the cancel happens
+  // once the filename is determined, so the Save As dialog is
+  // deferred first.
+  assert.deepEqual(paused, [7]);
+  assert.deepEqual(cancelled, []);
+  assert.equal(ports.length, 0);
+  const {deferred, suggested} = emitDeterminingFilename(listeners, {
+    id: 7,
+    url: 'https://example.com/files/setup.exe',
+    filename: 'setup.exe',
+    state: 'in_progress',
+  });
+  assert.equal(deferred, true);
+  assert.equal(suggested, false);
   assert.deepEqual(cancelled, [7]);
   assert.deepEqual(erased, [{id: 7}]);
   assert.equal(ports.length, 1);
@@ -310,6 +351,12 @@ test('the intercepted file name comes from the browser filename', () => {
     filename: 'report-2026.pdf',
     state: 'in_progress',
   });
+  emitDeterminingFilename(listeners, {
+    id: 10,
+    url: 'https://example.com/download?id=42',
+    filename: 'report-2026.pdf',
+    state: 'in_progress',
+  });
   assert.equal(ports[0].posted[0].fileName, 'report-2026.pdf');
 });
 
@@ -322,11 +369,76 @@ test('an intercepted download that PDM rejects shows the error', () => {
     filename: 'a.zip',
     state: 'in_progress',
   });
+  emitDeterminingFilename(listeners, {
+    id: 11,
+    url: 'https://example.com/a.zip',
+    filename: 'a.zip',
+    state: 'in_progress',
+  });
   const message = ports[0].posted[0];
   ports[0]._emitMessage({id: message.id, ok: false, message: 'Engine is not running'});
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].title, 'PDM download failed');
   assert.equal(notifications[0].message, 'Engine is not running');
+});
+
+test('determiningFilename is not deferred for a download that was never held', () => {
+  const {chromeApi, listeners, ports, cancelled} = fakeChrome();
+  installed(chromeApi, listeners);
+  const {deferred, suggested} = emitDeterminingFilename(listeners, {
+    id: 12,
+    url: 'https://example.com/b.zip',
+    filename: 'b.zip',
+    state: 'in_progress',
+  });
+  assert.equal(deferred, false);
+  assert.equal(suggested, false);
+  assert.deepEqual(cancelled, []);
+  assert.equal(ports.length, 0);
+});
+
+test('turning interception off after the hold releases the download', () => {
+  const {chromeApi, listeners, ports, cancelled, paused, resumed} =
+    fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 13,
+    url: 'https://example.com/c.zip',
+    filename: 'c.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(paused, [13]);
+  // The user flips interception off before the filename is
+  // determined.
+  emitMessage(listeners, {type: 'intercept.set', enabled: false});
+  const {deferred} = emitDeterminingFilename(listeners, {
+    id: 13,
+    url: 'https://example.com/c.zip',
+    filename: 'c.zip',
+    state: 'in_progress',
+  });
+  assert.equal(deferred, false);
+  assert.deepEqual(cancelled, []);
+  assert.deepEqual(resumed, [13]);
+  assert.equal(ports.length, 0);
+});
+
+test('without onDeterminingFilename, created cancels at once', () => {
+  const {chromeApi, listeners, ports, cancelled} = fakeChrome();
+  // An older browser without the determiningFilename event: the
+  // two-stage flow is unavailable, so interception falls back to
+  // cancelling in onCreated.
+  delete chromeApi.downloads.onDeterminingFilename;
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 14,
+    url: 'https://example.com/d.zip',
+    filename: 'd.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(cancelled, [14]);
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].type, 'download.create');
 });
 
 test('media.found stores items per tab and media.list returns them', () => {

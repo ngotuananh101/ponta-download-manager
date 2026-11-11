@@ -13,6 +13,13 @@ let interceptEnabled = true;
 // cleared when a tab closes or navigates.
 const mediaByTab = new Map();
 
+// Downloads we have decided to intercept, by download id. A download
+// is paused in onCreated and only cancelled once
+// onDeterminingFilename has deferred Chrome's Save As dialog; without
+// that deferral the dialog opens before the cancel lands, so the user
+// sees both the browser dialog and the PDM download.
+const pendingIntercept = new Set();
+
 function fileNameFromUrl(url) {
   try {
     const parsed = new URL(url);
@@ -108,13 +115,14 @@ function sendDownload(chromeApi, url, fileName) {
 }
 
 // Intercepts one browser download: stops the browser's own download
-// and hands the URL to PDM instead.
+// and hands the URL to PDM instead. Returns true when the download
+// was intercepted.
 function interceptDownload(chromeApi, item) {
   if (!interceptEnabled) {
-    return;
+    return false;
   }
   if (!item || !isInterceptableUrl(item.url)) {
-    return;
+    return false;
   }
   const fileName = fileNameFromDownloadItem(item);
   if (chromeApi.downloads.cancel) {
@@ -124,6 +132,44 @@ function interceptDownload(chromeApi, item) {
     chromeApi.downloads.erase({id: item.id}, () => {});
   }
   sendDownload(chromeApi, item.url, fileName);
+  return true;
+}
+
+// Marks a download for interception and pauses it, so no data moves
+// before onDeterminingFilename decides. Returns true when the
+// download is held for interception.
+function holdForIntercept(chromeApi, item) {
+  if (!interceptEnabled) {
+    return false;
+  }
+  if (!item || !isInterceptableUrl(item.url)) {
+    return false;
+  }
+  pendingIntercept.add(item.id);
+  if (chromeApi.downloads.pause) {
+    chromeApi.downloads.pause(item.id, () => {});
+  }
+  return true;
+}
+
+// Runs when Chrome determines a download's file name. Returning true
+// defers the Save As dialog until suggest() is called; on intercept
+// suggest is never called and the download is cancelled first, so
+// Chrome never reaches the dialog step.
+function handleDeterminingFilename(chromeApi, item, suggest) {
+  if (!pendingIntercept.has(item.id)) {
+    return false;
+  }
+  pendingIntercept.delete(item.id);
+  if (interceptDownload(chromeApi, item)) {
+    return true;
+  }
+  // Interception was turned off after the download was held: give
+  // the download back to the browser.
+  if (chromeApi.downloads.resume) {
+    chromeApi.downloads.resume(item.id, () => {});
+  }
+  return false;
 }
 
 function loadInterceptSetting(chromeApi) {
@@ -220,8 +266,23 @@ function setupExtension(chromeApi) {
 
   if (chromeApi.downloads && chromeApi.downloads.onCreated) {
     chromeApi.downloads.onCreated.addListener((item) => {
-      interceptDownload(chromeApi, item);
+      if (chromeApi.downloads.onDeterminingFilename) {
+        // Two-stage: pause now, defer the Save As dialog and cancel
+        // in onDeterminingFilename.
+        holdForIntercept(chromeApi, item);
+      } else {
+        // No onDeterminingFilename (older browser): cancel at once.
+        interceptDownload(chromeApi, item);
+      }
     });
+  }
+
+  if (chromeApi.downloads && chromeApi.downloads.onDeterminingFilename) {
+    chromeApi.downloads.onDeterminingFilename.addListener(
+      (item, suggest) => {
+        return handleDeterminingFilename(chromeApi, item, suggest);
+      },
+    );
   }
 
   if (chromeApi.runtime.onMessage) {
