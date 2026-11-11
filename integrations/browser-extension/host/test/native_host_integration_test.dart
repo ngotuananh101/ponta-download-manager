@@ -64,6 +64,9 @@ class FakeEngine implements DownloadEngine {
     String downloadId,
     int? bytesPerSecond,
   ) async {}
+
+  @override
+  Future<List<DownloadSegment>> getSegments(String downloadId) async => [];
 }
 
 (IpcChannel, IpcChannel) channelPair() {

@@ -19,6 +19,9 @@ abstract class DownloadInfo with _$DownloadInfo {
     // that predate this field or arrive over IPC, which does not carry
     // it. The desktop UI needs it for the "Missing Files" filter.
     String? filePath,
+    // Queue priority. Higher runs first; 0 is the default (normal).
+    // The UI shows it as high / normal / low.
+    @Default(0) int priority,
   }) = _DownloadInfo;
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) =>

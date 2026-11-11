@@ -468,6 +468,50 @@ class PdmEngine implements DownloadEngine {
     return _store.listDownloads().map(_infoFromRecord).toList();
   }
 
+  @override
+  Future<List<DownloadSegment>> getSegments(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return [];
+    }
+    if (_isStreamingPlaylist(record.url)) {
+      // yt-dlp downloads have no segments: report the whole file as
+      // one segment so the PROGRESS tab still shows a bitmap.
+      return [
+        DownloadSegment(
+          segmentId: 0,
+          start: 0,
+          end: record.totalBytes > 0 ? record.totalBytes - 1 : null,
+          downloaded: record.downloadedBytes,
+        ),
+      ];
+    }
+    final live = _scheduler.liveSegments(downloadId);
+    if (live != null) {
+      return live
+          .map(
+            (s) => DownloadSegment(
+              segmentId: s.segmentId,
+              start: s.start,
+              end: s.end,
+              downloaded: s.downloaded,
+            ),
+          )
+          .toList();
+    }
+    return _store
+        .getSegments(downloadId)
+        .map(
+          (s) => DownloadSegment(
+            segmentId: s.segmentId,
+            start: s.start,
+            end: s.end,
+            downloaded: s.downloaded,
+          ),
+        )
+        .toList();
+  }
+
   Future<void> dispose() async {
     if (_disposed) {
       return;
@@ -700,6 +744,7 @@ class PdmEngine implements DownloadEngine {
       totalBytes: record.totalBytes,
       createdAt: record.createdAt,
       filePath: record.destinationPath,
+      priority: record.priority,
     );
   }
 }

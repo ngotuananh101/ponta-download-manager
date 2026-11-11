@@ -103,6 +103,22 @@ class DownloadScheduler {
   /// Latest known info for every download, in enqueue order.
   List<DownloadInfo> get downloads => List.of(_infos.values);
 
+  /// Live per-segment progress for a download the scheduler currently
+  /// holds (running or paused). Null when the download is not held
+  /// (queued but not started, or finished), so the caller falls back
+  /// to the checkpointed segments in the store.
+  List<SegmentProgress>? liveSegments(String downloadId) {
+    final running = _running[downloadId];
+    if (running != null) {
+      return running.started.task.segments;
+    }
+    final paused = _pausedRunning[downloadId];
+    if (paused != null) {
+      return paused.started.task.segments;
+    }
+    return null;
+  }
+
   /// Advances the id counter past [id] (e.g. 'dl-7'), so a later
   /// generated id never collides with an id that already exists.
   /// Recovery only re-enqueues non-terminal downloads, so on engine

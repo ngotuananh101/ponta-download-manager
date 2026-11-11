@@ -461,6 +461,107 @@ void main() {
       expect(File(p.join(tempDir.path, 'f.bin')).readAsBytesSync(), data);
     });
 
+    group('getSegments', () {
+      test('reports live segments for a running download', () async {
+        final data = bytesOf(256 * 1024);
+        await startServer(data: data, chunkSize: 1024);
+        final engine = openEngine(maxConnections: 2);
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        final segments = await engine.getSegments(info.id);
+        expect(segments.length, 2);
+        expect(segments.first.start, 0);
+        expect(segments.last.end, data.length - 1);
+        final downloaded =
+            segments.fold<int>(0, (sum, s) => sum + s.downloaded);
+        expect(downloaded, greaterThan(0));
+        expect(downloaded, lessThanOrEqualTo(data.length));
+      });
+
+      test('reports checkpointed segments for a paused download after '
+          'a restart', () async {
+        final data = bytesOf(256 * 1024);
+        await startServer(data: data, chunkSize: 1024);
+        final first = openEngine(maxConnections: 1);
+        final created = await first.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/f.bin',
+            destination: p.join(tempDir.path, 'f.bin'),
+          ),
+        );
+        await waitForInfo(
+          first,
+          created.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        await first.pauseDownload(created.id);
+        await waitForInfo(
+          first,
+          created.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+        await first.dispose();
+        final second = openEngine(maxConnections: 1);
+        addTearDown(second.dispose);
+        final segments = await second.getSegments(created.id);
+        expect(segments, isNotEmpty);
+        expect(segments.first.start, 0);
+        expect(segments.last.end, data.length - 1);
+        final downloaded =
+            segments.fold<int>(0, (sum, s) => sum + s.downloaded);
+        expect(downloaded, greaterThan(0));
+      });
+
+      test('returns empty for an unknown download', () async {
+        final engine = openEngine();
+        addTearDown(engine.dispose);
+        expect(await engine.getSegments('no-such-id'), isEmpty);
+      });
+
+      test('listDownloads carries the priority', () async {
+        final data = bytesOf(1024);
+        await startServer(data: data);
+        final engine = openEngine(maxConnections: 1);
+        addTearDown(engine.dispose);
+        final high = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/a.bin',
+            destination: p.join(tempDir.path, 'a.bin'),
+            priority: 2,
+          ),
+        );
+        final normal = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'http://127.0.0.1:${server.port}/b.bin',
+            destination: p.join(tempDir.path, 'b.bin'),
+          ),
+        );
+        final downloads = await engine.listDownloads();
+        expect(
+          downloads.firstWhere((d) => d.id == high.id).priority,
+          2,
+        );
+        expect(
+          downloads.firstWhere((d) => d.id == normal.id).priority,
+          0,
+        );
+      });
+    });
+
     test('a retry after a restart does not overwrite other downloads',
         () async {
       final data = bytesOf(1024);
@@ -667,6 +768,36 @@ exit 0
         expect(done.filePath, p.join(tempDir.path, 'live.mp4'));
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
+
+      test('a yt-dlp download reports one synthetic segment', () async {
+        final fake = await makeFakeYtDlp(slowScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        final segments = await engine.getSegments(info.id);
+        expect(segments.length, 1);
+        expect(segments.first.start, 0);
+        expect(segments.first.end, greaterThan(0));
+        expect(segments.first.downloaded, greaterThan(0));
+      });
+
 
       test('a normal url still uses the native scheduler', () async {
         final data = bytesOf(2048);

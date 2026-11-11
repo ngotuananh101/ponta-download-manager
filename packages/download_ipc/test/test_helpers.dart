@@ -91,6 +91,15 @@ class FakeEngine implements DownloadEngine {
     calls.add('setDownload:$downloadId:$bytesPerSecond');
   }
 
+  /// Segments returned by getSegments, keyed by download id.
+  final segments = <String, List<DownloadSegment>>{};
+
+  @override
+  Future<List<DownloadSegment>> getSegments(String downloadId) async {
+    calls.add('segments:$downloadId');
+    return segments[downloadId] ?? [];
+  }
+
   void _setStatus(String id, DownloadStatus status) {
     final info = infos[id];
     if (info != null) {

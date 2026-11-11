@@ -1,6 +1,7 @@
 import 'package:download_api/src/models/create_download_request.dart';
 import 'package:download_api/src/models/download_event.dart';
 import 'package:download_api/src/models/download_info.dart';
+import 'package:download_api/src/models/download_segment.dart';
 
 /// Application-level engine API (docs/architecture.md §16).
 /// The UI talks to this interface, never to internal segment workers.
@@ -30,6 +31,11 @@ abstract interface class DownloadEngine {
   );
 
   Future<List<DownloadInfo>> listDownloads();
+
+  /// Per-segment progress for the details panel's PROGRESS tab.
+  /// Empty when the download has no segments yet (queued, or a
+  /// download the engine has not planned segments for).
+  Future<List<DownloadSegment>> getSegments(String downloadId);
 
   Stream<DownloadEvent> get events;
 }
