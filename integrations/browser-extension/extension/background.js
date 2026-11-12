@@ -11,7 +11,61 @@ let interceptEnabled = true;
 
 // Media found on each tab, by tab id. Filled by content scripts,
 // cleared when a tab closes or navigates.
+//
+// It lives in chrome.storage.session, not an in-memory Map: an MV3
+// service worker is evicted when idle, and a Map would lose every
+// tab's media with it. The Map below is only a fallback for browsers
+// without storage.session (older Firefox); the session store is the
+// source of truth whenever it exists.
+const MEDIA_KEY = 'mediaByTab';
 const mediaByTab = new Map();
+
+function mediaStore(chromeApi) {
+  return chromeApi.storage && chromeApi.storage.session
+    ? chromeApi.storage.session
+    : null;
+}
+
+function getMediaForTab(chromeApi, tabId, callback) {
+  const store = mediaStore(chromeApi);
+  if (store == null) {
+    callback(mediaByTab.get(tabId) || []);
+    return;
+  }
+  store.get({[MEDIA_KEY]: {}}, (items) => {
+    const byTab = (items && items[MEDIA_KEY]) || {};
+    callback(byTab[tabId] || []);
+  });
+}
+
+function setMediaForTab(chromeApi, tabId, items) {
+  const store = mediaStore(chromeApi);
+  if (store == null) {
+    mediaByTab.set(tabId, items);
+    return;
+  }
+  store.get({[MEDIA_KEY]: {}}, (stored) => {
+    const byTab = {...((stored && stored[MEDIA_KEY]) || {})};
+    byTab[tabId] = items;
+    store.set({[MEDIA_KEY]: byTab}, () => {});
+  });
+}
+
+function clearMediaForTab(chromeApi, tabId) {
+  const store = mediaStore(chromeApi);
+  if (store == null) {
+    mediaByTab.delete(tabId);
+    return;
+  }
+  store.get({[MEDIA_KEY]: {}}, (stored) => {
+    const byTab = {...((stored && stored[MEDIA_KEY]) || {})};
+    if (!(tabId in byTab)) {
+      return;
+    }
+    delete byTab[tabId];
+    store.set({[MEDIA_KEY]: byTab}, () => {});
+  });
+}
 
 // Downloads we have decided to intercept, by download id. A download
 // is paused in onCreated and only cancelled once
@@ -205,7 +259,7 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
     case 'media.found': {
       const tabId = sender && sender.tab && sender.tab.id;
       if (typeof tabId === 'number' && Array.isArray(message.items)) {
-        mediaByTab.set(tabId, message.items);
+        setMediaForTab(chromeApi, tabId, message.items);
       }
       return false;
     }
@@ -216,7 +270,13 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
       }
       chromeApi.tabs.query({active: true, currentWindow: true}, (tabs) => {
         const tabId = tabs && tabs[0] && tabs[0].id;
-        sendResponse({items: mediaByTab.get(tabId) || []});
+        if (typeof tabId !== 'number') {
+          sendResponse({items: []});
+          return;
+        }
+        getMediaForTab(chromeApi, tabId, (items) => {
+          sendResponse({items});
+        });
       });
       return true;
     }
@@ -294,13 +354,13 @@ function setupExtension(chromeApi) {
   if (chromeApi.tabs) {
     if (chromeApi.tabs.onRemoved) {
       chromeApi.tabs.onRemoved.addListener((tabId) => {
-        mediaByTab.delete(tabId);
+        clearMediaForTab(chromeApi, tabId);
       });
     }
     if (chromeApi.tabs.onUpdated) {
       chromeApi.tabs.onUpdated.addListener((tabId, changeInfo) => {
         if (changeInfo.url) {
-          mediaByTab.delete(tabId);
+          clearMediaForTab(chromeApi, tabId);
         }
       });
     }

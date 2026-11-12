@@ -56,6 +56,7 @@ function fakeChrome() {
   const paused = [];
   const resumed = [];
   const storageValues = {pdmIntercept: true};
+  const sessionValues = {};
   const storageChangeListeners = [];
   let activeTabId = 1;
   const chromeApi = {
@@ -133,6 +134,18 @@ function fakeChrome() {
           }
         },
       },
+      session: {
+        get: (defaults, cb) => {
+          const result = {...defaults, ...sessionValues};
+          if (cb) cb(result);
+        },
+        set: (items, cb) => {
+          for (const key of Object.keys(items)) {
+            sessionValues[key] = items[key];
+          }
+          if (cb) cb();
+        },
+      },
       onChanged: {
         addListener: (fn) => storageChangeListeners.push(fn),
       },
@@ -148,6 +161,7 @@ function fakeChrome() {
     paused,
     resumed,
     storageValues,
+    sessionValues,
     setActiveTabId: (id) => {
       activeTabId = id;
     },
@@ -505,6 +519,53 @@ test('closing a tab clears its stored media', () => {
   setActiveTabId(5);
   const reply = emitMessage(listeners, {type: 'media.list'});
   assert.deepEqual(reply.response(), {items: []});
+});
+
+test('media.found persists items in chrome.storage.session', () => {
+  const {chromeApi, listeners, sessionValues} = fakeChrome();
+  installed(chromeApi, listeners);
+  const items = [
+    {url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'},
+  ];
+  emitMessage(listeners, {type: 'media.found', items}, {tab: {id: 3}});
+  assert.deepEqual(sessionValues.mediaByTab, {'3': items});
+});
+
+test('media.list reads items stored before the worker started', () => {
+  const {chromeApi, listeners, sessionValues, setActiveTabId} = fakeChrome();
+  // A previous worker run stored media; this run starts with an
+  // empty in-memory state, like a service worker waking from sleep.
+  sessionValues.mediaByTab = {
+    '7': [
+      {url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'},
+    ],
+  };
+  installed(chromeApi, listeners);
+  setActiveTabId(7);
+  const reply = emitMessage(listeners, {type: 'media.list'});
+  assert.deepEqual(reply.response(), {
+    items: [
+      {url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'},
+    ],
+  });
+});
+
+test('closing a tab clears its media from chrome.storage.session', () => {
+  const {chromeApi, listeners, sessionValues} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitMessage(
+    listeners,
+    {
+      type: 'media.found',
+      items: [
+        {url: 'https://cdn.example.com/clip.mp4', fileName: 'clip.mp4', type: 'video'},
+      ],
+    },
+    {tab: {id: 5}},
+  );
+  assert.equal(listeners.tabRemoved.length, 1);
+  listeners.tabRemoved[0](5);
+  assert.deepEqual(sessionValues.mediaByTab, {});
 });
 
 test('intercept get and set round-trip through storage', () => {
