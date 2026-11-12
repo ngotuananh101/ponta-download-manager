@@ -10,6 +10,7 @@ HOST_BIN="$HOME/.local/bin/pdm-native-host"
 HOST_DIR="$(cd "$(dirname "$0")/host" && pwd)"
 
 echo "Building the native host..."
+mkdir -p "$HOME/.local/bin"
 dart compile exe "$HOST_DIR/bin/native_host.dart" -o "$HOST_BIN"
 
 write_manifest() {
