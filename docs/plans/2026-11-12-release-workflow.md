@@ -145,3 +145,17 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
   on Ubuntu 26.04; the image already ships build-essential/gcc.
   The `test` job had no install step at all before this fix, while
   `build-linux` already installed `libgtk-3-dev`.
+
+- 2026-11-13 ~00:02 (second run, job `test`): the GTK fix worked, but
+  the engine suite failed 97 passed / 2 failed — both failures were
+  the known teardown race (`FileSystemException: Directory not empty`
+  at `engine_download_test.dart:176`, tests 'listDownloads carries
+  the priority' and 'a retry after a restart does not overwrite
+  other downloads'). Both tests dispose the engine, but dispose
+  returns before cancelled tasks finish unwinding, so a file can
+  still appear while the recursive delete runs. Fix: the group
+  tearDown now retries the temp-dir delete (10 x 100ms) and only
+  rethrows after the last attempt. Verified with 3 consecutive
+  full engine runs on his machine (exit 0 each) + `dart analyze`
+  clean. Making `dispose` itself await task quiescence is still an
+  open production-side improvement if the flake ever returns.

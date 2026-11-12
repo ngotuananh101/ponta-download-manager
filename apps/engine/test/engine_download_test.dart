@@ -172,8 +172,19 @@ void main() {
     });
 
     tearDown(() async {
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
+      // The engine's dispose returns before cancelled tasks finish
+      // unwinding, so a file can still appear in the temp dir after
+      // dispose. Retry the delete briefly instead of failing the
+      // test on this teardown race; a genuine failure still throws.
+      for (var attempt = 0; attempt < 10; attempt++) {
+        if (!await tempDir.exists()) return;
+        try {
+          await tempDir.delete(recursive: true);
+          return;
+        } on FileSystemException {
+          if (attempt == 9) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
       }
     });
 
