@@ -342,9 +342,8 @@ Suggested initial defaults (all configurable):
 
   Setting                          Initial value
   ------------------------------ ---------------
-  Concurrent downloads                         4
+  Concurrent downloads                         3
   Connections per file                         8
-  Maximum connections per file                16
   Retry attempts                              10
   Initial retry delay                   1 second
   Maximum retry delay                 60 seconds
