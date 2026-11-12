@@ -266,6 +266,31 @@ void main() {
     expect(find.text('Drag-and-drop URL or torrent file'), findsOneWidget);
   });
 
+  testWidgets('the drop zone hides instead of squeezing short rows',
+      (tester) async {
+    const second = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/g.bin',
+      fileName: 'g.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    // A 346px window leaves 194px under the 32px table header: both
+    // 40px rows fit, but only 114px would remain for the zone, so the
+    // zone hides and the rows keep their full height instead of being
+    // capped at 74px to make room for a 120px strip.
+    await pumpApp(
+      tester,
+      downloads: const [_download, second],
+      size: const Size(950, 346),
+    );
+    expect(find.text('Drag-and-drop URL or torrent file'), findsNothing);
+    expect(find.text('f.bin'), findsOneWidget);
+    expect(find.text('g.bin'), findsOneWidget);
+    expect(tester.getSize(find.byType(ListView)).height, 80);
+  });
+
   testWidgets('the drop zone hides when its area is too small',
       (tester) async {
     await pumpApp(tester);

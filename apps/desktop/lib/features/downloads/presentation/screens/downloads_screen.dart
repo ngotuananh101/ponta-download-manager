@@ -549,11 +549,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   /// The FDM table on top, the drop zone filling the rest below it.
-  /// The rows area is capped so the drop zone always keeps at least
-  /// 120px; with more rows than fit, the table scrolls. When the body
-  /// is too short for the zone to keep its 120px, the zone hides
-  /// entirely and the rows take the space instead: a squished strip
-  /// helps nobody, and the old cap squeezed the rows to zero height.
+  /// The zone shows only when it gets its 120px without squeezing the
+  /// rows: either the rows fit fully with 120px left over, or there
+  /// are so many rows they overflow the body on their own (then the
+  /// rows scroll under a 120px zone, as before). Otherwise the zone
+  /// hides and the rows keep their full height: a 120px strip under
+  /// rows capped to make room for it helps nobody.
   Widget _buildTable(List<Download> visible) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -561,11 +562,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         const rowHeight = 40.0;
         const minDropZoneHeight = 120.0;
         final available = constraints.maxHeight;
-        final showDropZone =
-            available - headerHeight >= minDropZoneHeight;
-        final rowsCap = showDropZone
-            ? available - headerHeight - minDropZoneHeight
-            : available - headerHeight;
+        final bodyAfterHeader = available - headerHeight;
+        final rowsNatural = visible.length * rowHeight;
+        final showDropZone = bodyAfterHeader >= minDropZoneHeight &&
+            (rowsNatural + minDropZoneHeight <= bodyAfterHeader ||
+                rowsNatural > bodyAfterHeader);
+        final rowsCap = showDropZone && rowsNatural > bodyAfterHeader
+            ? bodyAfterHeader - minDropZoneHeight
+            : bodyAfterHeader;
         final rowsHeight = (visible.length * rowHeight).clamp(
           0.0,
           rowsCap.clamp(0.0, double.infinity),
