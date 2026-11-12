@@ -1,6 +1,30 @@
 # Row-menu Batch 3 — File integrity, Add mirror, Add tag, Virus check (disabled)
 
-## Status: IN PROGRESS 2026-11-12
+## Status: DONE 2026-11-12
+
+Outcome: B3.1 `7e9d42e`, B3.2 `142822c`, B3.3 `a290bb3`, B3.4
+(this commit). Final gates: desktop 247/247, engine 86/86,
+download_recovery 21/21, download_integrity 9/9,
+download_ipc 18/18, host 30/30, download_api 6/6, analyzes
+clean (desktop/api/engine), release build OK.
+
+Notes from the work (not in the original plan):
+- B3.2 found a real bug: `CheckpointWriter.track()` built a
+  fresh `DownloadRecord` and upserted it, wiping the mirrors
+  (and tags) the moment a task started, so failover never ran.
+  Fixed to reuse the stored record; regression test in
+  download_recovery. The same fresh-record wipe also applied
+  to `retryDownload` on a completed file: the sink factory
+  refused the destination (`file-exists`), so retry and the
+  failover re-enqueue now pass `overwrite: true` (the old file
+  stays until the new download renames over it).
+- The `changeUrl keeps the mirrors` engine test raced the
+  unpaused create's task against the retry on the same id and
+  partial; it now creates paused, like the other failover
+  tests. A retry while the first attempt is still starting is
+  a test-only race (the UI only offers Retry on terminal rows).
+- B3.3 grew the details panel 264px -> 276px: the extra Tags
+  row overflowed by 9px under the test font.
 
 ## Context
 
