@@ -49,6 +49,17 @@ build once after P1 and once at the end.
   port file, PowerShell disk space, explorer args, startup error
   screen) is code-verified + unit-tested on Linux via `isWindows`
   seams; real-Windows verification deferred to Tuan Anh.
+- R-P3a (items 21–29) — DONE: item 21 `111f5bc`, item 22 `acbb5da`,
+  item 23 `98d1a0d`, item 24 `ec11963`, item 25 `4e3f138`, item 26
+  `99504c1`, item 27 `c9b7f20`, item 28 `01442e4`, item 29 `90e6873`.
+  Item 25 adds a single global connection cap (default 16,
+  `setMaxTotalConnections` for runtime changes); with the engine
+  defaults (3 concurrent x 8 connections) only 2 downloads run at
+  once now. Item 28: a downloading row now shows 2 dividers, not 3
+  — its file-actions group is empty, so the first divider is skipped.
+  Gates at close-out: desktop 272/272, engine 99/99 (after 3 full runs
+  hit the known single-test teardown flake on two moving tests),
+  analyze clean.
 
 ## Batches
 
