@@ -784,9 +784,8 @@ download-manager/
 │   ├── download_recovery/
 │   ├── download_limiter/
 │   ├── download_integrity/
-│   ├── download_database/
 │   ├── download_ipc/
-│   └── download_platform/
+│   └── download_external/
 ├── integrations/
 │   └── browser-extension/
 │       ├── chromium/
