@@ -105,6 +105,75 @@ void main() {
       expect(closed, isTrue);
       expect(channel.isClosed, isTrue);
     });
+
+    test('a single over-cap line with a newline closes the channel',
+        () async {
+      final inbound = StreamController<List<int>>();
+      final outbound = StreamController<List<int>>();
+      final channel = IpcChannel(
+        inbound.stream,
+        outbound.sink,
+        maxLineBytes: 16,
+      );
+      addTearDown(channel.close);
+      final received = <Map<String, Object?>>[];
+      final written = <List<int>>[];
+      var closed = false;
+      channel.messages.listen(received.add, onDone: () => closed = true);
+      outbound.stream.listen(written.add);
+      // One chunk, 33 bytes + newline: the cap must apply even
+      // though the chunk contains a newline.
+      inbound.add(utf8.encode('{"type":"event","v":1,"event":"ping"}\n'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(received, isEmpty);
+      expect(closed, isTrue);
+      expect(channel.isClosed, isTrue);
+      final text = utf8.decode(written.expand((chunk) => chunk).toList());
+      expect(text, contains('invalid-message'));
+    });
+
+    test('an over-cap line split across chunks closes the channel',
+        () async {
+      final inbound = StreamController<List<int>>();
+      final outbound = StreamController<List<int>>();
+      final channel = IpcChannel(
+        inbound.stream,
+        outbound.sink,
+        maxLineBytes: 16,
+      );
+      addTearDown(channel.close);
+      final received = <Map<String, Object?>>[];
+      var closed = false;
+      channel.messages.listen(received.add, onDone: () => closed = true);
+      final line = utf8.encode('{"type":"event","v":1,"event":"ping"}');
+      inbound.add(line.sublist(0, 10));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      inbound.add([...line.sublist(10), 0x0A]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(received, isEmpty);
+      expect(closed, isTrue);
+      expect(channel.isClosed, isTrue);
+    });
+
+    test('send refuses a message over the cap', () async {
+      final inbound = StreamController<List<int>>();
+      final outbound = StreamController<List<int>>();
+      final channel = IpcChannel(
+        inbound.stream,
+        outbound.sink,
+        maxLineBytes: 16,
+      );
+      addTearDown(channel.close);
+      final written = <List<int>>[];
+      outbound.stream.listen(written.add);
+      await expectLater(
+        channel.send({'type': 'event', 'v': 1, 'event': 'ping'}),
+        throwsArgumentError,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(written, isEmpty);
+      expect(channel.isClosed, isFalse);
+    });
   });
 
   group('IpcServer + IpcClient over an in-memory channel', () {

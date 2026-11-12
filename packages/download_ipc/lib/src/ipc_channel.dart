@@ -10,7 +10,8 @@ import 'protocol.dart';
 /// is answered with an `invalid-message` error and the connection
 /// stays open; a line over [maxLineBytes] is answered the same way
 /// and the connection is closed, so a peer cannot grow memory
-/// unboundedly.
+/// unboundedly. Sending a message over [maxLineBytes] throws an
+/// [ArgumentError] and writes nothing.
 class IpcChannel {
   IpcChannel(
     Stream<List<int>> input,
@@ -52,8 +53,12 @@ class IpcChannel {
     if (_closed) {
       throw StateError('IpcChannel is closed');
     }
+    final encoded = utf8.encode(jsonEncode(message));
+    if (encoded.length > maxLineBytes) {
+      throw ArgumentError('Message exceeds $maxLineBytes bytes');
+    }
     try {
-      _output.add(utf8.encode('${jsonEncode(message)}\n'));
+      _output.add([...encoded, 0x0A]);
     } catch (_) {
       // The peer is gone; close the channel so the server drops
       // this client instead of writing to it again.
@@ -96,6 +101,16 @@ class IpcChannel {
         return;
       }
       _buffer.addAll(chunk.sublist(offset, newline));
+      if (_buffer.length > maxLineBytes) {
+        // A single chunk can carry a whole over-cap line: the cap
+        // must be checked here too, not only on the no-newline path.
+        _buffer.clear();
+        _sendErrorAndClose(
+          IpcErrorCode.invalidMessage,
+          'Line exceeds $maxLineBytes bytes',
+        );
+        return;
+      }
       offset = newline + 1;
       _emitLine();
     }
@@ -104,6 +119,13 @@ class IpcChannel {
   void _emitLine() {
     var bytes = _buffer.toList();
     _buffer.clear();
+    if (bytes.length > maxLineBytes) {
+      _sendErrorAndClose(
+        IpcErrorCode.invalidMessage,
+        'Line exceeds $maxLineBytes bytes',
+      );
+      return;
+    }
     if (bytes.isNotEmpty && bytes.last == 0x0D) {
       bytes = bytes.sublist(0, bytes.length - 1);
     }
