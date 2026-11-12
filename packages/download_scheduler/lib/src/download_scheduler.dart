@@ -573,23 +573,23 @@ class DownloadScheduler {
         return true;
       },
       stateChanged: (downloadId, status) {
+        // The task sets its status to completed (and emits the
+        // completed event) before the scheduler finished the sink.
+        // Hold the completed state change back entirely — including
+        // the downloads snapshot — so nothing ever reports a download
+        // as completed before its file is final.
+        if (status == DownloadStatus.completed) {
+          return false;
+        }
         final info = _infos[downloadId];
         if (info != null) {
           _infos[downloadId] = info.copyWith(status: status);
         }
-        // The task sets its status to completed (and emits the
-        // completed event) before the scheduler finished the sink.
-        // Hold the completed state change back too, so the UI never
-        // reports a download as completed before its file is final.
-        return status != DownloadStatus.completed;
+        return true;
       },
       completed: (downloadId, filePath) {
-        final info = _infos[downloadId];
-        if (info != null) {
-          _infos[downloadId] = info.copyWith(
-            status: DownloadStatus.completed,
-          );
-        }
+        // Held back until _onTaskDone finishes the sink; the snapshot
+        // must not claim completed before the file is final either.
         return false;
       },
       failed: (downloadId, code, message) {
@@ -615,7 +615,6 @@ class DownloadScheduler {
         ),
       );
     }
-    _infos[job.id] = info.copyWith(fileName: job.fileName);
     if (info.status == DownloadStatus.completed) {
       final sink = running?.started.sink;
       if (sink is FileChunkSink) {
@@ -637,6 +636,9 @@ class DownloadScheduler {
           return;
         }
       }
+      // Only now is the file final: report completed in the snapshot
+      // and emit the terminal events together.
+      _infos[job.id] = info.copyWith(fileName: job.fileName);
       _emit(
         DownloadEvent.stateChanged(
           downloadId: job.id,
@@ -649,6 +651,8 @@ class DownloadScheduler {
           filePath: sink?.filePath ?? '',
         ),
       );
+    } else {
+      _infos[job.id] = info.copyWith(fileName: job.fileName);
     }
     _pump();
   }
