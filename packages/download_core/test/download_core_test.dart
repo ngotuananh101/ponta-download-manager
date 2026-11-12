@@ -25,6 +25,13 @@ class MemorySink implements ChunkSink {
   Future<void> close() async {}
 }
 
+class _ThrowingCloseSink extends MemorySink {
+  @override
+  Future<void> close() async {
+    throw StateError('close failed');
+  }
+}
+
 void main() {
   late HttpServer server;
   late Uri base;
@@ -459,6 +466,26 @@ void main() {
       final info = await task.run();
       expect(info.status, DownloadStatus.completed);
       expect(sink.bytes, body);
+    });
+
+    test('a throwing sink.close() fails the task instead of completing it',
+        () async {
+      final sink = _ThrowingCloseSink();
+      final task = taskFor('/no-range', sink: sink);
+      final events = <DownloadEvent>[];
+      task.events.listen(events.add);
+      await expectLater(
+        task.run(),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'close-failed'),
+        ),
+      );
+      expect(task.status, DownloadStatus.failed);
+      expect(
+        events.whereType<DownloadFailed>().map((e) => e.code),
+        contains('close-failed'),
+      );
     });
   });
 }

@@ -185,8 +185,31 @@ class DownloadTask {
       _fail(wrapped);
       throw wrapped;
     } finally {
-      await _closeSink();
+      DownloadError? closeFailure;
+      try {
+        await _closeSink();
+      } catch (e) {
+        // The download already reported completed, but its sink never
+        // closed: the file is not final. Report the failure instead of
+        // leaving a completed status on a .partial file. The scheduler
+        // holds the completed event back, so the failed event is the
+        // one the UI sees.
+        if (_status == DownloadStatus.completed) {
+          closeFailure = DownloadError(
+            'close-failed',
+            'Could not close the file: $e',
+          );
+          _fail(closeFailure);
+        }
+        // Otherwise the download already failed or was cancelled; the
+        // close failure adds nothing and the original outcome stands.
+      }
+      // Always close the event stream before run() returns or throws,
+      // so every event added above has been delivered by then.
       await _events.close();
+      if (closeFailure != null) {
+        throw closeFailure;
+      }
     }
   }
 

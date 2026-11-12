@@ -118,6 +118,36 @@ DownloadScheduler _makeScheduler(
   );
 }
 
+class _ThrowingCloseSink extends _NullSink {
+  @override
+  Future<void> close() async {
+    throw StateError('close failed');
+  }
+}
+
+DownloadScheduler _makeSchedulerWithThrowingClose(
+  _FakeTransport transport, {
+  int maxConcurrent = 3,
+}) {
+  return DownloadScheduler(
+    maxConcurrent: maxConcurrent,
+    taskFactory: (job) async {
+      final ChunkSink sink = job.url.endsWith('/a')
+          ? _ThrowingCloseSink()
+          : _NullSink();
+      final task = DownloadTask(
+        transport: transport,
+        sink: sink,
+        url: Uri.parse(job.url),
+        id: job.id,
+        maxConnections: job.maxConnections,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      return ScheduledTask(task, sink);
+    },
+  );
+}
+
 Future<void> waitFor(
   bool Function() condition, {
   Duration timeout = const Duration(seconds: 10),
@@ -206,6 +236,38 @@ void main() {
         'http://example.test/c',
         'http://example.test/b',
       ]);
+    });
+
+    test('a throwing sink.close() reports failed and frees the slot',
+        () async {
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final scheduler = _makeSchedulerWithThrowingClose(
+        transport,
+        maxConcurrent: 1,
+      );
+      addTearDown(scheduler.dispose);
+      final events = <DownloadEvent>[];
+      scheduler.events.listen(events.add);
+      final first = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      final second = scheduler.enqueue(
+        url: 'http://example.test/b',
+        fileName: 'b.bin',
+        maxConnections: 1,
+      );
+      await waitForStatus(scheduler, first, DownloadStatus.failed);
+      await waitForStatus(scheduler, second, DownloadStatus.completed);
+      expect(
+        events.whereType<DownloadFailed>().map((e) => e.downloadId),
+        contains(first),
+      );
+      expect(
+        events.whereType<DownloadCompleted>().map((e) => e.downloadId),
+        isNot(contains(first)),
+      );
     });
 
     test('pause frees a slot and resume finishes the download', () async {
