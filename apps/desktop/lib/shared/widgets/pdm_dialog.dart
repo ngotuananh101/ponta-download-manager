@@ -72,14 +72,11 @@ class PdmDialog extends StatelessWidget {
               child,
               if (actions.isNotEmpty) ...[
                 const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    for (var i = 0; i < actions.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      actions[i],
-                    ],
-                  ],
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: actions,
                 ),
               ],
             ],

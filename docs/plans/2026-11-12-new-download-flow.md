@@ -35,8 +35,11 @@ Cancel / Download later / DOWNLOAD).
   part — flag this if a start time is wanted instead.
 - **Save to.** A dropdown of the default download directory plus
   recently picked directories (max 5, persisted in settings.json),
-  and a folder button opening a directory picker (`file_selector`
-  `getDirectoryPath`, GTK chooser on Linux).
+  and a folder button opening a directory picker (`file_picker`
+  `getDirectoryPath`, zenity on Linux — zenity is installed at
+  `/usr/bin/zenity`). `file_selector` was tried first but cannot
+  resolve: it needs `cross_file ^0.3.0` while `desktop_drop` needs
+  `cross_file ^0.4.0`.
 - **Disk space.** Free bytes of the save directory (`df` on Linux,
   `fsutil` on Windows), shown as "Size: X (Disk space: Y)"; unknown
   shows a dash. Re-queried when the directory changes.
@@ -82,4 +85,4 @@ Cancel / Download later / DOWNLOAD).
   and free disk space; Download later leaves the row paused;
   Scheduler checked + DOWNLOAD also leaves it paused.
 
-## Status: IN PROGRESS 2026-11-12 (P1 next)
+## Status: IN PROGRESS 2026-11-12 (P1-P3 done, P5 next — the step-2 dialog is built before the step-1 wiring so the flow has something to call)
