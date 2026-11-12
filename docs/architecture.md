@@ -323,10 +323,12 @@ Use two scheduling levels:
 **Global scheduler**
 
 -   Maximum concurrent downloads.
--   Maximum total connections.
 -   Priority and queue ordering.
 -   Global bandwidth budget.
 -   Fairness between downloads.
+
+There is no total connection cap: only the per-download connection
+limit and the maximum concurrent downloads apply.
 
 **Per-download scheduler**
 
@@ -342,9 +344,7 @@ Suggested initial defaults (all configurable):
   ------------------------------ ---------------
   Concurrent downloads                         4
   Connections per file                         8
-  Global connections                          32
   Maximum connections per file                16
-  Maximum global connections                  64
   Retry attempts                              10
   Initial retry delay                   1 second
   Maximum retry delay                 60 seconds
