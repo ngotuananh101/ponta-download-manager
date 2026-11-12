@@ -30,6 +30,7 @@ class _FakeTransport implements DownloadTransport {
   final int chunkSize = 256;
 
   final failPaths = <String>{};
+  Future<void> Function(Uri url)? onProbe;
   final startedUrls = <String>[];
   final ifRanges = <String?>[];
   var openStreams = 0;
@@ -37,6 +38,7 @@ class _FakeTransport implements DownloadTransport {
 
   @override
   Future<ResourceInfo> probe(Uri url) async {
+    await onProbe?.call(url);
     if (failPaths.contains(url.path)) {
       throw DownloadError('network', 'probe failed for ${url.path}');
     }
@@ -307,6 +309,41 @@ void main() {
       await waitForStatus(scheduler, c, DownloadStatus.completed);
       expect(infoOf(scheduler, a).downloadedBytes, 4096);
       expect(transport.ifRanges, contains('v1'));
+    });
+
+    test('pausing during the probe stops the download', () async {
+      final transport = _FakeTransport(data: bytesOf(4096));
+      final probeEntered = Completer<void>();
+      final releaseProbe = Completer<void>();
+      transport.onProbe = (url) async {
+        if (url.path == '/a' && !probeEntered.isCompleted) {
+          probeEntered.complete();
+          await releaseProbe.future;
+        }
+      };
+      final scheduler = _makeScheduler(transport, maxConcurrent: 1);
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      final b = scheduler.enqueue(
+        url: 'http://example.test/b',
+        fileName: 'b.bin',
+        maxConnections: 1,
+      );
+      await probeEntered.future.timeout(const Duration(seconds: 5));
+      scheduler.pause(a);
+      releaseProbe.complete();
+      // The freed slot lets dl-2 run and complete.
+      await waitForStatus(scheduler, b, DownloadStatus.completed);
+      // dl-1 downloaded nothing while paused.
+      expect(infoOf(scheduler, a).downloadedBytes, 0);
+      expect(infoOf(scheduler, a).status, DownloadStatus.paused);
+      scheduler.resume(a);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      expect(infoOf(scheduler, a).downloadedBytes, 4096);
     });
 
     test('pauseAll pauses everything and resumeAll restarts it', () async {

@@ -133,6 +133,12 @@ class DownloadTask {
           _total = validation.totalBytes!;
         }
       }
+      // A pause that landed during the probe takes effect here: wait
+      // for resume instead of starting the download while paused.
+      await _waitIfPaused();
+      if (_cancelled) {
+        return _finish(DownloadStatus.cancelled);
+      }
       _setStatus(DownloadStatus.downloading);
       try {
         if (segmented) {
@@ -214,7 +220,12 @@ class DownloadTask {
   }
 
   void pause() {
-    if (_status != DownloadStatus.downloading) {
+    // Also accepts queued: the task may still be probing, and a pause
+    // then must stick — run() waits on the resume gate after the probe
+    // instead of switching to downloading.
+    if (_status == DownloadStatus.completed ||
+        _status == DownloadStatus.failed ||
+        _status == DownloadStatus.cancelled) {
       return;
     }
     _paused = true;
