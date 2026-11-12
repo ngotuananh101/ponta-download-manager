@@ -1,6 +1,6 @@
 # Release workflow — plan
 
-Status: IN PROGRESS
+Status: DONE
 
 ## Source
 
