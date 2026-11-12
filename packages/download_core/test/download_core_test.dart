@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_core/download_core.dart';
+import 'package:download_limiter/download_limiter.dart';
 import 'package:download_transport/download_transport.dart';
 import 'package:test/test.dart';
 
@@ -466,6 +467,34 @@ void main() {
       final info = await run;
       expect(info.status, DownloadStatus.cancelled);
       expect(info.downloadedBytes, lessThan(bigBody.length));
+    });
+
+    test('cancel interrupts a pending token-bucket wait', () async {
+      final sink = MemorySink();
+      final limiter = BandwidthLimiter(globalBytesPerSecond: 1);
+      addTearDown(limiter.dispose);
+      final task = DownloadTask(
+        transport: HttpTransport(),
+        sink: sink,
+        url: base.resolve('/file'),
+        id: 'test-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+        limiter: limiter,
+      );
+      final run = task.run();
+      // Let the probe and range validation finish so the task is
+      // waiting on the bucket, not still probing.
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (task.status != DownloadStatus.downloading) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('task never started downloading');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      task.cancel();
+      final info = await run.timeout(const Duration(seconds: 5));
+      expect(info.status, DownloadStatus.cancelled);
     });
 
     test('retries a transient 500 and still completes', () async {

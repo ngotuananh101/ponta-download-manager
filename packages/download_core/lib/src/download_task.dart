@@ -100,6 +100,10 @@ class DownloadTask {
   bool _cancelled = false;
   bool _aborted = false;
   Completer<void>? _resumeGate;
+  // Completed by pause(), cancel() and _abort() so a segment
+  // waiting on the token bucket wakes up instead of sitting in
+  // the queue until tokens arrive. Reset by resume().
+  Completer<void>? _cancelGate;
   final _iterators = <StreamIterator<List<int>>>[];
   var _sinkClosed = false;
 
@@ -230,6 +234,7 @@ class DownloadTask {
     }
     _paused = true;
     _setStatus(DownloadStatus.paused);
+    _completeCancelGate();
     _cancelIterators();
   }
 
@@ -239,6 +244,7 @@ class DownloadTask {
     }
     _paused = false;
     _setStatus(DownloadStatus.downloading);
+    _cancelGate = null;
     final gate = _resumeGate;
     _resumeGate = null;
     gate?.complete();
@@ -252,6 +258,7 @@ class DownloadTask {
     }
     _cancelled = true;
     _paused = false;
+    _completeCancelGate();
     final gate = _resumeGate;
     _resumeGate = null;
     gate?.complete();
@@ -421,7 +428,7 @@ class DownloadTask {
         }
         final throttle = limiter;
         if (throttle != null) {
-          await throttle.acquire(id, chunk.length, priority: priority);
+          await _acquireOrCancel(throttle, chunk.length);
         }
         await sink.write(segment.start + state.downloaded, chunk);
         state.downloaded += chunk.length;
@@ -448,8 +455,33 @@ class DownloadTask {
     await _resumeGate!.future;
   }
 
+  /// Waits for bandwidth tokens, or returns early when the download
+  /// is paused, cancelled or aborted: a bare `await acquire(...)`
+  /// would sit in the bucket queue until tokens arrive, so neither
+  /// pause nor cancel could interrupt it.
+  Future<void> _acquireOrCancel(BandwidthLimiter limiter, int bytes) async {
+    _cancelGate ??= Completer<void>();
+    if (_cancelled || _aborted || _paused) {
+      return;
+    }
+    final acquired = limiter.acquire(id, bytes, priority: priority);
+    // The acquire stays queued in the bucket after the gate wins the
+    // race; swallow its eventual outcome so it can never surface as
+    // an unhandled error (e.g. when the bucket is disposed).
+    unawaited(acquired.then((_) {}, onError: (_) {}));
+    await Future.any([acquired, _cancelGate!.future]);
+  }
+
+  void _completeCancelGate() {
+    final gate = _cancelGate;
+    if (gate != null && !gate.isCompleted) {
+      gate.complete();
+    }
+  }
+
   void _abort() {
     _aborted = true;
+    _completeCancelGate();
     _cancelIterators();
   }
 
