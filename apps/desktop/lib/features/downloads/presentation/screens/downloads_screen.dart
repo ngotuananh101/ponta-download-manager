@@ -1058,7 +1058,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         ],
         child: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'https://...'),
+          style: AppTextSize.xs.textStyle(),
+          decoration: InputDecoration(
+            hintText: 'https://...',
+            hintStyle: AppTextSize.xs.textStyle(),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
+          ),
           keyboardType: TextInputType.url,
         ),
       ),

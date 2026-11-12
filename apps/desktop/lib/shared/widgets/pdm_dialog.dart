@@ -49,7 +49,7 @@ class PdmDialog extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: AppTextSize.lg.textStyle(
+                    style: AppTextSize.xs.textStyle(
                       weight: AppFontWeight.semibold,
                     ),
                   ),
@@ -90,9 +90,9 @@ class PdmDialog extends StatelessWidget {
   }
 }
 
-/// An action button for [PdmDialog]: a 36px pill. The primary button
-/// is blue with an uppercase label (the New download DOWNLOAD button);
-/// the secondary button is a dark pill with its label as given.
+/// An action button for [PdmDialog]: a 40px pill with xs text.
+/// The primary button is blue (the New download DOWNLOAD button);
+/// the secondary button is a dark pill. Labels stay as given.
 class PdmDialogButton extends StatelessWidget {
   const PdmDialogButton.primary({
     super.key,
@@ -115,8 +115,8 @@ class PdmDialogButton extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return TextButton(
       style: TextButton.styleFrom(
-        minimumSize: const Size(0, 36),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        minimumSize: Size(0, AppButtonSize.md.height),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s5),
         backgroundColor: _primary
             ? colorScheme.primary
             : colorScheme.surfaceContainerHighest,
@@ -126,12 +126,12 @@ class PdmDialogButton extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
-        textStyle: AppTextSize.sm.textStyle(
+        textStyle: AppTextSize.xs.textStyle(
           weight: AppFontWeight.semibold,
         ),
       ),
       onPressed: onPressed,
-      child: Text(_primary ? label.toUpperCase() : label),
+      child: Text(label),
     );
   }
 }

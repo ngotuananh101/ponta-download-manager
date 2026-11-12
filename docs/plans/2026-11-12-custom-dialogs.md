@@ -37,3 +37,14 @@ label).
   `flutter build linux --release`.
 
 ## Status: DONE 2026-11-12. Desktop suite 126/126, analyze clean, release build succeeds. Note: an intermediate lint-fix script matched the wrong child: anchor in downloads_screen.dart and spliced the file; it was restored from git and the migration re-applied with an exact anchor.
+
+## Sizing pass (Tuấn Anh's feedback, same day)
+- Buttons were too small, inputs and option rows too big. Dialog text
+  is now always xs (12px): title, file name, radio/checkbox labels,
+  field text and hint, button labels. Buttons are 40px tall
+  (`AppButtonSize.md.height`) with 20px horizontal padding.
+- Primary buttons no longer uppercase their label.
+- Option rows use `dense: true` + `VisualDensity.compact`; the Add
+  dialog's URL field uses xs text with 12px/8px content padding.
+- Tests updated to the plain labels, plus a test asserting the Add
+  dialog's title and field text are 12px.

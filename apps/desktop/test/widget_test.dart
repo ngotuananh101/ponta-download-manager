@@ -77,7 +77,7 @@ Future<void> addDownloadViaDialog(WidgetTester tester, String url) async {
   await tester.tap(find.text('Add download'));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField).last, url);
-  await tester.tap(find.text('ADD'));
+  await tester.tap(find.text('Add'));
   await tester.pumpAndSettle();
 }
 
@@ -315,6 +315,23 @@ void main() {
     await tester.tap(find.text('Drag-and-drop URL or torrent file'));
     await tester.pumpAndSettle();
     expect(find.byType(PdmDialog), findsNothing);
+  });
+
+  testWidgets('the add dialog uses xs text', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    final titleStyle = tester
+        .widget<Text>(
+          find.descendant(
+            of: find.byType(PdmDialog),
+            matching: find.text('Add download'),
+          ),
+        )
+        .style;
+    expect(titleStyle?.fontSize, 12);
+    final field = tester.widget<TextField>(find.byType(TextField).last);
+    expect(field.style?.fontSize, 12);
   });
 
   testWidgets('the add dialog closes with the X button', (tester) async {
@@ -1163,7 +1180,7 @@ void main() {
       ),
     );
     await tester.tap(
-      find.descendant(of: dialog, matching: find.text('DOWNLOAD')),
+      find.descendant(of: dialog, matching: find.text('Download')),
     );
     await tester.pumpAndSettle();
     expect(policies, [null, FileConflictPolicy.rename]);
@@ -1210,7 +1227,7 @@ void main() {
       find.descendant(of: dialog, matching: find.text('Overwrite')),
     );
     await tester.tap(
-      find.descendant(of: dialog, matching: find.text('DOWNLOAD')),
+      find.descendant(of: dialog, matching: find.text('Download')),
     );
     await tester.pumpAndSettle();
     expect(policies, [null, FileConflictPolicy.overwrite]);

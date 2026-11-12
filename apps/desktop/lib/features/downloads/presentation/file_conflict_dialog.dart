@@ -45,7 +45,7 @@ Future<FileConflictDecision?> showFileConflictDialog({
           children: [
             Text(
               fileName,
-              style: AppTextSize.base.textStyle(
+              style: AppTextSize.xs.textStyle(
                 weight: AppFontWeight.semibold,
               ),
             ),
@@ -56,25 +56,50 @@ Future<FileConflictDecision?> showFileConflictDialog({
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   RadioListTile<FileConflictPolicy>(
-                    title: const Text('Overwrite'),
-                    subtitle: const Text('Replace the existing file'),
+                    title: Text(
+                      'Overwrite',
+                      style: AppTextSize.xs.textStyle(),
+                    ),
+                    subtitle: Text(
+                      'Replace the existing file',
+                      style: AppTextSize.xs.textStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     value: FileConflictPolicy.overwrite,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
                     contentPadding: EdgeInsets.zero,
                   ),
                   RadioListTile<FileConflictPolicy>(
-                    title: const Text('Rename'),
-                    subtitle: Text('Save as "$renamedName"'),
+                    title: Text(
+                      'Rename',
+                      style: AppTextSize.xs.textStyle(),
+                    ),
+                    subtitle: Text(
+                      'Save as "$renamedName"',
+                      style: AppTextSize.xs.textStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     value: FileConflictPolicy.rename,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
                     contentPadding: EdgeInsets.zero,
                   ),
                 ],
               ),
             ),
             CheckboxListTile(
-              title: const Text('Remember my choice'),
+              title: Text(
+                'Remember my choice',
+                style: AppTextSize.xs.textStyle(),
+              ),
               value: remember,
               onChanged: (value) => setState(() => remember = value ?? false),
               controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+              visualDensity: VisualDensity.compact,
               contentPadding: EdgeInsets.zero,
             ),
           ],
