@@ -44,6 +44,7 @@ void main() {
   final ifRangeHeaders = <String?>[];
   var flakyRemaining = 1;
   var getCount = 0;
+  var dropRemaining = 1;
 
   setUpAll(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -198,6 +199,34 @@ void main() {
           await response.close();
           return;
         }
+        if (path == '/drop-body' &&
+            request.method == 'GET' &&
+            dropRemaining > 0 &&
+            request.headers.value('range') != 'bytes=0-0') {
+          // Declare the full range, send half of it, then close: the
+          // client sees the connection end mid-body.
+          dropRemaining--;
+          final dropRange = request.headers.value('range');
+          final dropMatch = dropRange == null
+              ? null
+              : RegExp(r'bytes=(\d+)-(\d*)').firstMatch(dropRange);
+          final dropStart =
+              dropMatch == null ? 0 : int.parse(dropMatch.group(1)!);
+          final dropEndText = dropMatch?.group(2) ?? '';
+          final dropEnd =
+              dropEndText.isEmpty ? total - 1 : int.parse(dropEndText);
+          response.statusCode = HttpStatus.partialContent;
+          response.headers.set(
+            'content-range',
+            'bytes $dropStart-$dropEnd/$total',
+          );
+          response.headers.contentLength = dropEnd - dropStart + 1;
+          final half = (dropEnd - dropStart + 1) ~/ 2;
+          response.add(data.sublist(dropStart, dropStart + half));
+          await response.flush();
+          await response.close();
+          return;
+        }
         final range = request.headers.value('range');
         requestedRanges.add(range ?? 'full');
         if (range != null && path != '/no-range') {
@@ -244,6 +273,7 @@ void main() {
     requestedRanges.clear();
     ifRangeHeaders.clear();
     flakyRemaining = 1;
+    dropRemaining = 1;
     getCount = 0;
   });
 
@@ -445,6 +475,15 @@ void main() {
       expect(info.status, DownloadStatus.completed);
       expect(sink.bytes, body);
       expect(getCount, greaterThanOrEqualTo(2));
+    });
+
+    test('a dropped connection mid-body is retried and still completes',
+        () async {
+      final sink = MemorySink();
+      final task = taskFor('/drop-body', sink: sink, maxConnections: 2);
+      final info = await task.run();
+      expect(info.status, DownloadStatus.completed);
+      expect(sink.bytes, body);
     });
 
     test('404 fails the task', () async {

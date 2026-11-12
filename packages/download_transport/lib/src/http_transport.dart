@@ -139,7 +139,7 @@ class HttpTransport implements DownloadTransport {
     }
     final response = await _openResponse(url, headers);
     if (response.statusCode == HttpStatus.partialContent) {
-      yield* response;
+      yield* _withNetworkErrors(response);
     } else if (response.statusCode == HttpStatus.ok) {
       if (start != null && (start != 0 || end != null)) {
         // A bounded range (or a resume from a non-zero offset) was
@@ -157,11 +157,28 @@ class HttpTransport implements DownloadTransport {
           'Server ignored Range and returned 200',
         );
       }
-      yield* response;
+      yield* _withNetworkErrors(response);
     } else {
       await response.drain<void>();
       _throwForStatus(url, response.statusCode);
     }
+  }
+
+  /// Converts a dropped connection mid-body into a transient network
+  /// error. Errors from a `yield*` stream bypass a try/catch around
+  /// the yield, so the conversion has to happen on the stream itself:
+  /// the task retries a DownloadError('network') instead of failing
+  /// on the raw HttpException.
+  Stream<List<int>> _withNetworkErrors(Stream<List<int>> source) {
+    return source.handleError((Object error) {
+      if (error is SocketException) {
+        throw DownloadError('network', error.message);
+      }
+      if (error is HttpException) {
+        throw DownloadError('network', error.message);
+      }
+      throw error;
+    });
   }
 
   @override
