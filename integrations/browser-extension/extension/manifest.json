@@ -12,7 +12,8 @@
   "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -34,7 +35,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "pdm@ponta.dev",
-      "strict_min_version": "109.0"
+      "strict_min_version": "112.0"
     }
   }
 }
