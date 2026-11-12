@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdm/app/app.dart';
+import 'package:pdm/app/startup_error_app.dart';
 import 'package:pdm/core/services/linux_desktop_service.dart';
 import 'package:pdm/core/services/window_api.dart';
 import 'package:pdm/core/services/window_service.dart';
@@ -11,6 +12,16 @@ import 'package:window_manager/window_manager.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await _startApp(args);
+  } catch (e) {
+    // Startup failed before the first frame (engine, IPC server, or
+    // window setup): show the error instead of dying silently.
+    runApp(StartupErrorApp(message: e.toString()));
+  }
+}
+
+Future<void> _startApp(List<String> args) async {
   await LinuxDesktopService.ensureDesktopIntegration();
 
   // The engine runs in this process: open it, start the IPC server
