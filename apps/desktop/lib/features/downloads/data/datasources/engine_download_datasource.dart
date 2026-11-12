@@ -284,6 +284,19 @@ class EngineDownloadDatasource {
   Future<void> addMirror(String id, String url) =>
       engine.addMirror(id, url);
 
+  /// Tags a download: the refresh re-reads the record, so the row
+  /// and the details panel show the new tag.
+  Future<void> addTag(String id, String tag) async {
+    await engine.addTag(id, tag);
+    await _refreshDownload(id);
+  }
+
+  /// Removes a tag from a download: the refresh re-reads the record.
+  Future<void> removeTag(String id, String tag) async {
+    await engine.removeTag(id, tag);
+    await _refreshDownload(id);
+  }
+
   /// Checks the server for a newer version. Read-only: nothing is
   /// written, so no refresh is needed.
   Future<UpdateCheckResult> checkForUpdate(String id) =>

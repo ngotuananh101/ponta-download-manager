@@ -1010,6 +1010,115 @@ void main() {
       await engine.addMirror('nope', 'http://127.0.0.1:9/m.bin');
     });
 
+    test('addTag stores the tag', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await engine.addTag(info.id, 'iso');
+      final listed = await engine.listDownloads();
+      expect(listed.single.tags, ['iso']);
+    });
+
+    test('addTag trims the tag and ignores duplicates', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await engine.addTag(info.id, '  iso  ');
+      await engine.addTag(info.id, 'iso');
+      final listed = await engine.listDownloads();
+      expect(listed.single.tags, ['iso']);
+    });
+
+    test('addTag with an empty tag throws', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await expectLater(
+        engine.addTag(info.id, '   '),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-tag'),
+        ),
+      );
+    });
+
+    test('addTag with an unknown id is a no-op', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      await engine.addTag('nope', 'iso');
+    });
+
+    test('removeTag removes the tag', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await engine.addTag(info.id, 'iso');
+      await engine.addTag(info.id, 'music');
+      await engine.removeTag(info.id, 'iso');
+      final listed = await engine.listDownloads();
+      expect(listed.single.tags, ['music']);
+    });
+
+    test('removeTag of an absent tag is a no-op', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await engine.addTag(info.id, 'iso');
+      await engine.removeTag(info.id, 'music');
+      final listed = await engine.listDownloads();
+      expect(listed.single.tags, ['iso']);
+    });
+
+    test('retry keeps the tags', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data, failFirst: 1);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.addTag(info.id, 'iso');
+      await engine.retryDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.tags, ['iso']);
+    });
+
     test('a failed download falls over to its mirror', () async {
       final primary =
           _TestServer(data: bytesOf(2048), failFirst: 100);

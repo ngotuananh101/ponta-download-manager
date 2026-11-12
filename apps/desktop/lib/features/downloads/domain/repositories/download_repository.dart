@@ -44,6 +44,8 @@ abstract interface class DownloadRepository {
   Future<Either<Failure, Unit>> changeUrl(String id, String url);
 
   Future<Either<Failure, Unit>> addMirror(String id, String url);
+  Future<Either<Failure, Unit>> addTag(String id, String tag);
+  Future<Either<Failure, Unit>> removeTag(String id, String tag);
 
   /// Checks whether the server hosts a newer version.
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id);

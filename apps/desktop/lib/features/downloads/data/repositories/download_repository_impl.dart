@@ -111,6 +111,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
   @override
   Future<Either<Failure, Unit>> addMirror(String id, String url) =>
       _act(() => _datasource.addMirror(id, url));
+  @override
+  Future<Either<Failure, Unit>> addTag(String id, String tag) =>
+      _act(() => _datasource.addTag(id, tag));
+  @override
+  Future<Either<Failure, Unit>> removeTag(String id, String tag) =>
+      _act(() => _datasource.removeTag(id, tag));
 
   @override
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id) async {

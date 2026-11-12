@@ -467,6 +467,38 @@ void main() {
           .called(1);
     });
 
+    test('addTag forwards to the engine and refreshes', () async {
+      when(
+        () => engine.addTag(any(), any()),
+      ).thenAnswer((_) async {});
+      final source = datasource();
+      addTearDown(source.dispose);
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.addTag('dl-1', 'iso');
+      verify(() => engine.addTag('dl-1', 'iso')).called(1);
+      // The refresh re-reads the list (initial load + refresh).
+      verify(() => engine.listDownloads()).called(2);
+    });
+
+    test('removeTag forwards to the engine and refreshes', () async {
+      when(
+        () => engine.removeTag(any(), any()),
+      ).thenAnswer((_) async {});
+      final source = datasource();
+      addTearDown(source.dispose);
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.removeTag('dl-1', 'iso');
+      verify(() => engine.removeTag('dl-1', 'iso')).called(1);
+      // The refresh re-reads the list (initial load + refresh).
+      verify(() => engine.listDownloads()).called(2);
+    });
+
     test('checkForUpdate forwards to the engine', () async {
       when(
         () => engine.checkForUpdate(any()),

@@ -15,6 +15,28 @@ void main() {
       expect(restored, info);
     });
 
+    test('tags default to empty and round-trip through JSON', () {
+      const info = DownloadInfo(
+        id: 'd1',
+        url: 'https://example.com/file.zip',
+        fileName: 'file.zip',
+        status: DownloadStatus.queued,
+        totalBytes: 1024,
+        tags: ['iso', 'music'],
+      );
+      final restored = DownloadInfo.fromJson(info.toJson());
+      expect(restored, info);
+      expect(restored.tags, ['iso', 'music']);
+      const untagged = DownloadInfo(
+        id: 'd1',
+        url: 'https://example.com/file.zip',
+        fileName: 'file.zip',
+        status: DownloadStatus.queued,
+        totalBytes: 1024,
+      );
+      expect(untagged.tags, isEmpty);
+    });
+
     test('copyWith changes only the given fields', () {
       const info = DownloadInfo(
         id: 'd1',

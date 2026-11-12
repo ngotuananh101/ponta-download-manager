@@ -772,6 +772,36 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> addTag(String downloadId, String tag) async {
+    final trimmed = tag.trim();
+    if (trimmed.isEmpty) {
+      throw const DownloadError('invalid-tag', 'A tag cannot be empty.');
+    }
+    final record = _store.getDownload(downloadId);
+    if (record == null) return;
+    if (record.tags.contains(trimmed)) return;
+    _store.upsertDownload(
+      record.copyWith(tags: [...record.tags, trimmed]),
+    );
+  }
+
+  @override
+  Future<void> removeTag(String downloadId, String tag) async {
+    final trimmed = tag.trim();
+    if (trimmed.isEmpty) {
+      throw const DownloadError('invalid-tag', 'A tag cannot be empty.');
+    }
+    final record = _store.getDownload(downloadId);
+    if (record == null) return;
+    if (!record.tags.contains(trimmed)) return;
+    _store.upsertDownload(
+      record.copyWith(
+        tags: record.tags.where((t) => t != trimmed).toList(),
+      ),
+    );
+  }
+
+  @override
   Future<UpdateCheckResult> checkForUpdate(String downloadId) async {
     final record = _store.getDownload(downloadId);
     if (record == null) {
@@ -1122,6 +1152,7 @@ class PdmEngine implements DownloadEngine {
       createdAt: record.createdAt,
       filePath: record.destinationPath,
       priority: record.priority,
+      tags: record.tags,
     );
   }
 }

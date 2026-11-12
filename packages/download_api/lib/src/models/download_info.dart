@@ -22,6 +22,9 @@ abstract class DownloadInfo with _$DownloadInfo {
     // Queue priority. Higher runs first; 0 is the default (normal).
     // The UI shows it as high / normal / low.
     @Default(0) int priority,
+    // Labels on the download, for grouping. Empty by default; older
+    // IPC JSON without the field decodes to [].
+    @Default([]) List<String> tags,
   }) = _DownloadInfo;
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) =>

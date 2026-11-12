@@ -16,6 +16,7 @@ Download downloadFromInfo(DownloadInfo info) {
     createdAt: info.createdAt,
     filePath: info.filePath,
     priority: info.priority,
+    tags: info.tags,
   );
 }
 

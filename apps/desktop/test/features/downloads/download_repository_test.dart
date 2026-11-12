@@ -254,6 +254,28 @@ void main() {
       ).called(1);
     });
 
+    test('addTag forwards to the datasource', () async {
+      when(
+        () => datasource.addTag(any(), any()),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.addTag('dl-1', 'iso')).isRight(),
+        isTrue,
+      );
+      verify(() => datasource.addTag('dl-1', 'iso')).called(1);
+    });
+
+    test('removeTag forwards to the datasource', () async {
+      when(
+        () => datasource.removeTag(any(), any()),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.removeTag('dl-1', 'iso')).isRight(),
+        isTrue,
+      );
+      verify(() => datasource.removeTag('dl-1', 'iso')).called(1);
+    });
+
     test('checkForUpdate forwards to the datasource', () async {
       when(
         () => datasource.checkForUpdate(any()),

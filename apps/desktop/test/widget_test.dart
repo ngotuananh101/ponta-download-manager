@@ -858,6 +858,133 @@ void main() {
     expect(find.text('Set priority'), findsNothing);
   });
 
+  testWidgets('Add tag submenu lists known tags with checks',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addTag(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    when(
+      () => actions.removeTag(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    const first = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      tags: ['iso'],
+    );
+    const second = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      tags: ['iso', 'music'],
+    );
+    await pumpApp(
+      tester,
+      downloads: const [first, second],
+      actions: actions,
+    );
+    // The list shows newest first, so target the a.bin row by name.
+    final rowFinder = find
+        .ancestor(
+          of: find.text('a.bin').first,
+          matching: find.byType(Container),
+        )
+        .last;
+    await tester.tap(
+      find.descendant(of: rowFinder, matching: find.byTooltip('Actions')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add tag'));
+    await tester.pumpAndSettle();
+    expect(find.text('iso'), findsOneWidget);
+    expect(find.text('music'), findsOneWidget);
+    expect(find.text('New tag...'), findsOneWidget);
+    // a.bin has iso, but not music.
+    final iso = find.ancestor(
+      of: find.text('iso'),
+      matching: find.byType(MenuItemButton),
+    );
+    expect(
+      find.descendant(of: iso, matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    final music = find.ancestor(
+      of: find.text('music'),
+      matching: find.byType(MenuItemButton),
+    );
+    expect(
+      find.descendant(of: music, matching: find.byIcon(Icons.check)),
+      findsNothing,
+    );
+    // Tapping music adds it to a.bin and closes the menu.
+    await tester.tap(find.text('music'));
+    await tester.pumpAndSettle();
+    verify(() => actions.addTag('dl-1', 'music')).called(1);
+    expect(find.text('Copy link'), findsNothing);
+  });
+
+  testWidgets('Add tag submenu toggles a tag off', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addTag(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    when(
+      () => actions.removeTag(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    const first = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      tags: ['iso'],
+    );
+    await pumpApp(
+      tester,
+      downloads: const [first],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add tag'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('iso'));
+    await tester.pumpAndSettle();
+    verify(() => actions.removeTag('dl-1', 'iso')).called(1);
+  });
+
+  testWidgets('New tag... opens a dialog and adds the tag',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addTag(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add tag'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New tag...'));
+    await tester.pumpAndSettle();
+    expect(find.text('New tag'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'docs');
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    verify(() => actions.addTag('dl-1', 'docs')).called(1);
+  });
+
   testWidgets('Delete file deletes only the file and keeps the row',
       (tester) async {
     final actions = MockDownloadsActions();
@@ -1705,6 +1832,7 @@ void main() {
     expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Add mirror'), findsOneWidget);
+    expect(find.text('Add tag'), findsOneWidget);
     expect(find.text('Export selected downloads'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The menu item text is xs (12px) like the table rows.
@@ -1714,7 +1842,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 7);
+    expect(items.length, 8);
     expect(items.every((item) => item.height == 32), isTrue);
   });
 
@@ -1882,6 +2010,51 @@ void main() {
     expect(nameStyle?.fontSize, 12);
   });
 
+
+  testWidgets('the details panel GENERAL tab shows the tags',
+      (tester) async {
+    const tagged = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      bytesPerSecond: 250,
+      tags: ['iso', 'music'],
+    );
+    await pumpApp(tester, downloads: const [tagged]);
+    await openDetailsPanel(tester);
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(of: panel, matching: find.text('Tags')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('iso, music')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the details panel GENERAL tab shows a dash with no tags',
+      (tester) async {
+    await pumpApp(tester);
+    await openDetailsPanel(tester);
+    final panel = find.byType(DownloadDetailsPanel);
+    expect(
+      find.descendant(of: panel, matching: find.text('Tags')),
+      findsOneWidget,
+    );
+    // The dash is the empty-tags value next to the Tags label.
+    final tagsRow = find.ancestor(
+      of: find.descendant(of: panel, matching: find.text('Tags')),
+      matching: find.byType(Row),
+    );
+    expect(
+      find.descendant(of: tagsRow, matching: find.text('\u2014')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('the details panel GENERAL tab shows the download fields',
       (tester) async {

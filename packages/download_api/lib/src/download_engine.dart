@@ -60,6 +60,8 @@ abstract interface class DownloadEngine {
   /// [DownloadError] `invalid-url` when the URL is not http(s);
   /// a duplicate URL is ignored.
   Future<void> addMirror(String downloadId, String url);
+  Future<void> addTag(String downloadId, String tag);
+  Future<void> removeTag(String downloadId, String tag);
 
   /// Checks whether the server hosts a newer version of a download,
   /// comparing the server's reported size with the stored one.

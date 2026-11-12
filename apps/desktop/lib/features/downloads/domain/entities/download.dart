@@ -25,6 +25,7 @@ class Download extends Equatable {
     this.filePath,
     this.errorMessage,
     this.priority = 0,
+    this.tags = const [],
   });
 
   final String id;
@@ -53,6 +54,10 @@ class Download extends Equatable {
   /// Shown as high / normal / low on the details panel's GENERAL tab.
   final int priority;
 
+  /// Labels on the download, for grouping. Shown comma-separated on
+  /// the details panel's GENERAL tab.
+  final List<String> tags;
+
   double get progress =>
       totalBytes <= 0 ? 0 : downloadedBytes / totalBytes;
 
@@ -68,6 +73,7 @@ class Download extends Equatable {
     String? filePath,
     String? errorMessage,
     int? priority,
+    List<String>? tags,
     bool clearErrorMessage = false,
   }) {
     return Download(
@@ -83,6 +89,7 @@ class Download extends Equatable {
       errorMessage:
           clearErrorMessage ? null : errorMessage ?? this.errorMessage,
       priority: priority ?? this.priority,
+      tags: tags ?? this.tags,
     );
   }
 
@@ -99,5 +106,6 @@ class Download extends Equatable {
     filePath,
     errorMessage,
     priority,
+    tags,
   ];
 }

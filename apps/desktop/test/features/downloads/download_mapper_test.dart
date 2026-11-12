@@ -23,6 +23,19 @@ void main() {
     expect(download.state, DownloadState.completed);
   });
 
+  test('downloadFromInfo carries tags through', () {
+    const info = DownloadInfo(
+      id: 'dl-1',
+      url: 'https://example.com/f.bin',
+      fileName: 'f.bin',
+      status: DownloadStatus.queued,
+      downloadedBytes: 0,
+      totalBytes: 1000,
+      tags: ['iso', 'music'],
+    );
+    expect(downloadFromInfo(info).tags, ['iso', 'music']);
+  });
+
   test('downloadFromInfo leaves createdAt null when the info has none',
       () {
     const info = DownloadInfo(

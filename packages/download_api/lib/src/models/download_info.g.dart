@@ -20,6 +20,9 @@ _DownloadInfo _$DownloadInfoFromJson(Map<String, dynamic> json) =>
           : DateTime.parse(json['createdAt'] as String),
       filePath: json['filePath'] as String?,
       priority: (json['priority'] as num?)?.toInt() ?? 0,
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+          const [],
     );
 
 Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
@@ -34,6 +37,7 @@ Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
       'createdAt': instance.createdAt?.toIso8601String(),
       'filePath': instance.filePath,
       'priority': instance.priority,
+      'tags': instance.tags,
     };
 
 const _$DownloadStatusEnumMap = {

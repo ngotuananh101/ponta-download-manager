@@ -871,6 +871,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.state == DownloadState.completed) {
             entries.add(_menuItem('file_integrity', 'File integrity'));
           }
+          // Every row can be tagged: the submenu lists every tag
+          // used anywhere, with a check on this row's tags.
+          entries.add(_tagSubmenu(item, _knownTags()));
           // A failed download's link may have expired.
           if (item.state == DownloadState.failed) {
             entries.add(_menuItem('change_url', 'Change URL'));
@@ -891,6 +894,102 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         },
       ),
     );
+  }
+
+  // Every tag used by any download, sorted: the Add tag submenu
+  // lists these, so a tag typed once can be reused on other rows.
+  List<String> _knownTags() {
+    final tags = <String>{};
+    for (final download in ref.read(downloadsProvider).value ?? const <Download>[]) {
+      tags.addAll(download.tags);
+    }
+    final sorted = tags.toList()..sort();
+    return sorted;
+  }
+
+  // The Add tag submenu: a PopupMenuItem wrapping a SubmenuButton,
+  // like Set priority. Each known tag toggles on tap; 'New tag...'
+  // opens the text dialog.
+  PopupMenuItem<String> _tagSubmenu(Download item, List<String> knownTags) {
+    return PopupMenuItem<String>(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      child: SubmenuButton(
+        style: SubmenuButton.styleFrom(
+          minimumSize: const Size(0, 32),
+          padding: EdgeInsets.zero,
+        ),
+        menuChildren: [
+          for (final tag in knownTags) _tagItem(item, tag),
+          _newTagItem(item),
+        ],
+        child: Text('Add tag', style: AppTextSize.xs.textStyle()),
+      ),
+    );
+  }
+
+  MenuItemButton _tagItem(Download item, String tag) {
+    final hasTag = item.tags.contains(tag);
+    return MenuItemButton(
+      style: MenuItemButton.styleFrom(
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      ),
+      leadingIcon: hasTag
+          ? const Icon(Icons.check, size: 18)
+          : const SizedBox(width: 18),
+      onPressed: () async {
+        // The submenu closes itself (closeOnActivate); the parent
+        // popup menu is a separate route, so close it too.
+        Navigator.of(context).pop();
+        await _toggleTag(item, tag, hasTag);
+      },
+      child: Text(tag, style: AppTextSize.xs.textStyle()),
+    );
+  }
+
+  MenuItemButton _newTagItem(Download item) {
+    return MenuItemButton(
+      style: MenuItemButton.styleFrom(
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      ),
+      onPressed: () async {
+        // The submenu closes itself; the parent popup menu is a
+        // separate route, so close it too before opening the dialog.
+        Navigator.of(context).pop();
+        final tag = await showTextInputDialog(
+          context: context,
+          title: 'New tag',
+          label: 'Tag name',
+          initialValue: '',
+          validate: (value) {
+            if (value.trim().isEmpty) {
+              return 'A tag cannot be empty';
+            }
+            return null;
+          },
+        );
+        if (!mounted) return;
+        if (tag == null) return;
+        await _toggleTag(item, tag, false);
+      },
+      child: Text('New tag...', style: AppTextSize.xs.textStyle()),
+    );
+  }
+
+  Future<void> _toggleTag(Download item, String tag, bool hasTag) async {
+    final actions = ref.read(downloadsActionsProvider);
+    final result = hasTag
+        ? await actions.removeTag(item.id, tag)
+        : await actions.addTag(item.id, tag);
+    result.fold((failure) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(failure.message)),
+        );
+      }
+    }, (_) {});
   }
 
   // The Set priority submenu: a PopupMenuItem wrapping a

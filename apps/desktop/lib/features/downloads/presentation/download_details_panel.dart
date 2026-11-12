@@ -115,8 +115,10 @@ class _DownloadDetailsPanelState
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // The GENERAL tab grew a Tags row (B3.3): 264px overflowed by
+    // 9px under the test font, so the panel is 276px now.
     return Container(
-      height: 264,
+      height: 276,
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -249,6 +251,13 @@ class _DownloadDetailsPanelState
                   _buildLabelValue(
                     'Priority',
                     priorityLabel(download.priority),
+                    labelStyle,
+                    valueStyle,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  _buildLabelValue(
+                    'Tags',
+                    download.tags.isEmpty ? '\u2014' : download.tags.join(', '),
                     labelStyle,
                     valueStyle,
                   ),
