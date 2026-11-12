@@ -55,6 +55,17 @@ class Recovery {
             downloadedBytes: size,
           ),
         );
+        // The download is already complete, so a leftover partial is
+        // orphaned. Delete it best-effort: a failed delete must not
+        // fail recovery.
+        try {
+          final partial = File(record.partialPath);
+          if (partial.existsSync()) {
+            partial.deleteSync();
+          }
+        } catch (_) {
+          // Best effort only: the final file is intact either way.
+        }
         return RecoveryDecision(
           record: record,
           action: RecoveryAction.complete,

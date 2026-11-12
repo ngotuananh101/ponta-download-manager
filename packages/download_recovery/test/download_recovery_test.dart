@@ -806,6 +806,22 @@ void main() {
       );
     });
 
+    test('completing a download removes its leftover partial file', () async {
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      store.upsertDownload(makeRecord(directory: tempDir.path));
+      await File(p.join(tempDir.path, 'f.bin')).writeAsBytes(bytesOf(1024));
+      await File(p.join(tempDir.path, 'f.bin.partial')).writeAsBytes(
+        bytesOf(512),
+      );
+      final decisions = Recovery(store).reconcile();
+      expect(decisions[0].action, RecoveryAction.complete);
+      expect(
+        await File(p.join(tempDir.path, 'f.bin.partial')).exists(),
+        isFalse,
+      );
+    });
+
     test('marks a corrupt record unrecoverable', () {
       final store = DownloadStore.inMemory();
       addTearDown(store.close);
