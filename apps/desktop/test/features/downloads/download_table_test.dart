@@ -45,6 +45,24 @@ void main() {
       );
     });
 
+    test('yesterday is correct across a DST change', () {
+      // Europe/Berlin springs forward on 2026-03-29 (02:00 -> 03:00)
+      // and falls back on 2026-10-25 (03:00 -> 02:00). Subtracting
+      // 24 hours from midnight lands on the day before yesterday,
+      // so 29 Mar would render as a regular date instead of
+      // 'Yesterday'. Run with TZ=Europe/Berlin to reproduce.
+      final spring = DateTime(2026, 3, 30, 12, 0);
+      expect(
+        formatAdded(DateTime(2026, 3, 29, 8, 0), now: spring),
+        'Yesterday 8:00 AM',
+      );
+      final autumn = DateTime(2026, 10, 26, 12, 0);
+      expect(
+        formatAdded(DateTime(2026, 10, 25, 8, 0), now: autumn),
+        'Yesterday 8:00 AM',
+      );
+    });
+
     test('older dates show "Mon d, yyyy h:mm AM/PM"', () {
       final now = DateTime(2026, 11, 10, 22, 29);
       expect(

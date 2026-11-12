@@ -55,7 +55,9 @@ String formatAdded(DateTime? added, {DateTime? now}) {
   final day = DateTime(added.year, added.month, added.day);
   final time = _formatTimeOfDay(added);
   if (day == today) return 'Today $time';
-  if (day == today.subtract(const Duration(days: 1))) {
+  // Calendar arithmetic, not a 24-hour subtraction: across a DST
+  // change midnight minus 24h lands on the day before yesterday.
+  if (day == DateTime(today.year, today.month, today.day - 1)) {
     return 'Yesterday $time';
   }
   return '${_months[added.month - 1]} ${added.day}, ${added.year} $time';
