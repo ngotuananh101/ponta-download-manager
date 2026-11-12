@@ -44,6 +44,11 @@ build once after P1 and once at the end.
   could lose a sync arriving between the replay and the live
   subscription; the replay and the subscription are now one
   synchronous step.
+- R-P2c (item 18) — DONE: 18d `73407e4`, 18c `a6a1508`, 18a `94ede02`,
+  18b `24a49d7`. Windows behaviour itself (loopback TCP transport,
+  port file, PowerShell disk space, explorer args, startup error
+  screen) is code-verified + unit-tested on Linux via `isWindows`
+  seams; real-Windows verification deferred to Tuan Anh.
 
 ## Batches
 
