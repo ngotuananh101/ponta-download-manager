@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:download_api/download_api.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,7 @@ import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
+import 'package:pdm/features/downloads/presentation/delete_download_dialog.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
@@ -93,7 +96,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return Column(
       children: [
         _buildToolbar(visible),
-        if (_selected.isNotEmpty) _buildBulkBar(),
+        if (_selected.isNotEmpty) _buildBulkBar(items),
         Expanded(child: _buildBody(items, visible)),
         if (_detailsOpen && statusFile != null)
           DownloadDetailsPanel(
@@ -448,7 +451,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // --- Bulk selection bar ---
 
-  Widget _buildBulkBar() {
+  Widget _buildBulkBar(List<Download> items) {
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
@@ -471,7 +474,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             label: Text('Cancel', style: AppTextSize.xs.textStyle()),
           ),
           TextButton.icon(
-            onPressed: () => _bulkDelete(),
+            onPressed: () => _bulkDelete(items),
             icon: const Icon(Icons.delete, size: 18),
             label: Text('Delete', style: AppTextSize.xs.textStyle()),
           ),
@@ -504,13 +507,56 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     if (mounted) setState(() => _selected.clear());
   }
 
-  Future<void> _bulkDelete() async {
-    final actions = ref.read(downloadsActionsProvider);
-    final ids = _selected.toList();
-    for (final id in ids) {
-      await actions.deleteDownload(id);
+  Future<void> _bulkDelete(List<Download> items) async {
+    await _deleteDownloads(
+      items.where((d) => _selected.contains(d.id)).toList(),
+    );
+  }
+
+  /// Whether the download's finished file is on disk. Only the
+  /// finished file counts: a download in progress only has a
+  /// `.partial`, whose path is not the filePath.
+  bool _hasFinishedFile(Download d) {
+    final path = d.filePath;
+    return path != null && File(path).existsSync();
+  }
+
+  /// Deletes [items], asking first when any of them has a finished
+  /// file on disk. The dialog's choice applies to the whole batch;
+  /// cancelling deletes nothing. A failed delete shows its error
+  /// and leaves the row selected.
+  Future<void> _deleteDownloads(List<Download> items) async {
+    if (items.isEmpty) return;
+    var deleteFile = false;
+    if (items.any(_hasFinishedFile)) {
+      final decision = await showDeleteDownloadDialog(
+        context: context,
+        count: items.length,
+        fileName: items.length == 1 ? items.first.fileName : null,
+      );
+      if (decision == null) return;
+      deleteFile = decision.deleteFile;
     }
-    if (mounted) setState(() => _selected.clear());
+    if (!mounted) return;
+    final actions = ref.read(downloadsActionsProvider);
+    final deleted = <String>{};
+    for (final item in items) {
+      final result =
+          await actions.deleteDownload(item.id, deleteFile: deleteFile);
+      result.fold(
+        (failure) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(failure.message)),
+            );
+          }
+        },
+        (_) => deleted.add(item.id),
+      );
+    }
+    if (mounted && deleted.isNotEmpty) {
+      setState(() => _selected.removeAll(deleted));
+    }
   }
 
   // --- Body: table / drop zone ---
@@ -788,8 +834,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             case DownloadState.cancelled:
               break;
           }
-          // Every row can be deleted; the finished file on disk is
-          // kept when a row is deleted.
+          // Every row can be deleted. When a finished file is on
+          // disk, deleting asks whether to delete the file too.
           entries.add(_menuItem('delete', 'Delete'));
           return entries;
         },
@@ -798,6 +844,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   Future<void> _onRowAction(Download item, String action) async {
+    if (action == 'delete') {
+      await _deleteDownloads([item]);
+      return;
+    }
     final actions = ref.read(downloadsActionsProvider);
     Future<Either<Failure, Unit>> Function() call;
     switch (action) {
@@ -809,8 +859,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         call = () => actions.cancelDownload(item.id);
       case 'retry':
         call = () => actions.retryDownload(item.id);
-      case 'delete':
-        call = () => actions.deleteDownload(item.id);
       default:
         return;
     }
@@ -821,11 +869,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(failure.message)));
       }
-    }, (_) {
-      if (action == 'delete' && mounted) {
-        setState(() => _selected.remove(item.id));
-      }
-    });
+    }, (_) {});
   }
 
   Widget _buildDropZone() {

@@ -650,14 +650,190 @@ void main() {
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(
-      () => actions.deleteDownload('dl-1'),
+      () => actions.deleteDownload(
+        'dl-1',
+        deleteFile: any(named: 'deleteFile'),
+      ),
     ).thenAnswer((_) async => const Right(unit));
     await pumpApp(tester, actions: actions);
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
-    verify(() => actions.deleteDownload('dl-1')).called(1);
+    verify(() => actions.deleteDownload('dl-1', deleteFile: false)).called(1);
+  });
+
+  testWidgets('deleting a completed row asks whether to delete the file',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    // A real file on disk: the dialog only shows when one exists.
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    final completed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+      filePath: filePath,
+    );
+    await pumpApp(tester, downloads: [completed], actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    // The dialog asks; nothing is deleted yet.
+    expect(find.text('Delete download'), findsOneWidget);
+    verifyNever(() => actions.deleteDownload(any()));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.text('Delete'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    verify(() => actions.deleteDownload('dl-1', deleteFile: false)).called(1);
+  });
+
+  testWidgets('checking the delete-file box deletes the file too',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    final completed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+      filePath: filePath,
+    );
+    await pumpApp(tester, downloads: [completed], actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete download'), findsOneWidget);
+    await tester.tap(find.text('Also delete the file from disk'));
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.text('Delete'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    verify(() => actions.deleteDownload('dl-1', deleteFile: true)).called(1);
+  });
+
+  testWidgets('cancelling the delete dialog deletes nothing',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    final completed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+      filePath: filePath,
+    );
+    await pumpApp(tester, downloads: [completed], actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete download'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.text('Cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    verifyNever(() => actions.deleteDownload(any()));
+  });
+
+  testWidgets('bulk delete asks once for the whole selection',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    final completed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+      filePath: filePath,
+    );
+    const downloading = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/g.bin',
+      fileName: 'g.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    await pumpApp(
+      tester,
+      downloads: [completed, downloading],
+      actions: actions,
+    );
+    await tester.tap(find.text('f.bin').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('g.bin').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete 2 downloads'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.text('Delete'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    verify(() => actions.deleteDownload('dl-1', deleteFile: false)).called(1);
+    verify(() => actions.deleteDownload('dl-2', deleteFile: false)).called(1);
   });
 
   testWidgets('the row icon follows the download state',
