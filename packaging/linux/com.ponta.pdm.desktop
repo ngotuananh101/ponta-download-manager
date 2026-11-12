@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ponta Download Manager
+Comment=Download manager with segmented downloads
+Exec=pdm %u
+Icon=com.ponta.pdm
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=com.ponta.pdm

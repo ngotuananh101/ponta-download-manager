@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v4 package for Ponta Download Manager (Windows MSI).
+  Built by .github/workflows/release.yml (job build-windows):
+    python packaging/windows/generate_wix_files.py
+    wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs \
+      -d ProductVersion=0.1.0.1 \
+      -d SourceDir=build\windows\x64\runner\Release \
+      -o dist\pdm-0.1.0-windows-x64.msi
+
+  Files.wxs is generated (WiX has no wildcard include); it defines
+  FilesComponentGroup with one Component per file, nested Directory
+  elements mirroring the Release bundle layout (data/, lib/, bin/).
+  UpgradeCode below is fixed forever: changing it breaks upgrades.
+  ProductVersion comes from -d ProductVersion (<version>.<build>,
+  e.g. 0.1.0.1); the Package Id is generated per build (Id="*").
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Ponta Download Manager" Manufacturer="Ponta"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="6df68f12-0032-4d3a-bb94-5cd8200181d2"
+           Language="1033" Codepage="1252">
+    <SummaryInformation Description="Ponta Download Manager installer" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Ponta Download Manager is already installed." />
+    <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" />
+    <Feature Id="ProductFeature" Title="Ponta Download Manager" Level="1">
+      <ComponentGroupRef Id="FilesComponentGroup" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ponta Download Manager">
+        <Component Id="ApplicationShortcut" Guid="c8c82c4e-ce1c-4eea-a67e-373d9d4f7b6c">
+          <Shortcut Id="ApplicationStartMenuShortcut"
+                    Name="Ponta Download Manager"
+                    Description="Ponta Download Manager"
+                    Target="[INSTALLFOLDER]pdm.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="INSTALLFOLDER" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\Ponta\PDM"
+                         Name="installed" Type="integer" Value="1"
+                         KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>
