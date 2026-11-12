@@ -25,6 +25,12 @@ abstract class DownloadInfo with _$DownloadInfo {
     // Labels on the download, for grouping. Empty by default; older
     // IPC JSON without the field decodes to [].
     @Default([]) List<String> tags,
+    // Why a download failed (e.g. 'http-404' + 'Not Found'). Null
+    // unless the download failed; the engine maps these from the
+    // stored record, so the reason survives a restart. Older IPC
+    // JSON without the fields decodes to null.
+    String? errorCode,
+    String? errorMessage,
   }) = _DownloadInfo;
 
   factory DownloadInfo.fromJson(Map<String, dynamic> json) =>

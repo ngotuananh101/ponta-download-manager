@@ -358,4 +358,37 @@ void main() {
       expect(syncs.single.map((d) => d.id), ['dl-1']);
     });
   });
+
+  group('download info protocol', () {
+    test('round-trips the failure reason', () {
+      const info = DownloadInfo(
+        id: 'dl-1',
+        url: 'https://example.com/f.bin',
+        fileName: 'f.bin',
+        status: DownloadStatus.failed,
+        downloadedBytes: 0,
+        totalBytes: 1000,
+        errorCode: 'http-404',
+        errorMessage: 'Not Found',
+      );
+      final decoded = downloadInfoFromJson(downloadInfoToJson(info));
+      expect(decoded.errorCode, 'http-404');
+      expect(decoded.errorMessage, 'Not Found');
+    });
+
+    test('decodes an older message without the failure fields as null', () {
+      final decoded = downloadInfoFromJson({
+        'id': 'dl-1',
+        'url': 'https://example.com/f.bin',
+        'fileName': 'f.bin',
+        'status': 'failed',
+        'downloadedBytes': 0,
+        'totalBytes': 1000,
+        'bytesPerSecond': 0,
+        'priority': 0,
+      });
+      expect(decoded.errorCode, isNull);
+      expect(decoded.errorMessage, isNull);
+    });
+  });
 }

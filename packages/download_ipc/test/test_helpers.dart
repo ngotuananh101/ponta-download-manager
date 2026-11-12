@@ -94,7 +94,9 @@ class FakeEngine implements DownloadEngine {
 
   @override
   Future<void> addMirror(String downloadId, String url) async {}
+  @override
   Future<void> addTag(String downloadId, String tag) async {}
+  @override
   Future<void> removeTag(String downloadId, String tag) async {}
 
   @override

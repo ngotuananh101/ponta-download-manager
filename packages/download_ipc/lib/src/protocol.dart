@@ -29,6 +29,8 @@ Map<String, Object?> downloadInfoToJson(DownloadInfo info) {
     'totalBytes': info.totalBytes,
     'bytesPerSecond': info.bytesPerSecond,
     'priority': info.priority,
+    'errorCode': info.errorCode,
+    'errorMessage': info.errorMessage,
   };
 }
 
@@ -42,6 +44,8 @@ DownloadInfo downloadInfoFromJson(Map<String, Object?> json) {
     totalBytes: (json['totalBytes'] as num).toInt(),
     bytesPerSecond: (json['bytesPerSecond'] as num?)?.toInt() ?? 0,
     priority: (json['priority'] as num?)?.toInt() ?? 0,
+    errorCode: json['errorCode'] as String?,
+    errorMessage: json['errorMessage'] as String?,
   );
 }
 

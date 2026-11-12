@@ -36,6 +36,22 @@ void main() {
     expect(downloadFromInfo(info).tags, ['iso', 'music']);
   });
 
+  test('downloadFromInfo carries the failure reason through', () {
+    const info = DownloadInfo(
+      id: 'dl-1',
+      url: 'https://example.com/f.bin',
+      fileName: 'f.bin',
+      status: DownloadStatus.failed,
+      downloadedBytes: 0,
+      totalBytes: 1000,
+      errorCode: 'http-404',
+      errorMessage: 'Not Found',
+    );
+    final download = downloadFromInfo(info);
+    expect(download.state, DownloadState.failed);
+    expect(download.errorMessage, 'Not Found');
+  });
+
   test('downloadFromInfo leaves createdAt null when the info has none',
       () {
     const info = DownloadInfo(

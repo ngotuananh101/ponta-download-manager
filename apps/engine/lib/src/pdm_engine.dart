@@ -1153,6 +1153,8 @@ class PdmEngine implements DownloadEngine {
       filePath: record.destinationPath,
       priority: record.priority,
       tags: record.tags,
+      errorCode: record.errorCode,
+      errorMessage: record.errorMessage,
     );
   }
 }

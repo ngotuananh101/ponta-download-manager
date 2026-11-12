@@ -1182,6 +1182,43 @@ void main() {
       );
     });
 
+    test('a failed download keeps its failure reason after a restart',
+        () async {
+      final primary = _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror = _TestServer(data: bytesOf(2048), failFirst: 100);
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.resumeDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.dispose();
+      // Re-open on the same database: the failure reason must survive.
+      final second = openEngine(maxConnections: 1);
+      addTearDown(second.dispose);
+      final afterRestart = (await second.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(afterRestart.status, DownloadStatus.failed);
+      expect(afterRestart.errorCode, isNotNull);
+      expect(afterRestart.errorMessage, isNotNull);
+    });
+
     test('retry keeps the mirrors so the retry can fail over', () async {
       final primary =
           _TestServer(data: bytesOf(2048), failFirst: 100);

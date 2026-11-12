@@ -17,6 +17,7 @@ Download downloadFromInfo(DownloadInfo info) {
     filePath: info.filePath,
     priority: info.priority,
     tags: info.tags,
+    errorMessage: info.errorMessage,
   );
 }
 

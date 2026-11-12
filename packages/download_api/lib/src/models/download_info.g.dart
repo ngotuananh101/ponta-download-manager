@@ -23,6 +23,8 @@ _DownloadInfo _$DownloadInfoFromJson(Map<String, dynamic> json) =>
       tags:
           (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
           const [],
+      errorCode: json['errorCode'] as String?,
+      errorMessage: json['errorMessage'] as String?,
     );
 
 Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
@@ -38,6 +40,8 @@ Map<String, dynamic> _$DownloadInfoToJson(_DownloadInfo instance) =>
       'filePath': instance.filePath,
       'priority': instance.priority,
       'tags': instance.tags,
+      'errorCode': instance.errorCode,
+      'errorMessage': instance.errorMessage,
     };
 
 const _$DownloadStatusEnumMap = {
