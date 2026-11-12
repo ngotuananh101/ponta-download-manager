@@ -10,14 +10,19 @@ class DiskSpaceService {
   Future<int?> freeBytes(String path) async {
     try {
       if (Platform.isWindows) {
-        final root = p.rootPrefix(path);
-        final result = await Process.run('fsutil', [
-          'volume',
-          'diskfree',
-          root.isEmpty ? path : root,
+        // fsutil needs admin, so a standard user gets nothing back.
+        // PowerShell's Get-PSDrive works without elevation and prints
+        // a plain byte count.
+        final drive = windowsDriveLetter(path);
+        if (drive == null) return null;
+        final result = await Process.run('powershell', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '(Get-PSDrive -Name $drive).Free',
         ]);
         if (result.exitCode != 0) return null;
-        return parseFsutil(result.stdout as String);
+        return parsePowerShellFree(result.stdout as String);
       }
       final avail = await Process.run('df', [
         '-k',
@@ -58,14 +63,17 @@ class DiskSpaceService {
     return blocks * 1024;
   }
 
-  /// Parses `fsutil volume diskfree`: the "Total # of free bytes" line.
-  static int? parseFsutil(String output) {
-    for (final line in output.split('\n')) {
-      final match = RegExp(
-        r'Total # of free bytes\s*:\s*(\d+)',
-      ).firstMatch(line);
-      if (match != null) return int.tryParse(match.group(1)!);
-    }
-    return null;
+  /// The drive letter of a Windows path (`C:\...` -> `C`), or null
+  /// for a path without one (POSIX paths, UNC paths).
+  static String? windowsDriveLetter(String path) {
+    final root = p.windows.rootPrefix(path);
+    final match = RegExp(r'^([A-Za-z]):').firstMatch(root);
+    return match?.group(1);
+  }
+
+  /// Parses PowerShell `(Get-PSDrive -Name X).Free`: a plain byte
+  /// count, possibly with surrounding whitespace.
+  static int? parsePowerShellFree(String output) {
+    return int.tryParse(output.trim());
   }
 }

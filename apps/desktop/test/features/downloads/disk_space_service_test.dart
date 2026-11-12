@@ -29,17 +29,31 @@ Filesystem     1K-blocks    Used Available Use% Mounted on
       expect(DiskSpaceService.parseDf('nonsense\n'), isNull);
     });
 
-    test('parseFsutil reads the free-bytes line', () {
-      const output = '''
-Total # of free bytes        : 123456789
-Total # of bytes             : 987654321
-Total # of avail free bytes  : 123456789
-''';
-      expect(DiskSpaceService.parseFsutil(output), 123456789);
+    test('parsePowerShellFree reads a plain byte count', () {
+      expect(DiskSpaceService.parsePowerShellFree('123456789\n'), 123456789);
+      expect(
+        DiskSpaceService.parsePowerShellFree('  123456789  \n'),
+        123456789,
+      );
     });
 
-    test('parseFsutil returns null when the line is missing', () {
-      expect(DiskSpaceService.parseFsutil('nothing here\n'), isNull);
+    test('parsePowerShellFree returns null for garbage', () {
+      expect(DiskSpaceService.parsePowerShellFree('nothing here\n'), isNull);
+      expect(DiskSpaceService.parsePowerShellFree(''), isNull);
+    });
+
+    test('windowsDriveLetter takes the drive letter of a Windows path',
+        () {
+      expect(
+        DiskSpaceService.windowsDriveLetter(r'C:\Users\anhnt\Downloads'),
+        'C',
+      );
+      expect(DiskSpaceService.windowsDriveLetter(r'D:\Downloads'), 'D');
+      expect(DiskSpaceService.windowsDriveLetter('/home/anhnt'), isNull);
+      expect(
+        DiskSpaceService.windowsDriveLetter(r'\\server\share\dir'),
+        isNull,
+      );
     });
   });
 
