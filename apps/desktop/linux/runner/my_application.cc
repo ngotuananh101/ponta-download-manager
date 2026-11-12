@@ -32,6 +32,69 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// The radius Flutter rounds the window frame with (the ClipRRect in
+// PdmApp) and the colour AppTheme.dark's scaffold background (#121212).
+// The window has to paint the same shape underneath the Flutter view:
+// see window_draw_cb. Keep the two radii in sync.
+constexpr int kWindowCornerRadius = 10;
+constexpr char kWindowBackground[] = "#121212";  // AppTheme.dark scaffold
+
+// States in which the window manager fits the window to the screen. The
+// corners must go square there, or they would cut into a maximized
+// window. Flutter's ClipRRect still rounds, but it only reveals the
+// window background underneath, which is the same app colour — so
+// painting square here makes the maximized window look square.
+constexpr GdkWindowState kSquareCornerStates = static_cast<GdkWindowState>(
+    GDK_WINDOW_STATE_MAXIMIZED | GDK_WINDOW_STATE_FULLSCREEN |
+    GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_TOP_TILED |
+    GDK_WINDOW_STATE_RIGHT_TILED | GDK_WINDOW_STATE_BOTTOM_TILED |
+    GDK_WINDOW_STATE_LEFT_TILED);
+
+// Paints the window's own background: a rounded rectangle in the app colour.
+//
+// Flutter clips its content to a 10px radius and leaves the pixels outside it
+// untouched. Without this, GTK fills them with the theme's window background —
+// white under Adwaita — so the window shows four bright corners instead of
+// rounded ones. Marking the window app-paintable stops GTK from painting that
+// background at all, and what is left unpainted here stays transparent, which
+// needs the RGBA visual set up in my_application_activate. Outside a compositor
+// there is no alpha to paint with, so the corners stay square.
+//
+// Returns FALSE so the class handler goes on to draw the child Flutter view.
+static gboolean window_draw_cb(GtkWidget* widget, cairo_t* cr,
+                               gpointer translucent) {
+  const int width = gtk_widget_get_allocated_width(widget);
+  const int height = gtk_widget_get_allocated_height(widget);
+
+  double radius = 0;
+  GdkWindow* gdk_window = gtk_widget_get_window(widget);
+  if (GPOINTER_TO_INT(translucent) && gdk_window != nullptr &&
+      (gdk_window_get_state(gdk_window) & kSquareCornerStates) == 0) {
+    // GTK hands the draw handler a context already scaled for the display, so
+    // the radius stays in the logical pixels Flutter drew its frame in.
+    radius = kWindowCornerRadius;
+  }
+
+  GdkRGBA background;
+  gdk_rgba_parse(&background, kWindowBackground);
+  gdk_cairo_set_source_rgba(cr, &background);
+
+  if (radius <= 0) {
+    cairo_rectangle(cr, 0, 0, width, height);
+  } else {
+    const double half_pi = G_PI / 2;
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, width - radius, radius, radius, -half_pi, 0);
+    cairo_arc(cr, width - radius, height - radius, radius, 0, half_pi);
+    cairo_arc(cr, radius, height - radius, radius, half_pi, 2 * half_pi);
+    cairo_arc(cr, radius, radius, radius, 2 * half_pi, 3 * half_pi);
+    cairo_close_path(cr);
+  }
+  cairo_fill(cr);
+
+  return FALSE;
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -77,15 +140,36 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 950, 650);
 
+  // Rounded corners need the window to be translucent. A GTK window without the
+  // screen's RGBA visual composites over an opaque black, so the pixels Flutter
+  // leaves outside its rounded frame would come out black rather than showing
+  // the desktop — and `app-paintable` has nothing to paint with. The visual is
+  // only there when the screen is composited; `translucent` records that and
+  // window_draw_cb keeps the corners square when it is not.
+  gboolean translucent = FALSE;
+  GdkScreen* screen = gtk_widget_get_screen(GTK_WIDGET(window));
+  GdkVisual* rgba_visual = gdk_screen_get_rgba_visual(screen);
+  if (rgba_visual != nullptr && gdk_screen_is_composited(screen)) {
+    gtk_widget_set_visual(GTK_WIDGET(window), rgba_visual);
+    translucent = TRUE;
+  }
+  gtk_widget_set_app_paintable(GTK_WIDGET(window), TRUE);
+  g_signal_connect(window, "draw", G_CALLBACK(window_draw_cb),
+                   GINT_TO_POINTER(translucent));
+
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
-  // Background defaults to black, override it here if necessary, e.g. #00000000
-  // for transparent.
-  gdk_rgba_parse(&background_color, "#000000");
+  // The view paints its own background before Flutter's first frame, and a
+  // widget draws into the window's own surface — an opaque black here would
+  // cover the rounded corners window_draw_cb paints. Transparent hands the
+  // unpainted pixels back to the window, which is what makes them show the
+  // desktop. Outside a compositor the corners are square anyway, so the opaque
+  // default is kept there rather than leaving the gap black.
+  gdk_rgba_parse(&background_color, translucent ? "#00000000" : "#000000");
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));

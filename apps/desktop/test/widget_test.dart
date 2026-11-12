@@ -1894,7 +1894,7 @@ void main() {
     expect(frame, findsOneWidget);
     expect(
       tester.widget<ClipRRect>(frame).borderRadius,
-      BorderRadius.circular(12),
+      BorderRadius.circular(10),
     );
   });
 
