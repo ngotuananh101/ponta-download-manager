@@ -93,6 +93,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _act(() => _datasource.deleteDownload(id, deleteFile: deleteFile));
 
   @override
+  Future<Either<Failure, Unit>> deleteFile(String id) =>
+      _act(() => _datasource.deleteFile(id));
+
+  @override
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _act(() => _datasource.setGlobalBandwidthLimit(bytesPerSecond));

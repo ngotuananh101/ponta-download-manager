@@ -29,6 +29,12 @@ abstract interface class DownloadEngine {
   /// file never blocks deleting the record).
   Future<void> deleteDownload(String downloadId, {bool deleteFile = false});
 
+  /// Deletes the finished file (and any partial) of a download and
+  /// keeps its stored record: the row shows as Missing on the next
+  /// load. Best-effort: a missing or undeletable file is not an
+  /// error.
+  Future<void> deleteFile(String downloadId);
+
   Future<void> setPriority(String downloadId, int priority);
 
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond);

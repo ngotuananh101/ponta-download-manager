@@ -542,6 +542,41 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> deleteFile(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return;
+    }
+    if (_isStreamingPlaylist(record.url)) {
+      final downloader = await _ytDlpDownloader();
+      // Delete the produced file (and any partial) too.
+      downloader?.deleteOutput(_ytDlpTemplate(record));
+      final ytPartial = File(record.partialPath);
+      if (ytPartial.existsSync()) {
+        ytPartial.deleteSync();
+      }
+    } else {
+      // Drop the partial file so it does not linger as an orphan.
+      final partial = File(record.partialPath);
+      if (partial.existsSync()) {
+        partial.deleteSync();
+      }
+    }
+    // Best-effort: a missing or undeletable file is not an error.
+    // For a completed playlist this is the produced file (the
+    // record's fileName was updated on completion); for an
+    // incomplete one the playlist-name path never exists as a file.
+    try {
+      final finished = File(record.destinationPath);
+      if (finished.existsSync()) {
+        finished.deleteSync();
+      }
+    } catch (_) {
+      // Ignore: the record is kept regardless.
+    }
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);

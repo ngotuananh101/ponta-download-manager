@@ -848,6 +848,36 @@ void main() {
     expect(find.text('Set priority'), findsNothing);
   });
 
+  testWidgets('Delete file deletes only the file and keeps the row',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteFile(any()),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-file-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete file'));
+    await tester.pumpAndSettle();
+    verify(() => actions.deleteFile('dl-1')).called(1);
+  });
+
+  testWidgets('Delete file is hidden for a downloading row',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete file'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(

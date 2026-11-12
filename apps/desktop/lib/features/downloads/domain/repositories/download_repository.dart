@@ -30,6 +30,9 @@ abstract interface class DownloadRepository {
     bool deleteFile = false,
   });
 
+  /// Deletes the finished file and keeps the row (it shows Missing).
+  Future<Either<Failure, Unit>> deleteFile(String id);
+
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 

@@ -253,6 +253,13 @@ class EngineDownloadDatasource {
     _emit();
   }
 
+  /// Deletes the finished file and keeps the row: the refresh
+  /// re-reads the record, so the mapper shows it as Missing.
+  Future<void> deleteFile(String id) async {
+    await engine.deleteFile(id);
+    await _refreshDownload(id);
+  }
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

@@ -202,6 +202,14 @@ void main() {
       verify(() => datasource.setPriority('dl-1', 1)).called(1);
     });
 
+    test('deleteFile forwards to the datasource', () async {
+      when(
+        () => datasource.deleteFile(any()),
+      ).thenAnswer((_) async {});
+      expect((await repository.deleteFile('dl-1')).isRight(), isTrue);
+      verify(() => datasource.deleteFile('dl-1')).called(1);
+    });
+
     test('deleteDownload forwards the deleteFile flag', () async {
       when(
         () => datasource.deleteDownload(

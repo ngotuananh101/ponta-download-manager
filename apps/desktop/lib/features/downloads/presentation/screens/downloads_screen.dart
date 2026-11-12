@@ -856,6 +856,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           }
           // Every row can hand out its URL.
           entries.add(_menuItem('copy_link', 'Copy link'));
+          // Delete file only: the row stays and becomes Missing.
+          if (_hasFinishedFile(item)) {
+            entries.add(_menuItem('delete_file', 'Delete file'));
+          }
           // Every row can be deleted. When a finished file is on
           // disk, deleting asks whether to delete the file too.
           entries.add(_menuItem('delete', 'Delete'));
@@ -961,6 +965,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         call = () => actions.cancelDownload(item.id);
       case 'retry':
         call = () => actions.retryDownload(item.id);
+      case 'delete_file':
+        call = () => actions.deleteFile(item.id);
       case 'priority_high':
         call = () => actions.setPriority(item.id, 1);
       case 'priority_normal':

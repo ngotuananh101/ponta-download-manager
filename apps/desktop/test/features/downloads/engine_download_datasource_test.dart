@@ -363,6 +363,41 @@ void main() {
       expect(emitted.last.single.priority, 1);
     });
 
+    test('deleteFile calls the engine and the row becomes Missing',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('pdm-delete-file-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final filePath = '${dir.path}/f.bin';
+      File(filePath).writeAsStringSync('x');
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer(
+        (_) async => [
+          info(status: DownloadStatus.completed, filePath: filePath),
+        ],
+      );
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.deleteFile(any()),
+      ).thenAnswer((_) async {
+        // The real engine deletes the file; the mock does the same
+        // so the refresh below can see it gone.
+        File(filePath).deleteSync();
+      });
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(emitted.last.single.state, DownloadState.completed);
+      await source.deleteFile('dl-1');
+      verify(() => engine.deleteFile('dl-1')).called(1);
+      // watchDownloads forwards through two async controllers, so
+      // the refreshed list needs a turn to arrive.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(emitted.last.single.state, DownloadState.missing);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();
