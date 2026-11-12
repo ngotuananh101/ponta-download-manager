@@ -1820,12 +1820,13 @@ void main() {
     expect(find.text('Resume all'), findsOneWidget);
     expect(find.text('Paste urls from clipboard'), findsOneWidget);
     expect(find.text('Paste urls from file'), findsOneWidget);
+    expect(find.text('Export/Import'), findsOneWidget);
     final menuText = tester.widget<Text>(find.text('Pause all'));
     expect(menuText.style?.fontSize, 12);
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 4);
+    expect(items.length, 5);
     expect(items.every((item) => item.height == 32), isTrue);
     // Pause/Resume | paste actions.
     final divider = find.byType(PopupMenuDivider);
@@ -1956,6 +1957,169 @@ void main() {
     await tester.pumpAndSettle();
     verifyNever(() => actions.addDownload(any()));
     expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('Export all downloads writes every URL to the picked file',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final outFile = File(p.join(tempDir.path, 'downloads.txt'));
+    const a = Download(
+      id: 'dl-1',
+      url: 'https://example.com/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.downloading,
+      downloadedBytes: 500,
+      totalBytes: 1000,
+    );
+    const b = Download(
+      id: 'dl-2',
+      url: 'https://example.com/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.completed,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [a, b],
+      saveFile: (_) async => outFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export all downloads'));
+    await tester.pumpAndSettle();
+    expect(
+      outFile.readAsStringSync(),
+      'https://example.com/a.bin\nhttps://example.com/b.bin\n',
+    );
+    expect(find.text('Exported 2 download(s)'), findsOneWidget);
+  });
+
+  testWidgets('Import downloads adds the URLs from the picked file',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final inFile = File(p.join(tempDir.path, 'in.txt'))
+      ..writeAsStringSync(
+        'https://example.com/a.bin\nhttps://example.com/b.bin\n',
+      );
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((_) async => const Right(_download));
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: p.join(tempDir.path, 'settings.json'),
+      pickFile: () async => inFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import downloads'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addDownload(
+        'https://example.com/a.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    verify(
+      () => actions.addDownload(
+        'https://example.com/b.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    expect(find.text('Added 2 download(s)'), findsOneWidget);
+  });
+
+  testWidgets('Export settings writes the current settings as JSON',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final settingsPath = p.join(tempDir.path, 'settings.json');
+    File(settingsPath).writeAsStringSync(
+      jsonEncode({
+        'fileConflictPolicy': 'rename',
+        'recentSaveDirectories': ['/tmp/a', '/tmp/b'],
+      }),
+    );
+    final outFile = File(p.join(tempDir.path, 'out.json'));
+    await pumpApp(
+      tester,
+      settingsPath: settingsPath,
+      saveFile: (_) async => outFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export settings'));
+    await tester.pumpAndSettle();
+    final exported = jsonDecode(outFile.readAsStringSync())
+        as Map<String, Object?>;
+    expect(exported['fileConflictPolicy'], 'rename');
+    expect(exported['recentSaveDirectories'], ['/tmp/a', '/tmp/b']);
+    expect(find.text('Settings exported'), findsOneWidget);
+  });
+
+  testWidgets('Import settings with a valid file persists the settings',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final settingsPath = p.join(tempDir.path, 'settings.json');
+    final inFile = File(p.join(tempDir.path, 'in.json'))
+      ..writeAsStringSync(
+        jsonEncode({
+          'fileConflictPolicy': 'overwrite',
+          'recentSaveDirectories': ['/tmp/x'],
+        }),
+      );
+    await pumpApp(
+      tester,
+      settingsPath: settingsPath,
+      pickFile: () async => inFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import settings'));
+    await tester.pumpAndSettle();
+    final imported = jsonDecode(File(settingsPath).readAsStringSync())
+        as Map<String, Object?>;
+    expect(imported['fileConflictPolicy'], 'overwrite');
+    expect(imported['recentSaveDirectories'], ['/tmp/x']);
+    expect(find.text('Settings imported'), findsOneWidget);
+  });
+
+  testWidgets('Import settings with an invalid file shows an error',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final settingsPath = p.join(tempDir.path, 'settings.json');
+    final inFile = File(p.join(tempDir.path, 'in.json'))
+      ..writeAsStringSync('not json at all');
+    await pumpApp(
+      tester,
+      settingsPath: settingsPath,
+      pickFile: () async => inFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not import settings'), findsOneWidget);
+    expect(File(settingsPath).existsSync(), isFalse);
   });
 
   testWidgets('the row menu uses xs text in compact rows',

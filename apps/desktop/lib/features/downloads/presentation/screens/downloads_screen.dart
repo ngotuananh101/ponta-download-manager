@@ -295,6 +295,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 const PopupMenuDivider(),
                 _menuItem('paste-clipboard', 'Paste urls from clipboard'),
                 _menuItem('paste-file', 'Paste urls from file'),
+                _exportImportSubmenu(),
               ],
               // An explicit child (not the icon form): the icon form
               // builds an IconButton whose 48px minimum survives both
@@ -1022,6 +1023,49 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     }, (_) {});
   }
 
+  // The Export/Import submenu in the toolbar menu, same shape as
+  // the Set priority submenu: a PopupMenuItem wrapping a
+  // SubmenuButton whose items pop the parent menu, then run.
+  PopupMenuItem<String> _exportImportSubmenu() {
+    return PopupMenuItem<String>(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      child: SubmenuButton(
+        style: SubmenuButton.styleFrom(
+          minimumSize: const Size(0, 32),
+          padding: EdgeInsets.zero,
+        ),
+        menuChildren: [
+          _exportImportItem('Export all downloads', _exportAllDownloads),
+          _exportImportItem('Import downloads', _importDownloads),
+          const PopupMenuDivider(),
+          _exportImportItem('Export settings', _exportSettings),
+          _exportImportItem('Import settings', _importSettings),
+        ],
+        child: Text('Export/Import', style: AppTextSize.xs.textStyle()),
+      ),
+    );
+  }
+
+  MenuItemButton _exportImportItem(
+    String label,
+    Future<void> Function() action,
+  ) {
+    return MenuItemButton(
+      style: MenuItemButton.styleFrom(
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      ),
+      onPressed: () async {
+        // The submenu closes itself (closeOnActivate); the parent
+        // popup menu is a separate route, so close it too.
+        Navigator.of(context).pop();
+        await action();
+      },
+      child: Text(label, style: AppTextSize.xs.textStyle()),
+    );
+  }
+
   // The Set priority submenu: a PopupMenuItem wrapping a
   // SubmenuButton, so the High / Normal / Low choices open as a
   // nested menu like in IDM.
@@ -1727,6 +1771,57 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       return;
     }
     await _addDownloads(parseUrlList(text));
+  }
+
+  /// Exports every download's URL, one per line, to a picked file.
+  Future<void> _exportAllDownloads() async {
+    final downloads = ref.read(downloadsProvider).value ?? const [];
+    final path = await ref.read(saveFileProvider)('downloads.txt');
+    if (path == null || !mounted) return;
+    File(path).writeAsStringSync(exportUrls(downloads));
+    _showMessage('Exported ${downloads.length} download(s)');
+  }
+
+  /// Imports downloads from a picked file, one URL per line.
+  Future<void> _importDownloads() async {
+    final path = await ref.read(pickFileProvider)();
+    if (path == null || !mounted) return;
+    String text;
+    try {
+      text = File(path).readAsStringSync();
+    } catch (e) {
+      _showMessage('Could not read the file: $e');
+      return;
+    }
+    await _addDownloads(parseUrlList(text));
+  }
+
+  /// Exports the current settings as JSON to a picked file.
+  Future<void> _exportSettings() async {
+    final path = await ref.read(saveFileProvider)('settings.json');
+    if (path == null || !mounted) return;
+    final settings = ref.read(fileConflictSettingsProvider);
+    File(path).writeAsStringSync(settings.exportJson());
+    _showMessage('Settings exported');
+  }
+
+  /// Imports settings from a picked JSON file.
+  Future<void> _importSettings() async {
+    final path = await ref.read(pickFileProvider)();
+    if (path == null || !mounted) return;
+    String text;
+    try {
+      text = File(path).readAsStringSync();
+    } catch (_) {
+      _showMessage('Could not import settings');
+      return;
+    }
+    final settings = ref.read(fileConflictSettingsProvider);
+    if (settings.importJson(text)) {
+      _showMessage('Settings imported');
+    } else {
+      _showMessage('Could not import settings');
+    }
   }
 
   void _showMessage(String message) {

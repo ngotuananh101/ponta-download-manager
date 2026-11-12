@@ -54,6 +54,40 @@ class FileConflictSettings {
     });
   }
 
+  /// The current settings as a JSON string, for Export settings.
+  String exportJson() {
+    return jsonEncode({
+      'fileConflictPolicy': load()?.name,
+      'recentSaveDirectories': loadRecentDirectories(),
+    });
+  }
+
+  /// Replaces the settings from a JSON string (Import settings).
+  /// Returns false when the text is not a JSON object; an unknown
+  /// policy value is dropped and non-string directories are ignored.
+  bool importJson(String text) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } catch (_) {
+      return false;
+    }
+    if (decoded is! Map<String, Object?>) return false;
+    final policy = switch (decoded['fileConflictPolicy']) {
+      'overwrite' => FileConflictPolicy.overwrite,
+      'rename' => FileConflictPolicy.rename,
+      _ => null,
+    };
+    final directories = decoded['recentSaveDirectories'];
+    save(policy);
+    saveRecentDirectories(
+      directories is List
+          ? directories.whereType<String>().toList()
+          : const [],
+    );
+    return true;
+  }
+
   Map<String, Object?> _readJson() {
     try {
       final json = jsonDecode(File(_filePath).readAsStringSync());

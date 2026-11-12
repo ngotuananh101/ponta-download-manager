@@ -1,52 +1,82 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
-import 'package:path/path.dart' as p;
 
 void main() {
-  late Directory dir;
-  late FileConflictSettings settings;
+  group('FileConflictSettings export/import', () {
+    late Directory tempDir;
+    late String settingsPath;
 
-  setUp(() {
-    dir = Directory.systemTemp.createTempSync('pdm-settings-test-');
-    settings = FileConflictSettings(
-      filePath: p.join(dir.path, 'settings.json'),
-    );
-  });
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync();
+      settingsPath = '${tempDir.path}/settings.json';
+    });
 
-  tearDown(() {
-    if (dir.existsSync()) dir.deleteSync(recursive: true);
-  });
+    tearDown(() {
+      tempDir.deleteSync(recursive: true);
+    });
 
-  test('load returns null and recent directories are empty when missing',
-      () {
-    expect(settings.load(), isNull);
-    expect(settings.loadRecentDirectories(), isEmpty);
-  });
+    test('exportJson round-trips the policy and recent directories', () {
+      File(settingsPath).writeAsStringSync(
+        jsonEncode({
+          'fileConflictPolicy': 'rename',
+          'recentSaveDirectories': ['/tmp/a', '/tmp/b'],
+        }),
+      );
+      final settings = FileConflictSettings(filePath: settingsPath);
+      final decoded = jsonDecode(settings.exportJson())
+          as Map<String, Object?>;
+      expect(decoded['fileConflictPolicy'], 'rename');
+      expect(decoded['recentSaveDirectories'], ['/tmp/a', '/tmp/b']);
+    });
 
-  test('save and load round-trip the policy', () {
-    settings.save(FileConflictPolicy.rename);
-    expect(settings.load(), FileConflictPolicy.rename);
-  });
+    test('exportJson with no settings file exports empty values', () {
+      final settings = FileConflictSettings(filePath: settingsPath);
+      final decoded = jsonDecode(settings.exportJson())
+          as Map<String, Object?>;
+      expect(decoded['fileConflictPolicy'], isNull);
+      expect(decoded['recentSaveDirectories'], isEmpty);
+    });
 
-  test('recent directories round-trip', () {
-    settings.saveRecentDirectories(['/tmp/a', '/tmp/b']);
-    expect(settings.loadRecentDirectories(), ['/tmp/a', '/tmp/b']);
-  });
+    test('importJson persists the policy and recent directories', () {
+      final settings = FileConflictSettings(filePath: settingsPath);
+      expect(
+        settings.importJson(
+          jsonEncode({
+            'fileConflictPolicy': 'overwrite',
+            'recentSaveDirectories': ['/tmp/x'],
+          }),
+        ),
+        isTrue,
+      );
+      expect(settings.load(), FileConflictPolicy.overwrite);
+      expect(settings.loadRecentDirectories(), ['/tmp/x']);
+    });
 
-  test('saving the policy keeps the recent directories', () {
-    settings.saveRecentDirectories(['/tmp/a']);
-    settings.save(FileConflictPolicy.overwrite);
-    expect(settings.load(), FileConflictPolicy.overwrite);
-    expect(settings.loadRecentDirectories(), ['/tmp/a']);
-  });
+    test('importJson drops an unknown policy value but keeps the rest',
+        () {
+      final settings = FileConflictSettings(filePath: settingsPath);
+      expect(
+        settings.importJson(
+          jsonEncode({
+            'fileConflictPolicy': 'bogus',
+            'recentSaveDirectories': ['/tmp/x'],
+          }),
+        ),
+        isTrue,
+      );
+      expect(settings.load(), isNull);
+      expect(settings.loadRecentDirectories(), ['/tmp/x']);
+    });
 
-  test('saving recent directories keeps the policy', () {
-    settings.save(FileConflictPolicy.rename);
-    settings.saveRecentDirectories(['/tmp/a']);
-    expect(settings.load(), FileConflictPolicy.rename);
-    expect(settings.loadRecentDirectories(), ['/tmp/a']);
+    test('importJson rejects text that is not a JSON object', () {
+      final settings = FileConflictSettings(filePath: settingsPath);
+      expect(settings.importJson('not json at all'), isFalse);
+      expect(settings.importJson('[1, 2]'), isFalse);
+      expect(File(settingsPath).existsSync(), isFalse);
+    });
   });
 }
