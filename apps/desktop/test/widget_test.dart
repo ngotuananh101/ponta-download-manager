@@ -33,6 +33,15 @@ const _download = Download(
   bytesPerSecond: 250,
 );
 
+const _queuedDownload = Download(
+  id: 'dl-1',
+  url: 'http://127.0.0.1:9/f.bin',
+  fileName: 'f.bin',
+  state: DownloadState.queued,
+  downloadedBytes: 0,
+  totalBytes: 1000,
+);
+
 Widget app({
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
@@ -811,7 +820,11 @@ void main() {
     when(
       () => actions.setPriority(any(), any()),
     ).thenAnswer((_) async => const Right(unit));
-    await pumpApp(tester, actions: actions);
+    await pumpApp(
+      tester,
+      actions: actions,
+      downloads: const [_queuedDownload],
+    );
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Set priority'));
@@ -832,7 +845,11 @@ void main() {
     when(
       () => actions.setPriority(any(), any()),
     ).thenAnswer((_) async => const Right(unit));
-    await pumpApp(tester, actions: actions);
+    await pumpApp(
+      tester,
+      actions: actions,
+      downloads: const [_queuedDownload],
+    );
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Set priority'));
@@ -863,6 +880,14 @@ void main() {
     final filePath = p.join(dir.path, 'f.bin');
     File(filePath).writeAsStringSync('x');
     await pumpApp(tester, downloads: [completedWithFile(filePath)]);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set priority'), findsNothing);
+  });
+
+  testWidgets('Set priority is hidden for a downloading row',
+      (tester) async {
+    await pumpApp(tester);
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     expect(find.text('Set priority'), findsNothing);
@@ -2186,7 +2211,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pause'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
-    expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Add mirror'), findsOneWidget);
     expect(find.text('Perform virus check'), findsOneWidget);
@@ -2200,7 +2224,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 9);
+    expect(items.length, 8);
     expect(items.every((item) => item.height == 32), isTrue);
   });
   testWidgets('the row menu separates its sections with dividers',
@@ -2208,34 +2232,28 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
-    // Downloading row: Set priority | Pause, Cancel | link and
-    // tools | Delete, so three dividers.
+    // Downloading row: the file-actions group is empty (no finished
+    // file, and a running job keeps the priority it started with),
+    // so the menu is Pause, Cancel | link and tools | Delete, with
+    // two dividers.
     final dividers = find.byType(PopupMenuDivider);
-    expect(dividers, findsNWidgets(3));
+    expect(dividers, findsNWidgets(2));
     expect(
       tester.getCenter(dividers.at(0)).dy,
-      greaterThan(tester.getCenter(find.text('Set priority')).dy),
-    );
-    expect(
-      tester.getCenter(dividers.at(0)).dy,
-      lessThan(tester.getCenter(find.text('Pause')).dy),
-    );
-    expect(
-      tester.getCenter(dividers.at(1)).dy,
       greaterThan(tester.getCenter(find.text('Cancel')).dy),
     );
     expect(
-      tester.getCenter(dividers.at(1)).dy,
+      tester.getCenter(dividers.at(0)).dy,
       lessThan(tester.getCenter(find.text('Copy link')).dy),
     );
     expect(
-      tester.getCenter(dividers.at(2)).dy,
+      tester.getCenter(dividers.at(1)).dy,
       greaterThan(
         tester.getCenter(find.text('Export selected downloads')).dy,
       ),
     );
     expect(
-      tester.getCenter(dividers.at(2)).dy,
+      tester.getCenter(dividers.at(1)).dy,
       lessThan(tester.getCenter(find.text('Delete')).dy),
     );
   });

@@ -863,7 +863,6 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           // the scheduler reorders queued and paused jobs, and a
           // running job keeps the priority it started with.
           if (item.state == DownloadState.queued ||
-              item.state == DownloadState.downloading ||
               item.state == DownloadState.paused) {
             entries.add(_prioritySubmenu(item));
           }
