@@ -837,6 +837,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             case DownloadState.cancelled:
               break;
           }
+          // Every row can hand out its URL.
+          entries.add(_menuItem('copy_link', 'Copy link'));
           // Every row can be deleted. When a finished file is on
           // disk, deleting asks whether to delete the file too.
           entries.add(_menuItem('delete', 'Delete'));
@@ -847,6 +849,23 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   Future<void> _onRowAction(Download item, String action) async {
+    if (action == 'copy_link') {
+      try {
+        await Clipboard.setData(ClipboardData(text: item.url));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link copied to clipboard')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not copy the link: $e')),
+          );
+        }
+      }
+      return;
+    }
     if (action == 'delete') {
       await _deleteDownloads([item]);
       return;

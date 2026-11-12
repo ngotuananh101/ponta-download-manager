@@ -107,6 +107,26 @@ void mockClipboard(WidgetTester tester, String? text) {
   );
 }
 
+/// Records the texts passed to `Clipboard.setData` during the test.
+List<String> captureClipboardSet(WidgetTester tester) {
+  final texts = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        final args = call.arguments as Map<dynamic, dynamic>?;
+        texts.add(args?['text'] as String? ?? '');
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return texts;
+}
+
 /// Stubs a successful probe for the 100MB test URL.
 void stubProbe(MockDownloadsActions actions) {
   when(() => actions.probeUrl(any())).thenAnswer(
@@ -666,6 +686,18 @@ void main() {
     expect(find.text('Pause'), findsNothing);
   });
 
+  testWidgets('Copy link copies the download URL to the clipboard',
+      (tester) async {
+    final texts = captureClipboardSet(tester);
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy link'));
+    await tester.pumpAndSettle();
+    expect(texts, ['http://127.0.0.1:9/f.bin']);
+    expect(find.text('Link copied to clipboard'), findsOneWidget);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(
@@ -1061,6 +1093,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pause'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The menu item text is xs (12px) like the table rows.
     final menuText = tester.widget<Text>(find.text('Pause'));
@@ -1069,7 +1102,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 3);
+    expect(items.length, 4);
     expect(items.every((item) => item.height == 32), isTrue);
   });
 
