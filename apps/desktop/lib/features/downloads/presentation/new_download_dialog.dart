@@ -222,13 +222,13 @@ class _NewDownloadDialogState extends State<NewDownloadDialog> {
                   style: AppTextSize.xs.textStyle(),
                 ),
               ),
-              const Spacer(),
-              Flexible(
+              Expanded(
                 child: Text(
                   _sizeText,
                   style: AppTextSize.xs.textStyle(
                     color: colorScheme.onSurfaceVariant,
                   ),
+                  textAlign: TextAlign.right,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

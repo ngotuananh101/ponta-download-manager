@@ -66,6 +66,35 @@ void main() {
     expect(decision, isNull);
   });
 
+  testWidgets('the size line gets the full remaining row width',
+      (tester) async {
+    NewDownloadDecision? decision;
+    await openDialog(
+      tester,
+      freeSpace: (_) async => 150323855360,
+      pickDirectory: () async => null,
+      onResult: (d) => decision = d,
+    );
+    // The Scheduler row used a Spacer plus a Flexible around the size
+    // text, so the Spacer took half the remaining width and the size
+    // text only got ~173px — too narrow for the full
+    // "Size: 1000 B (Disk space: 140.0 GiB)", so the disk-space part
+    // was cut off by the ellipsis. The size text takes all the
+    // remaining width instead and sits at the right edge.
+    expect(
+      find.ancestor(
+        of: find.text('Size: 1000 B (Disk space: 140.0 GiB)'),
+        matching: find.byType(Expanded),
+      ),
+      findsOneWidget,
+    );
+    final size = tester.widget<Text>(
+      find.text('Size: 1000 B (Disk space: 140.0 GiB)'),
+    );
+    expect(size.textAlign, TextAlign.right);
+    expect(decision, isNull);
+  });
+
   testWidgets('an unknown size shows Unknown size', (tester) async {
     NewDownloadDecision? decision;
     await openDialog(
