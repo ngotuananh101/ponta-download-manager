@@ -277,9 +277,16 @@ class HttpTransport implements DownloadTransport {
         'filename\\*?=(?:UTF-8\'\')?"?([^";]+)"?',
       ).firstMatch(contentDisposition);
       if (match != null) {
-        final name = Uri.decodeComponent(match.group(1)!).trim();
-        if (name.isNotEmpty) {
-          return name;
+        // A bare '%' (or other invalid encoding) in the header is
+        // not valid percent-encoding: fall through to the URL path
+        // segment below instead of throwing ArgumentError.
+        try {
+          final name = Uri.decodeComponent(match.group(1)!).trim();
+          if (name.isNotEmpty) {
+            return name;
+          }
+        } on ArgumentError {
+          // Fall through to the path-segment fallback below.
         }
       }
     }

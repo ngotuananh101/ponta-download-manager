@@ -68,9 +68,13 @@ void main() {
             'application',
             'octet-stream',
           );
+          // A bare '%' is not valid percent-encoding: decoding it
+          // must not throw (review item 22).
           response.headers.set(
             'content-disposition',
-            'attachment; filename="archive.zip"',
+            path == '/bad-disposition'
+                ? 'attachment; filename="100%.bin"'
+                : 'attachment; filename="archive.zip"',
           );
           await response.close();
           return;
@@ -146,6 +150,11 @@ void main() {
       expect(info.lastModified, 'Wed, 21 Oct 2015 07:28:00 GMT');
       expect(info.contentType, 'application/octet-stream');
       expect(info.fileName, 'archive.zip');
+    });
+
+    test('a bare percent in Content-Disposition falls back to the path segment', () async {
+      final info = await transport.probe(base.resolve('/bad-disposition'));
+      expect(info.fileName, 'bad-disposition');
     });
 
     test('follows redirects and reports the final URL', () async {
