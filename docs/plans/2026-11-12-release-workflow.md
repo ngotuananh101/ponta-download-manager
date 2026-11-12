@@ -131,3 +131,17 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
 - Chưa verify (cần lần chạy workflow đầu tiên trên GitHub): toàn bộ job
   Windows (Inno, WiX, fetch tools trên Git Bash), fpm DEB/RPM,
   AppImage, và job release thật.
+
+## Fixes after the first run
+
+- 2026-11-12 ~23:54 (job `test`, ubuntu-26.04): `flutter test` failed
+  because the cnativeapi 0.5.10 native-assets hook runs
+  `pkg-config --cflags gtk+-3.0 x11 xi` and the runner image has no GTK3
+  dev packages ("Package gtk+-3.0 was not found"). Fix: install the
+  standard Flutter Linux deps (`clang cmake ninja-build pkg-config
+  libgtk-3-dev liblzma-dev`) in the `test` job before the desktop tests;
+  the `build-linux` job's install step got the same set.
+  `libstdc++-12-dev` is NOT included: version-pinned, does not exist
+  on Ubuntu 26.04; the image already ships build-essential/gcc.
+  The `test` job had no install step at all before this fix, while
+  `build-linux` already installed `libgtk-3-dev`.

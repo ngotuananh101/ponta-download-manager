@@ -41,6 +41,11 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
       - name: Desktop tests
         working-directory: apps/desktop
         run: |
@@ -151,7 +156,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev ruby ruby-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev ruby ruby-dev
           sudo gem install fpm
 
       - name: Get dependencies
