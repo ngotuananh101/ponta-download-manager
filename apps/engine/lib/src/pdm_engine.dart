@@ -123,6 +123,11 @@ class PdmEngine implements DownloadEngine {
   @override
   Stream<DownloadEvent> get events => _events.stream;
 
+  /// Number of yt-dlp event subscriptions currently held. Test-only
+  /// seam: the subscriptions are pruned when their download reaches
+  /// a terminal event, and this count is how the tests observe that.
+  int get ytDlpSubscriptionCount => _ytDlpSubs.length;
+
   /// True for HLS (.m3u8) and DASH (.mpd) playlist URLs, which the
   /// native segment downloader cannot handle (it would save the
   /// playlist file itself). These go to the yt-dlp downloader.
@@ -263,6 +268,17 @@ class PdmEngine implements DownloadEngine {
     return true;
   }
 
+  /// Drops the yt-dlp event subscription for [downloadId]. The
+  /// downloader closes the stream after its terminal event, so the
+  /// subscription can never deliver another event; keeping it would
+  /// retain the engine and the stream forever (review item 17).
+  void _pruneYtDlpSub(String downloadId) {
+    final sub = _ytDlpSubs.remove(downloadId);
+    if (sub != null) {
+      unawaited(sub.cancel());
+    }
+  }
+
   /// Forwards a yt-dlp event to the engine stream and updates the
   /// store record the same way the scheduler's writer does for
   /// native downloads.
@@ -285,6 +301,12 @@ class PdmEngine implements DownloadEngine {
       },
       stateChanged: (downloadId, status) {
         _updateStatus(downloadId, status);
+        // The downloader closes the stream after a paused or
+        // cancelled event, so this subscription is done.
+        if (status == DownloadStatus.paused ||
+            status == DownloadStatus.cancelled) {
+          _pruneYtDlpSub(downloadId);
+        }
       },
       completed: (downloadId, filePath) {
         final record = _store.getDownload(downloadId);
@@ -305,6 +327,7 @@ class PdmEngine implements DownloadEngine {
             ),
           );
         }
+        _pruneYtDlpSub(downloadId);
       },
       failed: (downloadId, code, message) {
         final record = _store.getDownload(downloadId);
@@ -317,6 +340,7 @@ class PdmEngine implements DownloadEngine {
             ),
           );
         }
+        _pruneYtDlpSub(downloadId);
       },
     );
   }

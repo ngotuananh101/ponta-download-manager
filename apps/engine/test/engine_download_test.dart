@@ -1828,6 +1828,11 @@ echo "$final"
 exit 0
 ''';
 
+      const failingScript = r'''#!/bin/sh
+echo "ERROR: unable to download video data" >&2
+exit 1
+''';
+
       test('an m3u8 url downloads via yt-dlp and completes with the real file',
           () async {
         final fake = await makeFakeYtDlp(successScript);
@@ -1886,6 +1891,129 @@ exit 0
           .firstWhere((d) => d.id == info.id);
       expect(after.status, DownloadStatus.completed);
       expect(produced.lastModifiedSync(), modifiedBefore);
+    });
+
+    test('a completed playlist download drops its event subscription',
+        () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      expect(engine.ytDlpSubscriptionCount, 1);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      // The prune runs in the same event handler that marks the
+      // record completed, so the count is already 0 here.
+      expect(engine.ytDlpSubscriptionCount, 0);
+    });
+
+    test('a failed playlist download drops its event subscription',
+        () async {
+      final fake = await makeFakeYtDlp(failingScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      expect(engine.ytDlpSubscriptionCount, 1);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      expect(engine.ytDlpSubscriptionCount, 0);
+    });
+
+    test('a cancelled playlist download drops its event subscription',
+        () async {
+      final fake = await makeFakeYtDlp(slowScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      await engine.cancelDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.cancelled,
+      );
+      // cancelDownload marks the record cancelled itself, so the
+      // cancelled event may still be in flight: poll the count.
+      await waitFor(() => engine.ytDlpSubscriptionCount == 0);
+      expect(engine.ytDlpSubscriptionCount, 0);
+    });
+
+    test('a paused playlist download drops its event subscription until resumed',
+        () async {
+      final fake = await makeFakeYtDlp(slowScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      await engine.pauseDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.paused,
+      );
+      await waitFor(() => engine.ytDlpSubscriptionCount == 0);
+      await engine.resumeDownload(info.id);
+      expect(engine.ytDlpSubscriptionCount, 1);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(engine.ytDlpSubscriptionCount, 0);
     });
 
     test('deleteDownload with deleteFile removes the produced file',
