@@ -265,10 +265,15 @@ class HttpTransport implements DownloadTransport {
   }
 
   Uri _finalUrl(Uri url, HttpClientResponse response) {
-    if (response.redirects.isEmpty) {
-      return url;
+    // Redirect locations are often relative, and Dart keeps them
+    // that way in RedirectInfo.location: resolve each hop against
+    // the previous URL so the final URL is absolute even after a
+    // chain of relative redirects.
+    var current = url;
+    for (final redirect in response.redirects) {
+      current = current.resolveUri(redirect.location);
     }
-    return response.redirects.last.location;
+    return current;
   }
 
   String _fileName(Uri url, String? contentDisposition) {

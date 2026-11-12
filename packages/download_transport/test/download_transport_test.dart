@@ -32,6 +32,20 @@ void main() {
           await response.close();
           return;
         }
+        if (path == '/redirect-chain') {
+          // A chain of relative redirects: each hop resolves
+          // against the previous URL, not the original one.
+          response.statusCode = HttpStatus.found;
+          response.headers.set('location', 'sub/redirect2');
+          await response.close();
+          return;
+        }
+        if (path == '/sub/redirect2') {
+          response.statusCode = HttpStatus.found;
+          response.headers.set('location', 'file');
+          await response.close();
+          return;
+        }
         if (path == '/big') {
           // Large body: the client must receive data incrementally and
           // cancelling after the first chunk must stop the rest.
@@ -159,7 +173,13 @@ void main() {
 
     test('follows redirects and reports the final URL', () async {
       final info = await transport.probe(base.resolve('/redirect'));
-      expect(info.finalUrl.path, '/file');
+      expect(info.finalUrl, base.resolve('/file'));
+      expect(info.contentLength, 1024);
+    });
+
+    test('a chain of relative redirects resolves each hop in turn', () async {
+      final info = await transport.probe(base.resolve('/redirect-chain'));
+      expect(info.finalUrl, base.resolve('/sub/file'));
       expect(info.contentLength, 1024);
     });
 
