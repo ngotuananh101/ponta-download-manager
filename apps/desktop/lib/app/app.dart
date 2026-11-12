@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pdm/features/downloads/presentation/screens/downloads_screen.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
+import 'package:pdm/shared/theme/app_tokens.dart';
 
 class PdmApp extends StatelessWidget {
   const PdmApp({super.key});
@@ -16,7 +17,13 @@ class PdmApp extends StatelessWidget {
       // OS theme is. AppTheme.light is kept in code if a light theme is
       // ever wanted back.
       themeMode: ThemeMode.dark,
-      home: const DownloadsScreen(),
+      // Rounded window frame: the native window is undecorated
+      // with a transparent background (see main.dart), so clipping
+      // the home screen rounds the window's corners.
+      home: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        child: const DownloadsScreen(),
+      ),
     );
   }
 }

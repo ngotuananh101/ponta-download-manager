@@ -1882,6 +1882,21 @@ void main() {
       lessThan(tester.getCenter(find.text('Delete')).dy),
     );
   });
+  testWidgets('the app frame has rounded corners', (tester) async {
+    await pumpApp(tester);
+    // The whole home Scaffold is clipped by one rounded frame, so
+    // the undecorated window (transparent background, see main.dart)
+    // shows rounded corners instead of square ones.
+    final frame = find.ancestor(
+      of: find.byType(Scaffold),
+      matching: find.byType(ClipRRect),
+    );
+    expect(frame, findsOneWidget);
+    expect(
+      tester.widget<ClipRRect>(frame).borderRadius,
+      BorderRadius.circular(12),
+    );
+  });
 
   testWidgets('Perform virus check is disabled and does nothing',
       (tester) async {
