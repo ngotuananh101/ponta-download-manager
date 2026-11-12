@@ -82,8 +82,11 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _act(() => _datasource.retryDownload(id));
 
   @override
-  Future<Either<Failure, Unit>> deleteDownload(String id) =>
-      _act(() => _datasource.deleteDownload(id));
+  Future<Either<Failure, Unit>> deleteDownload(
+    String id, {
+    bool deleteFile = false,
+  }) =>
+      _act(() => _datasource.deleteDownload(id, deleteFile: deleteFile));
 
   @override
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(

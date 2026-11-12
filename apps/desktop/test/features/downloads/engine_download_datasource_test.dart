@@ -286,6 +286,26 @@ void main() {
       verify(() => engine.retryDownload('dl-1')).called(1);
     });
 
+    test('deleteDownload forwards the deleteFile flag to the engine',
+        () async {
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.deleteDownload(
+          any(),
+          deleteFile: any(named: 'deleteFile'),
+        ),
+      ).thenAnswer((_) async {});
+      await source.deleteDownload('dl-1', deleteFile: true);
+      await source.deleteDownload('dl-1');
+      verify(
+        () => engine.deleteDownload('dl-1', deleteFile: true),
+      ).called(1);
+      verify(
+        () => engine.deleteDownload('dl-1', deleteFile: false),
+      ).called(1);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

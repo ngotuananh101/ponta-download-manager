@@ -193,5 +193,25 @@ void main() {
       verify(() => datasource.cancelDownload('dl-1')).called(1);
       verify(() => datasource.retryDownload('dl-1')).called(1);
     });
+
+    test('deleteDownload forwards the deleteFile flag', () async {
+      when(
+        () => datasource.deleteDownload(
+          any(),
+          deleteFile: any(named: 'deleteFile'),
+        ),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.deleteDownload('dl-1', deleteFile: true)).isRight(),
+        isTrue,
+      );
+      expect((await repository.deleteDownload('dl-1')).isRight(), isTrue);
+      verify(
+        () => datasource.deleteDownload('dl-1', deleteFile: true),
+      ).called(1);
+      verify(
+        () => datasource.deleteDownload('dl-1', deleteFile: false),
+      ).called(1);
+    });
   });
 }

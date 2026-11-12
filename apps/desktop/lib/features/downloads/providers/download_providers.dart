@@ -113,8 +113,11 @@ class DownloadsActions {
   Future<Either<Failure, Unit>> retryDownload(String id) =>
       _repository.retryDownload(id);
 
-  Future<Either<Failure, Unit>> deleteDownload(String id) =>
-      _repository.deleteDownload(id);
+  Future<Either<Failure, Unit>> deleteDownload(
+    String id, {
+    bool deleteFile = false,
+  }) =>
+      _repository.deleteDownload(id, deleteFile: deleteFile);
 
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,

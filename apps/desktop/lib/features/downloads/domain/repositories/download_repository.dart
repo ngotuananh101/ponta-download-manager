@@ -22,7 +22,10 @@ abstract interface class DownloadRepository {
   Future<Either<Failure, Unit>> resumeDownload(String id);
   Future<Either<Failure, Unit>> cancelDownload(String id);
   Future<Either<Failure, Unit>> retryDownload(String id);
-  Future<Either<Failure, Unit>> deleteDownload(String id);
+  Future<Either<Failure, Unit>> deleteDownload(
+    String id, {
+    bool deleteFile = false,
+  });
 
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);

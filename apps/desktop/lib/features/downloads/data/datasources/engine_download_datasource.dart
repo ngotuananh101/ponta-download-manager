@@ -232,8 +232,8 @@ class EngineDownloadDatasource {
 
   Future<void> retryDownload(String id) => engine.retryDownload(id);
 
-  Future<void> deleteDownload(String id) async {
-    await engine.deleteDownload(id);
+  Future<void> deleteDownload(String id, {bool deleteFile = false}) async {
+    await engine.deleteDownload(id, deleteFile: deleteFile);
     // The delete is the source of truth for removing the row, like
     // the create response is for adding one.
     _downloads.remove(id);
