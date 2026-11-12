@@ -6,4 +6,8 @@ void main() {
   test('defaultSocketPath ends with pdm/engine.sock', () {
     expect(defaultSocketPath(), endsWith(p.join('pdm', 'engine.sock')));
   });
+
+  test('portFilePath is the socket path with a .port suffix', () {
+    expect(portFilePath('/tmp/engine.sock'), '/tmp/engine.sock.port');
+  });
 }

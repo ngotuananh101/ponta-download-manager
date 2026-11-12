@@ -64,6 +64,7 @@ void main() {
       Map<String, String>? environment,
       Future<void> Function(String path)? processStarter,
       Duration timeout = const Duration(seconds: 2),
+      bool? isWindows,
     }) {
       return AppLauncher(
         socketPath: socketPath,
@@ -71,6 +72,7 @@ void main() {
         environment: environment ?? const {},
         processStarter: processStarter,
         timeout: timeout,
+        isWindows: isWindows,
       );
     }
 
@@ -113,6 +115,27 @@ void main() {
       expect(await waiting, isTrue);
     });
 
+    test('waitForEndpoint returns true once the token and port file appear '
+        'on Windows', () async {
+      final l = launcher(isWindows: true);
+      final waiting = l.waitForEndpoint();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await File('$socketPath.token').writeAsString('tok');
+      await File('$socketPath.port').writeAsString('47931');
+      expect(await waiting, isTrue);
+    });
+
+    test('a socket file alone does not count as an endpoint on Windows',
+        () async {
+      final l = launcher(
+        isWindows: true,
+        timeout: const Duration(milliseconds: 100),
+      );
+      await File('$socketPath.token').writeAsString('tok');
+      await File(socketPath).writeAsString('');
+      expect(await l.waitForEndpoint(), isFalse);
+    });
+
     test('waitForEndpoint returns false on timeout', () async {
       final l = launcher(timeout: const Duration(milliseconds: 100));
       expect(await l.waitForEndpoint(), isFalse);
@@ -132,6 +155,21 @@ void main() {
       await File('$socketPath.token').writeAsString('tok');
       await File(socketPath).writeAsString('');
       final l = launcher(
+        processStarter: (_) async {
+          started++;
+        },
+      );
+      expect(await l.launchAndWait(), isTrue);
+      expect(started, 0);
+    });
+
+    test('launchAndWait returns true without launching when the app is '
+        'already running on Windows', () async {
+      var started = 0;
+      await File('$socketPath.token').writeAsString('tok');
+      await File('$socketPath.port').writeAsString('47931');
+      final l = launcher(
+        isWindows: true,
         processStarter: (_) async {
           started++;
         },

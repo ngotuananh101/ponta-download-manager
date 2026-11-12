@@ -24,7 +24,7 @@ Future<void> main() async {
           final token = await File('$socketPath.token').readAsString();
           return IpcClient.connect(
             channelFactory: () =>
-                UnixSocketTransport(socketPath: socketPath).connect(),
+                connectIpcChannel(socketPath: socketPath),
             token: token,
           );
         },

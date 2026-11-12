@@ -10,34 +10,52 @@ import 'package:path/path.dart' as p;
 /// so the app — not a separate daemon — serves the same protocol on
 /// the same socket + token file the extension already talks to.
 class EngineIpcHost {
-  EngineIpcHost._(this._server, this._transport, this._tokenPath);
+  EngineIpcHost._(
+    this._server,
+    this._transport,
+    this._tokenPath,
+    this._portPath,
+  );
 
   /// Starts the server for [engine] on [socketPath] (default:
   /// [defaultSocketPath]) with a fresh per-run token written to
-  /// `<socket>.token`.
+  /// `<socket>.token`. On Windows the server listens on loopback TCP
+  /// instead (Dart cannot bind a Unix socket there) and writes the
+  /// bound port to `<socket>.port`. [isWindows] is a test seam,
+  /// defaulting to [Platform.isWindows].
   static Future<EngineIpcHost> start({
     required DownloadEngine engine,
     String? socketPath,
+    bool? isWindows,
   }) async {
     final path = socketPath ?? defaultSocketPath();
     final token = _randomToken();
     final tokenPath = await writeTokenFile(path, token);
-    final transport = UnixSocketTransport(socketPath: path);
+    final transport = createIpcServerTransport(
+      socketPath: path,
+      isWindows: isWindows,
+    );
     final server = IpcServer(
       engine: engine,
       connections: await transport.listen(),
       token: token,
     );
-    return EngineIpcHost._(server, transport, tokenPath);
+    String? portPath;
+    if (transport is LoopbackTcpTransport) {
+      portPath = portFilePath(path);
+      await File(portPath).writeAsString('${transport.boundPort}');
+    }
+    return EngineIpcHost._(server, transport, tokenPath, portPath);
   }
 
   final IpcServer _server;
-  final UnixSocketTransport _transport;
+  final IpcServerTransport _transport;
   final String _tokenPath;
+  final String? _portPath;
   var _closed = false;
 
-  /// Stops the server, removes the socket, and deletes the token
-  /// file. Idempotent.
+  /// Stops the server, removes the socket (and the port file on
+  /// Windows), and deletes the token file. Idempotent.
   Future<void> close() async {
     if (_closed) {
       return;
@@ -48,6 +66,13 @@ class EngineIpcHost {
     final tokenFile = File(_tokenPath);
     if (await tokenFile.exists()) {
       await tokenFile.delete();
+    }
+    final portPath = _portPath;
+    if (portPath != null) {
+      final portFile = File(portPath);
+      if (await portFile.exists()) {
+        await portFile.delete();
+      }
     }
   }
 }

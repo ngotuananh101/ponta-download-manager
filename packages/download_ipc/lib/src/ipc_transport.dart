@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'ipc_channel.dart';
+import 'paths.dart';
 
 /// Server side of a local transport: binds and yields one
 /// [IpcChannel] per accepted connection.
@@ -91,4 +92,48 @@ class LoopbackTcpTransport
     await _server?.close();
     _server = null;
   }
+}
+
+/// Creates the server transport for [socketPath] on this platform: a
+/// Unix socket on POSIX, loopback TCP on Windows (Dart cannot bind a
+/// Unix socket there). On Windows [socketPath] is only the rendezvous
+/// base: after [IpcServerTransport.listen] the server writes the
+/// bound port to `<socketPath>.port` (see [portFilePath]) so clients
+/// can find it. [isWindows] is a test seam, defaulting to
+/// [Platform.isWindows].
+IpcServerTransport createIpcServerTransport({
+  required String socketPath,
+  bool? isWindows,
+}) =>
+    (isWindows ?? Platform.isWindows)
+        ? LoopbackTcpTransport()
+        : UnixSocketTransport(socketPath: socketPath);
+
+/// Connects a client channel to the server at [socketPath] (default
+/// [defaultSocketPath]): a Unix socket on POSIX, loopback TCP on the
+/// port in `<socketPath>.port` on Windows. Throws a [StateError] on
+/// Windows when no port file exists yet (the app is not running).
+/// [isWindows] is a test seam, defaulting to [Platform.isWindows].
+Future<IpcChannel> connectIpcChannel({
+  String? socketPath,
+  bool? isWindows,
+}) async {
+  final path = socketPath ?? defaultSocketPath();
+  if (!(isWindows ?? Platform.isWindows)) {
+    return UnixSocketTransport(socketPath: path).connect();
+  }
+  int? port;
+  try {
+    port = int.tryParse(
+      (await File(portFilePath(path)).readAsString()).trim(),
+    );
+  } on FileSystemException {
+    port = null;
+  }
+  if (port == null) {
+    throw StateError(
+      'No IPC port file at ${portFilePath(path)}: the app is not running',
+    );
+  }
+  return LoopbackTcpTransport(port: port).connect();
 }

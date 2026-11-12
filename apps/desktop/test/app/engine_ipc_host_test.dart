@@ -167,4 +167,62 @@ void main() {
     expect(await File(socketPath).exists(), isFalse);
     expect(await File('$socketPath.token').exists(), isFalse);
   });
+
+  test('start on Windows binds loopback TCP and writes the port file',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('pdm-ipc-host-');
+    addTearDown(() => temp.delete(recursive: true));
+    final socketPath = '${temp.path}/engine.sock';
+    final engine = FakeEngine();
+
+    final host = await EngineIpcHost.start(
+      engine: engine,
+      socketPath: socketPath,
+      isWindows: true,
+    );
+    addTearDown(host.close);
+
+    // No Unix socket file on Windows: the port file is the endpoint.
+    expect(await File(socketPath).exists(), isFalse);
+    final portFile = File('$socketPath.port');
+    expect(await portFile.exists(), isTrue);
+    final port = int.tryParse(await portFile.readAsString());
+    expect(port, isNotNull);
+    expect(port, greaterThan(0));
+    final token = await File('$socketPath.token').readAsString();
+    expect(token, isNotEmpty);
+
+    final client = await IpcClient.connect(
+      channelFactory: () => connectIpcChannel(
+        socketPath: socketPath,
+        isWindows: true,
+      ),
+      token: token,
+    );
+    addTearDown(client.close);
+
+    final info = await client.createDownload(
+      CreateDownloadRequest(
+        url: 'http://127.0.0.1:9/f.bin',
+        destination: '/tmp/f.bin',
+      ),
+    );
+    expect(info.id, 'dl-1');
+  });
+
+  test('close on Windows removes the port file and the token file',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('pdm-ipc-host-');
+    addTearDown(() => temp.delete(recursive: true));
+    final socketPath = '${temp.path}/engine.sock';
+    final host = await EngineIpcHost.start(
+      engine: FakeEngine(),
+      socketPath: socketPath,
+      isWindows: true,
+    );
+    expect(await File('$socketPath.port').exists(), isTrue);
+    await host.close();
+    expect(await File('$socketPath.port').exists(), isFalse);
+    expect(await File('$socketPath.token').exists(), isFalse);
+  });
 }

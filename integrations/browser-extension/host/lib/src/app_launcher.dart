@@ -45,9 +45,10 @@ String defaultDesktopFilePath() {
 }
 
 /// Launches the PDM desktop app when it is not running, and waits
-/// for its IPC endpoint (token + socket) to appear. Linux only: the
-/// app binary is resolved from the .desktop file the app installs
-/// itself, or from the PDM_APP_PATH environment variable.
+/// for its IPC endpoint (token + socket, or token + port file on
+/// Windows) to appear. Linux only: the app binary is resolved from
+/// the .desktop file the app installs itself, or from the
+/// PDM_APP_PATH environment variable.
 class AppLauncher {
   AppLauncher({
     required this.socketPath,
@@ -55,19 +56,24 @@ class AppLauncher {
     this.environment,
     Future<void> Function(String path)? processStarter,
     this.timeout = const Duration(seconds: 15),
-  }) : _processStarter = processStarter ?? _defaultStarter;
+    bool? isWindows,
+  }) : _processStarter = processStarter ?? _defaultStarter,
+       _isWindows = isWindows ?? Platform.isWindows;
 
   final String socketPath;
   final String? desktopFilePath;
   final Map<String, String>? environment;
   final Duration timeout;
   final Future<void> Function(String path) _processStarter;
+  final bool _isWindows;
 
   static Future<void> _defaultStarter(String path) async {
     await Process.start(path, [], mode: ProcessStartMode.detached);
   }
 
   String get _tokenPath => '$socketPath.token';
+
+  String get _portPath => portFilePath(socketPath);
 
   /// The app binary path: PDM_APP_PATH first, then the Exec= line of
   /// the installed .desktop file. Null when neither is available.
@@ -89,9 +95,16 @@ class AppLauncher {
     }
   }
 
-  /// Whether the IPC endpoint (token + socket) currently exists.
+  /// Whether the IPC endpoint currently exists: token + socket on
+  /// POSIX, token + port file on Windows (there is no socket file
+  /// there — the server listens on loopback TCP).
   bool endpointExists() {
-    return File(_tokenPath).existsSync() && File(socketPath).existsSync();
+    if (!File(_tokenPath).existsSync()) {
+      return false;
+    }
+    return _isWindows
+        ? File(_portPath).existsSync()
+        : File(socketPath).existsSync();
   }
 
   /// Polls until the IPC endpoint exists, or the timeout elapses.
