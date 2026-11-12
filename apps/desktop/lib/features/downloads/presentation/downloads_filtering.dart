@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 
 /// Sort orders, matching Free Download Manager's sort menu.
@@ -123,7 +121,7 @@ bool _matchesFilter(Download d, DownloadFilter filter) {
     case DownloadFilter.all:
       return true;
     case DownloadFilter.missing:
-      return _isMissing(d);
+      return d.state == DownloadState.missing;
     case DownloadFilter.active:
       return d.state == DownloadState.queued ||
           d.state == DownloadState.downloading ||
@@ -137,17 +135,6 @@ bool _matchesFilter(Download d, DownloadFilter filter) {
     case DownloadFilter.music:
       return _musicExtensions.contains(_extension(d.fileName));
   }
-}
-
-/// Whether a completed download's file is missing from disk. An
-/// incomplete download is never missing (its file is a partial that
-/// may legitimately not exist yet), and a download with no known path
-/// cannot be judged.
-bool _isMissing(Download d) {
-  final path = d.filePath;
-  if (path == null) return false;
-  if (d.state != DownloadState.completed) return false;
-  return !File(path).existsSync();
 }
 
 String _extension(String fileName) {

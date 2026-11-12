@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
@@ -101,7 +99,7 @@ void main() {
         filter: DownloadFilter.all,
         query: '',
       );
-      // queued < downloading < paused < completed < failed < cancelled.
+      // queued < downloading < paused < completed < missing < failed < cancelled.
       expect(asc.map((d) => d.id).toList(), ['dl-4', 'dl-2', 'dl-1', 'dl-3']);
       final desc = visibleDownloads(
         items,
@@ -159,18 +157,11 @@ void main() {
       expect(torrent.map((d) => d.id).toList(), ['dl-3']);
     });
 
-    test('Missing Files keeps completed downloads whose file is gone',
-        () async {
-      final dir = await Directory.systemTemp.createTemp('pdm-missing-');
-      addTearDown(() => dir.delete(recursive: true));
-      final present = File('${dir.path}/present.bin')
-        ..writeAsBytesSync([1, 2, 3]);
-      final gone = '${dir.path}/gone.bin';
+    test('Missing Files keeps missing rows only', () {
       final rows = [
-        _d('dl-1', fileName: 'present.bin', state: DownloadState.completed, filePath: present.path),
-        _d('dl-2', fileName: 'gone.bin', state: DownloadState.completed, filePath: gone),
-        _d('dl-3', fileName: 'no-path.bin', state: DownloadState.completed),
-        _d('dl-4', fileName: 'active.bin', state: DownloadState.downloading, downloadedBytes: 100, filePath: gone),
+        _d('dl-1', fileName: 'gone.bin', state: DownloadState.missing),
+        _d('dl-2', fileName: 'present.bin', state: DownloadState.completed),
+        _d('dl-3', fileName: 'active.bin', state: DownloadState.downloading),
       ];
       final result = visibleDownloads(
         rows,
@@ -178,10 +169,25 @@ void main() {
         filter: DownloadFilter.missing,
         query: '',
       );
-      // Only the completed download whose file is gone. The present
-      // file, the unknown path, and the still-downloading row are not
-      // missing.
-      expect(result.map((d) => d.id).toList(), ['dl-2']);
+      // Only the row already marked missing at load. The state, not a
+      // live disk check, decides: a file deleted mid-session shows
+      // Missing only after the next app start.
+      expect(result.map((d) => d.id).toList(), ['dl-1']);
+    });
+
+    test('By status sorts missing between completed and failed', () {
+      final rows = [
+        _d('dl-1', fileName: 'a.zip', state: DownloadState.failed),
+        _d('dl-2', fileName: 'b.zip', state: DownloadState.missing),
+        _d('dl-3', fileName: 'c.zip', state: DownloadState.completed),
+      ];
+      final asc = visibleDownloads(
+        rows,
+        sort: DownloadSort.statusAsc,
+        filter: DownloadFilter.all,
+        query: '',
+      );
+      expect(asc.map((d) => d.id).toList(), ['dl-3', 'dl-2', 'dl-1']);
     });
 
     test('search matches file name and URL, case-insensitively', () {

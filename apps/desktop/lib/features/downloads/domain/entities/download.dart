@@ -1,6 +1,14 @@
 import 'package:equatable/equatable.dart';
 
-enum DownloadState { queued, downloading, paused, completed, failed, cancelled }
+enum DownloadState {
+  queued,
+  downloading,
+  paused,
+  completed,
+  missing,
+  failed,
+  cancelled,
+}
 
 /// A download as the UI sees it. Engine-side types live in `download_api`;
 /// this is the presentation-facing model for the downloads feature.
@@ -32,8 +40,8 @@ class Download extends Equatable {
   final DateTime? createdAt;
 
   /// Final on-disk destination. Null when unknown (e.g. a download
-  /// created before this field existed). Used by the "Missing Files"
-  /// filter.
+  /// created before this field existed). Checked at load: a completed
+  /// download whose file is gone shows as Missing.
   final String? filePath;
 
   /// Why the download failed, from the engine's failed event (e.g.

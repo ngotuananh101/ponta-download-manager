@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:fake_async/fake_async.dart';
@@ -16,6 +17,7 @@ DownloadInfo info({
   int downloadedBytes = 0,
   int totalBytes = 1000,
   int bytesPerSecond = 0,
+  String? filePath,
 }) {
   return DownloadInfo(
     id: id,
@@ -25,6 +27,7 @@ DownloadInfo info({
     downloadedBytes: downloadedBytes,
     totalBytes: totalBytes,
     bytesPerSecond: bytesPerSecond,
+    filePath: filePath,
   );
 }
 
@@ -160,6 +163,38 @@ void main() {
         async.elapse(const Duration(milliseconds: 100));
         expect(emitted.last.single.downloadedBytes, 500);
         expect(emitted.last.single.state, DownloadState.paused);
+        sub.cancel();
+        unawaited(source.dispose());
+      });
+    });
+
+    test('a completed download whose file is gone loads as missing', () {
+      fakeAsync((async) {
+        final dir = Directory.systemTemp.createTempSync('pdm-missing-');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final gone = '${dir.path}/gone.bin';
+        when(() => engine.listDownloads()).thenAnswer(
+          (_) async => [
+            info(status: DownloadStatus.completed, filePath: gone),
+          ],
+        );
+        final source = datasource();
+        final emitted = <List<Download>>[];
+        final sub = source.watchDownloads().listen(emitted.add);
+        async.flushMicrotasks();
+        expect(emitted.last.single.state, DownloadState.missing);
+        // A stray progress event must not revive it to downloading.
+        events.add(
+          DownloadEvent.progress(
+            downloadId: 'dl-1',
+            downloadedBytes: 100,
+            totalBytes: 100,
+            bytesPerSecond: 100,
+          ),
+        );
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 100));
+        expect(emitted.last.single.state, DownloadState.missing);
         sub.cancel();
         unawaited(source.dispose());
       });

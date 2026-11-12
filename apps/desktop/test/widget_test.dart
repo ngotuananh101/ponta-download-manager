@@ -647,6 +647,25 @@ void main() {
     expect(find.text('Delete'), findsOneWidget);
   });
 
+  testWidgets('a missing row shows Missing and offers Retry and Delete',
+      (tester) async {
+    const missing = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.missing,
+      downloadedBytes: 1000,
+      totalBytes: 1000,
+    );
+    await pumpApp(tester, downloads: const [missing]);
+    expect(find.text('Missing'), findsOneWidget);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    expect(find.text('Pause'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(

@@ -830,6 +830,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             case DownloadState.failed:
               entries.add(_menuItem('retry', 'Retry'));
               entries.add(_menuItem('cancel', 'Cancel'));
+            case DownloadState.missing:
+              // Re-download the lost file, or drop the row.
+              entries.add(_menuItem('retry', 'Retry'));
             case DownloadState.completed:
             case DownloadState.cancelled:
               break;

@@ -124,7 +124,8 @@ class EngineDownloadDatasource {
         final stopped = current.state == DownloadState.paused ||
             current.state == DownloadState.cancelled ||
             current.state == DownloadState.failed ||
-            current.state == DownloadState.completed;
+            current.state == DownloadState.completed ||
+            current.state == DownloadState.missing;
         _downloads[downloadId] = current.copyWith(
           downloadedBytes: downloadedBytes,
           totalBytes: totalBytes,

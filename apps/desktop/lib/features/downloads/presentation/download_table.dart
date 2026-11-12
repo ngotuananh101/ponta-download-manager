@@ -98,6 +98,7 @@ IconData downloadStateIcon(DownloadState state) {
     DownloadState.downloading => Icons.arrow_downward,
     DownloadState.paused => Icons.play_arrow,
     DownloadState.completed => Icons.folder,
+    DownloadState.missing => Icons.folder_off,
     DownloadState.failed ||
     DownloadState.queued ||
     DownloadState.cancelled => Icons.insert_drive_file,
@@ -111,6 +112,7 @@ Color downloadStatusColor(ColorScheme scheme, DownloadState state) {
     DownloadState.downloading => scheme.secondary,
     DownloadState.paused => kPausedColor,
     DownloadState.failed => scheme.error,
+    DownloadState.missing => scheme.error,
     DownloadState.queued => scheme.onSurfaceVariant,
     DownloadState.cancelled => scheme.onSurfaceVariant,
   };

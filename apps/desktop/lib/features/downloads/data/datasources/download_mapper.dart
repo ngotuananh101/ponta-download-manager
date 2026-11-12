@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:download_api/download_api.dart';
 
 import '../../domain/entities/download.dart';
@@ -7,7 +9,7 @@ Download downloadFromInfo(DownloadInfo info) {
     id: info.id,
     url: info.url,
     fileName: info.fileName,
-    state: downloadStateFromStatus(info.status),
+    state: _stateWithMissingCheck(info),
     downloadedBytes: info.downloadedBytes,
     totalBytes: info.totalBytes,
     bytesPerSecond: info.bytesPerSecond,
@@ -15,6 +17,23 @@ Download downloadFromInfo(DownloadInfo info) {
     filePath: info.filePath,
     priority: info.priority,
   );
+}
+
+/// Maps the engine status, marking a completed download Missing when
+/// its file is no longer on disk. Only completed downloads are
+/// checked: an incomplete one legitimately has no finished file yet,
+/// and a download with no known path cannot be judged. The check runs
+/// at load (and on refresh), so a file deleted mid-session shows
+/// Missing only after the next app start.
+DownloadState _stateWithMissingCheck(DownloadInfo info) {
+  final state = downloadStateFromStatus(info.status);
+  final path = info.filePath;
+  if (state == DownloadState.completed &&
+      path != null &&
+      !File(path).existsSync()) {
+    return DownloadState.missing;
+  }
+  return state;
 }
 
 DownloadState downloadStateFromStatus(DownloadStatus status) {

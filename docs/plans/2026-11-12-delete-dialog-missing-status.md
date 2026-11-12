@@ -1,6 +1,8 @@
 # Plan: delete dialog + missing-file status — 2026-11-12
 
-## Status: IN PROGRESS 2026-11-12
+## Status: DONE 2026-11-12
+
+All parts committed and pushed: D1 `cf0cbd4`, D2 `ff022ee`, D3 `62648c0`, D4 `7e59959`, M1 (this commit). Gates: desktop 179/179, analyze clean, `flutter build linux --release` OK.
 
 ## Goal
 
