@@ -51,10 +51,11 @@ need curl
 need tar
 
 # True when a Linux binary is present, executable, and reports a
-# version. Windows binaries cannot be executed on a Linux host, so
-# they only need to exist and be non-empty.
+# version with its own flag ($2): ffmpeg takes -version (--version
+# exits 8), yt-dlp takes --version. Windows binaries cannot be
+# executed on a Linux host, so they only need to exist and be non-empty.
 linux_usable() {
-  [ -x "$1" ] && [ -s "$1" ] && "$1" --version >/dev/null 2>&1
+  [ -x "$1" ] && [ -s "$1" ] && "$1" "$2" >/dev/null 2>&1
 }
 windows_usable() {
   [ -s "$1" ]
@@ -78,7 +79,7 @@ fetch_linux() {
   trap 'rm -rf "$tmp"' RETURN
 
   # --- ffmpeg (johnvansickle static build) ---
-  if [ "$FORCE" -eq 0 ] && linux_usable "$BIN_DIR/ffmpeg"; then
+  if [ "$FORCE" -eq 0 ] && linux_usable "$BIN_DIR/ffmpeg" -version; then
     echo "ffmpeg already present, skipping"
   else
     download \
@@ -95,7 +96,7 @@ fetch_linux() {
   fi
 
   # --- yt-dlp (GitHub release, standalone binary) ---
-  if [ "$FORCE" -eq 0 ] && linux_usable "$BIN_DIR/yt-dlp"; then
+  if [ "$FORCE" -eq 0 ] && linux_usable "$BIN_DIR/yt-dlp" --version; then
     echo "yt-dlp already present, skipping"
   else
     download \

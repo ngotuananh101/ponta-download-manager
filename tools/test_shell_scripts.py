@@ -92,3 +92,59 @@ def test_install_creates_local_bin_when_missing(tmp_path):
     )
     assert firefox_manifest.is_file()
     assert "pdm@ponta.dev" in firefox_manifest.read_text()
+
+
+def test_fetch_skips_binaries_that_already_work(tmp_path):
+    """Review 35: linux_usable must use each tool's own version flag.
+    ffmpeg takes -version (--version exits 8), so probing it with
+    --version always 'fails' and the script re-downloads every time."""
+    root = tmp_path / "pdm"
+    bin_dir = root / "apps" / "desktop" / "bundle" / "bin"
+    bin_dir.mkdir(parents=True)
+    tools_dir = root / "tools"
+    tools_dir.mkdir(parents=True)
+    shutil.copy(
+        REPO_ROOT / "tools" / "fetch_external_tools.sh",
+        tools_dir / "fetch_external_tools.sh",
+    )
+    # A fake ffmpeg behaving like the real one: -version exits 0,
+    # --version exits 8.
+    write_executable(
+        bin_dir / "ffmpeg",
+        """\
+        #!/bin/sh
+        if [ "$1" = "-version" ]; then echo "ffmpeg version fake"; exit 0; fi
+        echo "ffmpeg fake: unknown option" >&2
+        exit 8
+        """,
+    )
+    write_executable(
+        bin_dir / "yt-dlp",
+        """\
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then echo "2026.01.01"; exit 0; fi
+        exit 1
+        """,
+    )
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    curl_log = tmp_path / "curl.log"
+    # A fake curl that records any download attempt and fails it.
+    write_executable(
+        fakebin / "curl",
+        f"""\
+        #!/bin/sh
+        echo "$@" >> "{curl_log}"
+        exit 1
+        """,
+    )
+    result = run_script(
+        tools_dir / "fetch_external_tools.sh",
+        cwd=root,
+        args=["linux"],
+        env_extra={"PATH": f"{fakebin}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ffmpeg already present, skipping" in result.stdout
+    assert "yt-dlp already present, skipping" in result.stdout
+    assert not curl_log.exists(), "the script tried to download"
