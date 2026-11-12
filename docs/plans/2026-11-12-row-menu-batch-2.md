@@ -1,6 +1,29 @@
 # Plan: row menu Batch 2 — Rename file, Move to, Change URL, Check for update, Export — 2026-11-12
 
-## Status: IN PROGRESS 2026-11-12
+## Status: DONE 2026-11-12
+
+Commits (all pushed): B2.1 Rename file `5465e9b`, B2.2 Move to
+`95e0832`, B2.3 Change URL `5d2e3a3`, B2.4 Check for update
+`7ea44f5`, B2.5 Export selected downloads `ecaae88`.
+
+## Outcome notes
+
+- Rename and Change URL share the new `showTextInputDialog`
+  (one-field PdmDialog, prefilled, select-all, inline validation,
+  OK disabled while invalid).
+- Move to... opens the folder picker directly (no dialog);
+  cross-filesystem moves fall back to copy + delete.
+- Change URL is failed-rows only: the scheduler's queued/paused
+  jobs carry their own URL, so a record-only change would not
+  affect them. Retry re-enqueues from the record, so the new URL
+  takes effect there.
+- Check for update compares SIZES only (see the correction in
+  B2.4): the engine never persists the server's eTag /
+  lastModified, so no validator comparison is possible yet.
+- Export writes plain text, one URL per line (IDM-compatible);
+  the selection when non-empty, else the row the menu was opened
+  on. Switching to JSON with metadata later is one function +
+  its test.
 
 ## Goal
 
