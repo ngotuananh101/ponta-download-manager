@@ -568,6 +568,79 @@ test('closing a tab clears its media from chrome.storage.session', () => {
   assert.deepEqual(sessionValues.mediaByTab, {});
 });
 
+test('a download created before the stored setting loads is not intercepted', () => {
+  const {chromeApi, listeners, ports, cancelled, paused, storageValues} =
+    fakeChrome();
+  storageValues.pdmIntercept = false;
+  // The storage callback has not run yet: the worker just woke up.
+  let pendingGet = null;
+  chromeApi.storage.local.get = (defaults, cb) => {
+    pendingGet = () => cb({...defaults, ...storageValues});
+  };
+  installed(chromeApi, listeners);
+  assert.notEqual(pendingGet, null);
+  emitDownloadCreated(listeners, {
+    id: 21,
+    url: 'https://example.com/e.zip',
+    filename: 'e.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(paused, []);
+  assert.deepEqual(cancelled, []);
+  assert.equal(ports.length, 0);
+  // Once the stored value arrives, interception stays off.
+  pendingGet();
+  emitDownloadCreated(listeners, {
+    id: 22,
+    url: 'https://example.com/f.zip',
+    filename: 'f.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(paused, []);
+  assert.equal(ports.length, 0);
+});
+
+test('a download created before the stored setting loads waits for the stored value', () => {
+  const {chromeApi, listeners, ports, paused, storageValues} = fakeChrome();
+  storageValues.pdmIntercept = true;
+  let pendingGet = null;
+  chromeApi.storage.local.get = (defaults, cb) => {
+    pendingGet = () => cb({...defaults, ...storageValues});
+  };
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 23,
+    url: 'https://example.com/g.zip',
+    filename: 'g.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(paused, []);
+  assert.equal(ports.length, 0);
+  pendingGet();
+  emitDownloadCreated(listeners, {
+    id: 24,
+    url: 'https://example.com/h.zip',
+    filename: 'h.zip',
+    state: 'in_progress',
+  });
+  assert.deepEqual(paused, [24]);
+});
+
+test('intercept.get answers from storage while the setting is still loading', () => {
+  const {chromeApi, listeners, storageValues} = fakeChrome();
+  storageValues.pdmIntercept = false;
+  let pendingGet = null;
+  chromeApi.storage.local.get = (defaults, cb) => {
+    pendingGet = () => cb({...defaults, ...storageValues});
+  };
+  installed(chromeApi, listeners);
+  const reply = emitMessage(listeners, {type: 'intercept.get'});
+  assert.equal(reply.async, true);
+  assert.equal(reply.response(), undefined);
+  pendingGet();
+  assert.deepEqual(reply.response(), {enabled: false});
+});
+
 test('intercept get and set round-trip through storage', () => {
   const {chromeApi, listeners, storageValues} = fakeChrome();
   installed(chromeApi, listeners);

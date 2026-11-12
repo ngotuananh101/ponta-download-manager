@@ -7,7 +7,11 @@
 const HOST_NAME = 'com.ponta.pdm';
 
 // Interception is on by default; the popup flips it in storage.
-let interceptEnabled = true;
+// It starts off until the stored value has loaded: right after a
+// cold start the storage callback has not run yet, and intercepting
+// in that window would ignore a user who turned it off.
+let interceptEnabled = false;
+let interceptLoaded = false;
 
 // Media found on each tab, by tab id. Filled by content scripts,
 // cleared when a tab closes or navigates.
@@ -227,12 +231,15 @@ function handleDeterminingFilename(chromeApi, item, suggest) {
 }
 
 function loadInterceptSetting(chromeApi) {
-  interceptEnabled = true;
   if (!chromeApi.storage || !chromeApi.storage.local) {
+    // No storage to read from: fall back to the default (on).
+    interceptEnabled = true;
+    interceptLoaded = true;
     return;
   }
   chromeApi.storage.local.get({pdmIntercept: true}, (items) => {
     interceptEnabled = items.pdmIntercept !== false;
+    interceptLoaded = true;
   });
   if (chromeApi.storage.onChanged) {
     chromeApi.storage.onChanged.addListener((changes, area) => {
@@ -288,6 +295,15 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
       return false;
     }
     case 'intercept.get': {
+      // While the stored value is still loading, answer from storage
+      // directly so the popup never shows the safe default as the
+      // user's setting.
+      if (!interceptLoaded && chromeApi.storage && chromeApi.storage.local) {
+        chromeApi.storage.local.get({pdmIntercept: true}, (items) => {
+          sendResponse({enabled: items.pdmIntercept !== false});
+        });
+        return true;
+      }
       sendResponse({enabled: interceptEnabled});
       return false;
     }
@@ -302,6 +318,11 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
 }
 
 function setupExtension(chromeApi) {
+  // A fresh worker start: the stored setting has not loaded yet.
+  // (setupExtension runs once per worker lifetime in production;
+  // resetting here also keeps repeated setups independent.)
+  interceptEnabled = false;
+  interceptLoaded = false;
   loadInterceptSetting(chromeApi);
   chromeApi.runtime.onInstalled.addListener(() => {
     chromeApi.contextMenus.create({
