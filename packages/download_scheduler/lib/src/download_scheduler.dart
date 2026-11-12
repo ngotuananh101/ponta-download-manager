@@ -267,6 +267,7 @@ class DownloadScheduler {
       sequence: job.sequence,
       resumeFrom: job.resumeFrom,
       resumeExisting: job.resumeExisting,
+      overwrite: job.overwrite,
     );
   }
 
