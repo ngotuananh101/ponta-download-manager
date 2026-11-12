@@ -41,6 +41,12 @@ abstract interface class DownloadEngine {
   /// target name is already taken.
   Future<void> renameFile(String downloadId, String newFileName);
 
+  /// Moves the finished file to another directory and updates the
+  /// stored record. Throws [DownloadError] `invalid-directory`
+  /// when the directory does not exist, and `file-exists` when a
+  /// file with the same name is already there.
+  Future<void> moveFile(String downloadId, String directory);
+
   Future<void> setPriority(String downloadId, int priority);
 
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond);

@@ -417,6 +417,25 @@ void main() {
       verify(() => engine.listDownloads()).called(2);
     });
 
+    test('moveFile calls the engine and refreshes the row', () async {
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer((_) async => [info(status: DownloadStatus.completed)]);
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.moveFile(any(), any()),
+      ).thenAnswer((_) async {});
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.moveFile('dl-1', '/tmp/other');
+      verify(() => engine.moveFile('dl-1', '/tmp/other')).called(1);
+      // The refresh re-reads the list (initial load + refresh).
+      verify(() => engine.listDownloads()).called(2);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

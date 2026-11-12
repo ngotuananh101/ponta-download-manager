@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
@@ -72,6 +73,13 @@ final downloadsActionsProvider = Provider<DownloadsActions>((ref) {
 /// without the native target.
 final dropTargetEnabledProvider = Provider<bool>((ref) => true);
 
+/// Picks a directory with the system folder dialog. A separate
+/// provider so tests can answer the picker instead of opening a
+/// real dialog.
+final directoryPickerProvider = Provider<Future<String?> Function()>(
+  (ref) => () => FilePicker.platform.getDirectoryPath(),
+);
+
 /// Opens a downloaded file or shows it in the file manager. A
 /// separate provider so tests can record launches instead of opening
 /// real files.
@@ -134,6 +142,9 @@ class DownloadsActions {
 
   Future<Either<Failure, Unit>> renameFile(String id, String newFileName) =>
       _repository.renameFile(id, newFileName);
+
+  Future<Either<Failure, Unit>> moveFile(String id, String directory) =>
+      _repository.moveFile(id, directory);
 
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,

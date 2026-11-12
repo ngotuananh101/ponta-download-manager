@@ -36,6 +36,10 @@ abstract interface class DownloadRepository {
   /// Renames the finished file on disk and updates the record.
   Future<Either<Failure, Unit>> renameFile(String id, String newFileName);
 
+  /// Moves the finished file to another directory and updates the
+  /// record.
+  Future<Either<Failure, Unit>> moveFile(String id, String directory);
+
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 

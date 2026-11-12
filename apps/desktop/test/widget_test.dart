@@ -37,6 +37,7 @@ Widget app({
   MockDownloadsActions? actions,
   String? settingsPath,
   FileOpener? fileOpener,
+  Future<String?> Function()? directoryPicker,
 }) {
   return ProviderScope(
     overrides: [
@@ -49,6 +50,8 @@ Widget app({
         ),
       if (fileOpener != null)
         fileOpenerProvider.overrideWithValue(fileOpener),
+      if (directoryPicker != null)
+        directoryPickerProvider.overrideWithValue(directoryPicker),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -66,6 +69,7 @@ Future<void> pumpApp(
   MockDownloadsActions? actions,
   String? settingsPath,
   FileOpener? fileOpener,
+  Future<String?> Function()? directoryPicker,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -78,6 +82,7 @@ Future<void> pumpApp(
       actions: actions,
       settingsPath: settingsPath,
       fileOpener: fileOpener,
+      directoryPicker: directoryPicker,
     ),
   );
   await tester.pumpAndSettle();
@@ -912,6 +917,59 @@ void main() {
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     expect(find.text('Rename file'), findsNothing);
+  });
+
+  testWidgets('Move to moves the completed download', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.moveFile(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-move-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    final target = Directory(p.join(dir.path, 'other'))..createSync();
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+      directoryPicker: () async => target.path,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to...'));
+    await tester.pumpAndSettle();
+    verify(() => actions.moveFile('dl-1', target.path)).called(1);
+  });
+
+  testWidgets('Move to does nothing when the picker is cancelled',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.moveFile(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-move-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+      directoryPicker: () async => null,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to...'));
+    await tester.pumpAndSettle();
+    verifyNever(() => actions.moveFile(any(), any()));
+  });
+
+  testWidgets('Move to is hidden for a downloading row', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Move to...'), findsNothing);
   });
 
   testWidgets('deleting a row calls deleteDownload', (tester) async {

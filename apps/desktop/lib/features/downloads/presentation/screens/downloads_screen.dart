@@ -837,9 +837,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               item.state == DownloadState.paused) {
             entries.add(_prioritySubmenu(item));
           }
-          // Rename needs the finished file on disk.
+          // Rename and Move need the finished file on disk.
           if (_hasFinishedFile(item)) {
             entries.add(_menuItem('rename', 'Rename file'));
+            entries.add(_menuItem('move', 'Move to...'));
           }
           switch (item.state) {
             case DownloadState.downloading:
@@ -938,6 +939,22 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       if (newName == null || newName == item.fileName) return;
       final result =
           await ref.read(downloadsActionsProvider).renameFile(item.id, newName);
+      result.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(failure.message)),
+          );
+        }
+      }, (_) {});
+      return;
+    }
+    if (action == 'move') {
+      final directory = await ref.read(directoryPickerProvider)();
+      if (!mounted) return;
+      if (directory == null) return;
+      final result = await ref
+          .read(downloadsActionsProvider)
+          .moveFile(item.id, directory);
       result.fold((failure) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

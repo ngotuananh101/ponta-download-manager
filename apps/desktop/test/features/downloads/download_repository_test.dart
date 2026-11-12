@@ -218,6 +218,15 @@ void main() {
       verify(() => datasource.renameFile('dl-1', 'g.bin')).called(1);
     });
 
+    test('moveFile forwards to the datasource', () async {
+      when(
+        () => datasource.moveFile(any(), any()),
+      ).thenAnswer((_) async {});
+      expect((await repository.moveFile('dl-1', '/tmp/other')).isRight(),
+          isTrue);
+      verify(() => datasource.moveFile('dl-1', '/tmp/other')).called(1);
+    });
+
     test('deleteDownload forwards the deleteFile flag', () async {
       when(
         () => datasource.deleteDownload(

@@ -267,6 +267,13 @@ class EngineDownloadDatasource {
     await _refreshDownload(id);
   }
 
+  /// Moves the finished file: the refresh re-reads the record, so
+  /// the row shows the new path.
+  Future<void> moveFile(String id, String directory) async {
+    await engine.moveFile(id, directory);
+    await _refreshDownload(id);
+  }
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

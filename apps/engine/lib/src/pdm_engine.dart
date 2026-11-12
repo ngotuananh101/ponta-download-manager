@@ -604,6 +604,45 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> moveFile(String downloadId, String directory) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return;
+    }
+    if (!Directory(directory).existsSync()) {
+      throw DownloadError(
+        'invalid-directory',
+        'The directory does not exist: $directory',
+      );
+    }
+    final target = p.join(directory, record.fileName);
+    if (File(target).existsSync()) {
+      throw DownloadError(
+        'file-exists',
+        'Destination already exists: $target',
+      );
+    }
+    final source = File(record.destinationPath);
+    try {
+      source.renameSync(target);
+    } on FileSystemException {
+      // Cross-filesystem move (e.g. a USB drive): copy, then delete
+      // the original. A failed copy leaves the original in place.
+      try {
+        await source.copy(target);
+      } on FileSystemException catch (e) {
+        final partial = File(target);
+        if (partial.existsSync()) {
+          partial.deleteSync();
+        }
+        throw DownloadError('move-failed', e.message);
+      }
+      source.deleteSync();
+    }
+    _store.upsertDownload(record.copyWith(directory: directory));
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);

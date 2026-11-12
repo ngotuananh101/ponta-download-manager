@@ -627,6 +627,84 @@ void main() {
       );
     });
 
+    test('moveFile moves the finished file and updates the record',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final other = Directory(p.join(tempDir.path, 'other'))..createSync();
+      await engine.moveFile(info.id, other.path);
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isFalse);
+      expect(await File(p.join(other.path, 'f.bin')).exists(), isTrue);
+      final listed = await engine.listDownloads();
+      expect(listed, hasLength(1));
+      expect(listed.single.filePath, p.join(other.path, 'f.bin'));
+    });
+
+    test('moveFile to a directory where the file exists throws file-exists',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final other = Directory(p.join(tempDir.path, 'other'))..createSync();
+      File(p.join(other.path, 'f.bin')).writeAsStringSync('other');
+      await expectLater(
+        engine.moveFile(info.id, other.path),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'file-exists'),
+        ),
+      );
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
+    });
+
+    test('moveFile to a missing directory throws', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await expectLater(
+        engine.moveFile(info.id, p.join(tempDir.path, 'missing')),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-directory'),
+        ),
+      );
+    });
+
     test(
         'deleteDownload with deleteFile and no file on disk still removes the record',
         () async {
@@ -1089,6 +1167,34 @@ exit 0
       );
       final listed = await engine.listDownloads();
       expect(listed.single.fileName, 'renamed.mp4');
+    });
+
+    test('moveFile moves the produced file', () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final other = Directory(p.join(tempDir.path, 'other'))..createSync();
+      await engine.moveFile(info.id, other.path);
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isFalse);
+      expect(File(p.join(other.path, 'live.mp4')).existsSync(), isTrue);
+      final listed = await engine.listDownloads();
+      expect(listed.single.filePath, p.join(other.path, 'live.mp4'));
     });
 
     test('createDownload with paused stores a paused playlist without starting it',
