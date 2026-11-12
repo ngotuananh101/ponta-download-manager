@@ -746,6 +746,39 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
     });
 
+    test('renameFile to a name claimed by another download throws file-exists', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      // g.bin is claimed by a paused download: no file on disk yet.
+      await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/g.bin',
+          destination: p.join(tempDir.path, 'g.bin'),
+          paused: true,
+        ),
+      );
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await expectLater(
+        engine.renameFile(info.id, 'g.bin'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'file-exists'),
+        ),
+      );
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
+    });
+
     test('renameFile with an invalid name throws', () async {
       final data = bytesOf(2048);
       await startServer(data: data);
@@ -821,6 +854,40 @@ void main() {
       );
       final other = Directory(p.join(tempDir.path, 'other'))..createSync();
       File(p.join(other.path, 'f.bin')).writeAsStringSync('other');
+      await expectLater(
+        engine.moveFile(info.id, other.path),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'file-exists'),
+        ),
+      );
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
+    });
+
+    test('moveFile to a directory where the name is claimed throws file-exists', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final other = Directory(p.join(tempDir.path, 'other'))..createSync();
+      // f.bin is claimed in 'other' by a paused download: no file yet.
+      await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(other.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
       await expectLater(
         engine.moveFile(info.id, other.path),
         throwsA(

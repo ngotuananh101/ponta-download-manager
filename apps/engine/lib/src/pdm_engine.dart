@@ -706,7 +706,7 @@ class PdmEngine implements DownloadEngine {
       return;
     }
     final target = p.join(record.directory, newFileName);
-    if (File(target).existsSync()) {
+    if (_isDestinationTaken(target)) {
       throw DownloadError(
         'file-exists',
         'Destination already exists: $target',
@@ -733,7 +733,7 @@ class PdmEngine implements DownloadEngine {
       );
     }
     final target = p.join(directory, record.fileName);
-    if (File(target).existsSync()) {
+    if (_isDestinationTaken(target)) {
       throw DownloadError(
         'file-exists',
         'Destination already exists: $target',
