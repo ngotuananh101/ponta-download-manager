@@ -196,12 +196,22 @@ class CheckpointWriter {
 
   void _writeStatus(_TrackedTask tracked, DownloadStatus status) {
     final task = tracked.task;
-    final record = tracked.record.copyWith(
+    // Re-read the stored record first: tags, mirrors or priority may
+    // have changed since track() (addTag and setPriority write
+    // straight to the store), and a checkpoint must not overwrite
+    // them with the snapshot taken when tracking started. Only the
+    // fields the writer itself owns come from the task and the
+    // tracked record.
+    final stored = store.getDownload(task.id);
+    final base = stored ?? tracked.record;
+    final record = base.copyWith(
       status: status,
       downloadedBytes: task.downloadedBytes,
       totalBytes: task.totalBytes,
       eTag: task.eTag,
       finalUrl: task.finalUrl?.toString(),
+      errorCode: tracked.record.errorCode,
+      errorMessage: tracked.record.errorMessage,
     );
     tracked.record = record;
     final segments = task.segments

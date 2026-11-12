@@ -456,6 +456,46 @@ void main() {
       expect(record.tags, ['iso']);
     });
 
+    test('a checkpoint does not overwrite tags and priority changed '
+        'while running', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-recovery-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final sink = _MemorySink();
+      final task = DownloadTask(
+        transport: transport,
+        sink: sink,
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 2,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: tempDir.path, fileName: 'f.bin');
+      // Tags and priority changed after tracking started, the way
+      // addTag and setPriority write straight to the store.
+      final current = store.getDownload('dl-1')!;
+      store.upsertDownload(
+        current.copyWith(
+          tags: ['iso'],
+          priority: 1,
+        ),
+      );
+      writer.flush();
+      final record = store.getDownload('dl-1')!;
+      expect(record.tags, ['iso']);
+      expect(record.priority, 1);
+    });
+
     test('does not report completed before the download is finalized',
         () async {
       final tempDir = await Directory.systemTemp.createTemp(
