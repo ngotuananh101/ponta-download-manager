@@ -24,8 +24,10 @@ abstract interface class DownloadEngine {
 
   /// Removes a download entirely: stops it if it runs, drops its
   /// partial file, and deletes its stored record. The finished file
-  /// on disk (if any) is kept.
-  Future<void> deleteDownload(String downloadId);
+  /// on disk (if any) is kept unless [deleteFile] is true, in which
+  /// case it is deleted too (best-effort: a missing or undeletable
+  /// file never blocks deleting the record).
+  Future<void> deleteDownload(String downloadId, {bool deleteFile = false});
 
   Future<void> setPriority(String downloadId, int priority);
 

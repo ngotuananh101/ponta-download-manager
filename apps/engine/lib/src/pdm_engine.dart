@@ -489,7 +489,10 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<void> deleteDownload(String downloadId) async {
+  Future<void> deleteDownload(
+    String downloadId, {
+    bool deleteFile = false,
+  }) async {
     final record = _store.getDownload(downloadId);
     if (record == null) {
       return;
@@ -497,24 +500,43 @@ class PdmEngine implements DownloadEngine {
     if (_isStreamingPlaylist(record.url)) {
       final downloader = await _ytDlpDownloader();
       await downloader?.cancel(downloadId);
-      // Drop yt-dlp partials; the finished file (if any) is kept.
-      downloader?.deletePartial(_ytDlpTemplate(record));
+      if (deleteFile) {
+        // Delete the produced file (and any partial) too.
+        downloader?.deleteOutput(_ytDlpTemplate(record));
+      } else {
+        // Drop yt-dlp partials; the finished file (if any) is kept.
+        downloader?.deletePartial(_ytDlpTemplate(record));
+      }
       final ytPartial = File(record.partialPath);
       if (ytPartial.existsSync()) {
         ytPartial.deleteSync();
       }
-      _store.deleteDownload(downloadId);
-      return;
+    } else {
+      // Stop the download if it is running or queued. The scheduler
+      // keeps a stale cancelled entry for the id, which is harmless:
+      // the engine lists downloads from the store, not the scheduler.
+      _scheduler.cancel(downloadId);
+      // Drop the partial file so it does not linger as an orphan. The
+      // finished file (if any) is kept on disk unless deleteFile.
+      final partial = File(record.partialPath);
+      if (partial.existsSync()) {
+        partial.deleteSync();
+      }
     }
-    // Stop the download if it is running or queued. The scheduler
-    // keeps a stale cancelled entry for the id, which is harmless:
-    // the engine lists downloads from the store, not the scheduler.
-    _scheduler.cancel(downloadId);
-    // Drop the partial file so it does not linger as an orphan. The
-    // finished file (if any) is kept on disk.
-    final partial = File(record.partialPath);
-    if (partial.existsSync()) {
-      partial.deleteSync();
+    if (deleteFile) {
+      // Best-effort: a missing or undeletable file never blocks
+      // deleting the record. For a completed playlist this is the
+      // produced file (the record's fileName was updated on
+      // completion); for an incomplete one the playlist-name path
+      // never exists as a file.
+      try {
+        final finished = File(record.destinationPath);
+        if (finished.existsSync()) {
+          finished.deleteSync();
+        }
+      } catch (_) {
+        // Ignore: the record is deleted below regardless.
+      }
     }
     _store.deleteDownload(downloadId);
   }

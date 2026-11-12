@@ -476,6 +476,52 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
     });
 
+    test('deleteDownload with deleteFile removes the finished file',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.deleteDownload(info.id, deleteFile: true);
+      expect(await engine.listDownloads(), isEmpty);
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isFalse);
+    });
+
+    test(
+        'deleteDownload with deleteFile and no file on disk still removes the record',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      // The file is already gone (deleted outside the app).
+      await File(p.join(tempDir.path, 'f.bin')).delete();
+      await engine.deleteDownload(info.id, deleteFile: true);
+      expect(await engine.listDownloads(), isEmpty);
+    });
+
     test('a paused download stays paused after a restart', () async {
       final data = bytesOf(256 * 1024);
       await startServer(data: data, chunkSize: 1024);
@@ -831,6 +877,33 @@ exit 0
         expect(done.filePath, p.join(tempDir.path, 'live.mp4'));
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
+
+    test('deleteDownload with deleteFile removes the produced file',
+        () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
+      await engine.deleteDownload(info.id, deleteFile: true);
+      expect(await engine.listDownloads(), isEmpty);
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isFalse);
+    });
 
     test('createDownload with paused stores a paused playlist without starting it',
         () async {
