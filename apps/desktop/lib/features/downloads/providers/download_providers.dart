@@ -80,6 +80,14 @@ final directoryPickerProvider = Provider<Future<String?> Function()>(
   (ref) => () => FilePicker.platform.getDirectoryPath(),
 );
 
+/// Picks a file to save to with the system save dialog. A separate
+/// provider so tests can answer the dialog instead of opening a
+/// real one.
+final saveFileProvider =
+    Provider<Future<String?> Function(String fileName)>(
+  (ref) => (fileName) => FilePicker.platform.saveFile(fileName: fileName),
+);
+
 /// Opens a downloaded file or shows it in the file manager. A
 /// separate provider so tests can record launches instead of opening
 /// real files.

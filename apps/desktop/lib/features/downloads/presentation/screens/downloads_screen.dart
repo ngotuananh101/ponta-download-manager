@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/features/downloads/data/services/download_export.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/delete_download_dialog.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
@@ -870,6 +871,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.state == DownloadState.failed) {
             entries.add(_menuItem('change_url', 'Change URL'));
           }
+          // Every row can export the current selection (or itself).
+          entries.add(_menuItem('export', 'Export selected downloads'));
           // Delete file only: the row stays and becomes Missing.
           if (_hasFinishedFile(item)) {
             entries.add(_menuItem('delete_file', 'Delete file'));
@@ -1003,6 +1006,38 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           );
         }
       });
+      return;
+    }
+    if (action == 'export') {
+      final ids = _selected.isNotEmpty ? _selected : {item.id};
+      final downloads = ref.read(downloadsProvider).value ?? [];
+      final selected =
+          downloads.where((d) => ids.contains(d.id)).toList();
+      final path = await ref.read(saveFileProvider)('downloads.txt');
+      if (!mounted) return;
+      if (path == null) return;
+      // A sync write: the exported list is tiny, and an async write
+      // would stall in a widget test's fake-async zone.
+      try {
+        File(path).writeAsStringSync(exportUrls(selected));
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not export the downloads: $e')),
+          );
+        }
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Exported ${selected.length} '
+              'download${selected.length == 1 ? '' : 's'}',
+            ),
+          ),
+        );
+      }
       return;
     }
     if (action == 'change_url') {

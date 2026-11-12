@@ -38,6 +38,7 @@ Widget app({
   String? settingsPath,
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
+  Future<String?> Function(String fileName)? saveFile,
 }) {
   return ProviderScope(
     overrides: [
@@ -52,6 +53,8 @@ Widget app({
         fileOpenerProvider.overrideWithValue(fileOpener),
       if (directoryPicker != null)
         directoryPickerProvider.overrideWithValue(directoryPicker),
+      if (saveFile != null)
+        saveFileProvider.overrideWithValue(saveFile),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -70,6 +73,7 @@ Future<void> pumpApp(
   String? settingsPath,
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
+  Future<String?> Function(String fileName)? saveFile,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -83,6 +87,7 @@ Future<void> pumpApp(
       settingsPath: settingsPath,
       fileOpener: fileOpener,
       directoryPicker: directoryPicker,
+      saveFile: saveFile,
     ),
   );
   await tester.pumpAndSettle();
@@ -1139,6 +1144,102 @@ void main() {
     expect(find.text('Check for update'), findsNothing);
   });
 
+  testWidgets('Export selected downloads writes their URLs to a file',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('pdm-export-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final target = p.join(dir.path, 'downloads.txt');
+    const first = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.completed,
+      totalBytes: 100,
+    );
+    const second = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.downloading,
+      totalBytes: 200,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [first, second],
+      saveFile: (_) async => target,
+    );
+    // Select both rows by tapping their file names.
+    await tester.tap(find.text('a.bin').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('b.bin').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    await tester.tap(find.byTooltip('Actions').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export selected downloads'));
+    await tester.pumpAndSettle();
+    expect(
+      File(target).readAsStringSync(),
+      'http://127.0.0.1:9/a.bin\nhttp://127.0.0.1:9/b.bin\n',
+    );
+    expect(find.text('Exported 2 downloads'), findsOneWidget);
+  });
+
+  testWidgets('Export with no selection exports only the row',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('pdm-export-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final target = p.join(dir.path, 'downloads.txt');
+    const first = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/a.bin',
+      fileName: 'a.bin',
+      state: DownloadState.completed,
+      totalBytes: 100,
+    );
+    const second = Download(
+      id: 'dl-2',
+      url: 'http://127.0.0.1:9/b.bin',
+      fileName: 'b.bin',
+      state: DownloadState.downloading,
+      totalBytes: 200,
+    );
+    await pumpApp(
+      tester,
+      downloads: const [first, second],
+      saveFile: (_) async => target,
+    );
+    // The list shows newest first, so the first Actions button in
+    // the tree is the b.bin row's; target the a.bin row instead.
+    final rowFinder = find
+        .ancestor(
+          of: find.text('a.bin').first,
+          matching: find.byType(Container),
+        )
+        .last;
+    await tester.tap(
+      find.descendant(of: rowFinder, matching: find.byTooltip('Actions')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export selected downloads'));
+    await tester.pumpAndSettle();
+    expect(
+      File(target).readAsStringSync(),
+      'http://127.0.0.1:9/a.bin\n',
+    );
+    expect(find.text('Exported 1 download'), findsOneWidget);
+  });
+
+  testWidgets('Export does nothing when the save dialog is cancelled',
+      (tester) async {
+    await pumpApp(tester, saveFile: (_) async => null);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export selected downloads'));
+    await tester.pumpAndSettle();
+    expect(find.text('Exported 1 download'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(
@@ -1536,6 +1637,7 @@ void main() {
     expect(find.text('Cancel'), findsOneWidget);
     expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Export selected downloads'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The menu item text is xs (12px) like the table rows.
     final menuText = tester.widget<Text>(find.text('Pause'));
@@ -1544,7 +1646,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 5);
+    expect(items.length, 6);
     expect(items.every((item) => item.height == 32), isTrue);
   });
 
