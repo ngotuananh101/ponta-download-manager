@@ -47,6 +47,12 @@ abstract interface class DownloadEngine {
   /// file with the same name is already there.
   Future<void> moveFile(String downloadId, String directory);
 
+  /// Changes the URL of a download (for a failed download whose link
+  /// expired) and clears its stored validators: the old eTag and
+  /// lastModified belong to the old URL. Throws [DownloadError]
+  /// `invalid-url` when the URL is not http(s).
+  Future<void> changeUrl(String downloadId, String url);
+
   Future<void> setPriority(String downloadId, int priority);
 
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond);

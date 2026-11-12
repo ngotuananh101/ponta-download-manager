@@ -105,6 +105,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _act(() => _datasource.moveFile(id, directory));
 
   @override
+  Future<Either<Failure, Unit>> changeUrl(String id, String url) =>
+      _act(() => _datasource.changeUrl(id, url));
+
+  @override
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _act(() => _datasource.setGlobalBandwidthLimit(bytesPerSecond));

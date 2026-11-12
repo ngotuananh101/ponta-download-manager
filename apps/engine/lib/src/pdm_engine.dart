@@ -643,6 +643,38 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> changeUrl(String downloadId, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      throw const DownloadError(
+        'invalid-url',
+        'URL must start with http:// or https://',
+      );
+    }
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return;
+    }
+    // A fresh record clears the stale validators: the old eTag /
+    // lastModified belong to the old URL and would send a wrong
+    // If-Range on Retry. Status, bytes and size are kept.
+    _store.upsertDownload(
+      DownloadRecord(
+        id: record.id,
+        url: url,
+        fileName: record.fileName,
+        directory: record.directory,
+        status: record.status,
+        downloadedBytes: record.downloadedBytes,
+        totalBytes: record.totalBytes,
+        priority: record.priority,
+        maxConnections: record.maxConnections,
+        createdAt: record.createdAt,
+      ),
+    );
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);

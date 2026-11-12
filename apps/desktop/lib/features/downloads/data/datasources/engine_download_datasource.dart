@@ -274,6 +274,12 @@ class EngineDownloadDatasource {
     await _refreshDownload(id);
   }
 
+  /// Changes the download's URL: the refresh re-reads the record.
+  Future<void> changeUrl(String id, String url) async {
+    await engine.changeUrl(id, url);
+    await _refreshDownload(id);
+  }
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

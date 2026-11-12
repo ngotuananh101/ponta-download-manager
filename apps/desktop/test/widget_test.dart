@@ -972,6 +972,49 @@ void main() {
     expect(find.text('Move to...'), findsNothing);
   });
 
+  testWidgets('Change URL changes the failed download link',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.changeUrl(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    const failed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.failed,
+      totalBytes: 1000,
+    );
+    await pumpApp(tester, downloads: [failed], actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Change URL'));
+    await tester.pumpAndSettle();
+    // The dialog opens with the current URL prefilled.
+    expect(find.text('Change URL'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField).last,
+      'http://127.0.0.1:9/g.bin',
+    );
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.changeUrl('dl-1', 'http://127.0.0.1:9/g.bin'),
+    ).called(1);
+  });
+
+  testWidgets('Change URL is hidden for a completed row', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('pdm-change-url-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(tester, downloads: [completedWithFile(filePath)]);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Change URL'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(

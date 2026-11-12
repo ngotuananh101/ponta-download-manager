@@ -705,6 +705,74 @@ void main() {
       );
     });
 
+    test('changeUrl updates the URL used by the next Retry', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data, failFirst: 1);
+      final otherData = bytesOf(1024);
+      final server2 = _TestServer(data: otherData);
+      await server2.start();
+      addTearDown(server2.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      final newUrl = 'http://127.0.0.1:${server2.port}/g.bin';
+      await engine.changeUrl(info.id, newUrl);
+      var listed = await engine.listDownloads();
+      expect(listed.single.url, newUrl);
+      await engine.retryDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      // The completed file came from the new URL (1024 bytes, not
+      // the old server's 2048).
+      final file = File(p.join(tempDir.path, 'f.bin'));
+      expect(await file.length(), 1024);
+      listed = await engine.listDownloads();
+      expect(listed.single.url, newUrl);
+    });
+
+    test('changeUrl with an invalid URL throws', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await expectLater(
+        engine.changeUrl(info.id, 'ftp://127.0.0.1/f.bin'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-url'),
+        ),
+      );
+    });
+
+    test('changeUrl with an unknown id is a no-op', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      await engine.changeUrl('nope', 'http://127.0.0.1:9/g.bin');
+    });
+
     test(
         'deleteDownload with deleteFile and no file on disk still removes the record',
         () async {

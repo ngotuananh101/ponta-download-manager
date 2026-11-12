@@ -436,6 +436,26 @@ void main() {
       verify(() => engine.listDownloads()).called(2);
     });
 
+    test('changeUrl calls the engine and refreshes the row', () async {
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer((_) async => [info(status: DownloadStatus.failed)]);
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.changeUrl(any(), any()),
+      ).thenAnswer((_) async {});
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.changeUrl('dl-1', 'http://127.0.0.1:9/g.bin');
+      verify(() => engine.changeUrl('dl-1', 'http://127.0.0.1:9/g.bin'))
+          .called(1);
+      // The refresh re-reads the list (initial load + refresh).
+      verify(() => engine.listDownloads()).called(2);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

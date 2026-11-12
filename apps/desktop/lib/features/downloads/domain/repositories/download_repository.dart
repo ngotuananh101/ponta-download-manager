@@ -40,6 +40,9 @@ abstract interface class DownloadRepository {
   /// record.
   Future<Either<Failure, Unit>> moveFile(String id, String directory);
 
+  /// Changes the download's URL and clears its stored validators.
+  Future<Either<Failure, Unit>> changeUrl(String id, String url);
+
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 

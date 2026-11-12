@@ -73,6 +73,9 @@ class FakeEngine implements DownloadEngine {
   Future<void> moveFile(String downloadId, String directory) async {}
 
   @override
+  Future<void> changeUrl(String downloadId, String url) async {}
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {}
 
   @override

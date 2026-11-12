@@ -862,6 +862,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           }
           // Every row can hand out its URL.
           entries.add(_menuItem('copy_link', 'Copy link'));
+          // A failed download's link may have expired.
+          if (item.state == DownloadState.failed) {
+            entries.add(_menuItem('change_url', 'Change URL'));
+          }
           // Delete file only: the row stays and becomes Missing.
           if (_hasFinishedFile(item)) {
             entries.add(_menuItem('delete_file', 'Delete file'));
@@ -939,6 +943,33 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       if (newName == null || newName == item.fileName) return;
       final result =
           await ref.read(downloadsActionsProvider).renameFile(item.id, newName);
+      result.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(failure.message)),
+          );
+        }
+      }, (_) {});
+      return;
+    }
+    if (action == 'change_url') {
+      final newUrl = await showTextInputDialog(
+        context: context,
+        title: 'Change URL',
+        label: 'URL',
+        initialValue: item.url,
+        validate: (value) {
+          if (value.startsWith('http://') ||
+              value.startsWith('https://')) {
+            return null;
+          }
+          return 'URL must start with http:// or https://';
+        },
+      );
+      if (!mounted) return;
+      if (newUrl == null || newUrl == item.url) return;
+      final result =
+          await ref.read(downloadsActionsProvider).changeUrl(item.id, newUrl);
       result.fold((failure) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

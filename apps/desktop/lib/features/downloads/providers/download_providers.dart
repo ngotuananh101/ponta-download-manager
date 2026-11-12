@@ -146,6 +146,9 @@ class DownloadsActions {
   Future<Either<Failure, Unit>> moveFile(String id, String directory) =>
       _repository.moveFile(id, directory);
 
+  Future<Either<Failure, Unit>> changeUrl(String id, String url) =>
+      _repository.changeUrl(id, url);
+
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _repository.setGlobalBandwidthLimit(bytesPerSecond);

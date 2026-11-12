@@ -227,6 +227,19 @@ void main() {
       verify(() => datasource.moveFile('dl-1', '/tmp/other')).called(1);
     });
 
+    test('changeUrl forwards to the datasource', () async {
+      when(
+        () => datasource.changeUrl(any(), any()),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.changeUrl('dl-1', 'http://127.0.0.1:9/g.bin'))
+            .isRight(),
+        isTrue,
+      );
+      verify(() => datasource.changeUrl('dl-1', 'http://127.0.0.1:9/g.bin'))
+          .called(1);
+    });
+
     test('deleteDownload forwards the deleteFile flag', () async {
       when(
         () => datasource.deleteDownload(
