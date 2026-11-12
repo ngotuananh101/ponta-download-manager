@@ -155,6 +155,20 @@ void main() {
       await bucket.acquire(1024);
       expect(second.elapsedMilliseconds, greaterThanOrEqualTo(800));
     });
+
+    test('lowering the rate also lowers the burst and the stored tokens',
+        () async {
+      final bucket = TokenBucket(rateBytesPerSecond: 8192);
+      addTearDown(bucket.dispose);
+      bucket.setRate(1024);
+      expect(bucket.burstBytes, 1024);
+      // The pre-lowering tokens (8192) are gone: acquiring more than
+      // the new burst must wait for the refill instead of passing on
+      // the old burst.
+      final stopwatch = Stopwatch()..start();
+      await bucket.acquire(2048);
+      expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(800));
+    });
   });
 
   group('BandwidthLimiter', () {

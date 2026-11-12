@@ -45,8 +45,13 @@ class TokenBucket {
   void setRate(int? rateBytesPerSecond) {
     _refill();
     _rate = rateBytesPerSecond;
-    if (_rate != null && _burst == 0) {
-      _burst = _rate!;
+    if (_rate != null) {
+      // Lowering the rate must also lower the burst and drop the
+      // tokens accumulated above it: otherwise the old burst lets a
+      // large request through immediately at the new low rate. (A
+      // zero burst still takes the new rate as its initial burst.)
+      _burst = _burst == 0 ? _rate! : min(_burst, _rate!);
+      _tokens = min(_tokens, _burst.toDouble());
     }
     _pump();
   }
