@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_storage/download_storage.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -114,6 +115,20 @@ void main() {
       expect(await File(first.partialPath).readAsBytes(), data);
     });
 
+    test('openExisting throws partial-missing when the partial file is gone',
+        () async {
+      await expectLater(
+        FileChunkSink.openExisting(
+          partialPath: p.join(tempDir.path, 'missing.bin.partial'),
+          filePath: p.join(tempDir.path, 'missing.bin'),
+        ),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'partial-missing'),
+        ),
+      );
+    });
+
     test('finish renames the partial file to the final path', () async {
       final sink = await FileChunkSink.create(
         directory: tempDir.path,
@@ -125,6 +140,32 @@ void main() {
       expect(finalFile.path, sink.filePath);
       expect(await finalFile.readAsBytes(), data);
       expect(await File(sink.partialPath).exists(), isFalse);
+    });
+
+    test('finish logs a warning when it overwrites an existing destination',
+        () async {
+      final records = <LogRecord>[];
+      final sub = Logger.root.onRecord.listen(records.add);
+      addTearDown(sub.cancel);
+      final existing = File(p.join(tempDir.path, 'taken.bin'));
+      await existing.writeAsBytes(bytesOf(10));
+      final sink = await FileChunkSink.create(
+        directory: tempDir.path,
+        fileName: 'taken.bin',
+        overwrite: true,
+      );
+      final data = bytesOf(100);
+      await sink.write(0, data);
+      final finalFile = await sink.finish();
+      expect(await finalFile.readAsBytes(), data);
+      expect(
+        records.any(
+          (r) =>
+              r.level == Level.WARNING &&
+              r.message.contains('Overwriting existing destination'),
+        ),
+        isTrue,
+      );
     });
 
     test('discard deletes the partial file', () async {

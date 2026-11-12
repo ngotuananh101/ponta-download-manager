@@ -53,10 +53,21 @@ class FileChunkSink implements ChunkSink {
   /// Uses [FileMode.append]: on Dart 3.13 [FileMode.writeOnly] truncates
   /// an existing file on open, while append preserves it and honors
   /// [RandomAccessFile.setPosition] (verified with a local probe).
+  ///
+  /// Throws [DownloadError] (`partial-missing`) when the partial file
+  /// is gone: opening in append mode would otherwise silently create
+  /// an empty file, and the resumed segments would then write into
+  /// offsets that were never downloaded.
   static Future<FileChunkSink> openExisting({
     required String partialPath,
     required String filePath,
   }) async {
+    if (!await File(partialPath).exists()) {
+      throw DownloadError(
+        'partial-missing',
+        'Partial file does not exist: $partialPath',
+      );
+    }
     final file = await File(partialPath).open(mode: FileMode.append);
     return FileChunkSink._(file, filePath: filePath, partialPath: partialPath);
   }
@@ -121,6 +132,12 @@ class FileChunkSink implements ChunkSink {
       throw StateError('FileChunkSink was discarded');
     }
     await close();
+    if (await File(filePath).exists()) {
+      // Renaming over an existing destination is intentional for
+      // overwrite retries (the old file stays until the new download
+      // renames over it), but it must not happen silently.
+      _log.warning('Overwriting existing destination $filePath');
+    }
     await File(partialPath).rename(filePath);
     _finished = true;
     _log.fine('Finished $partialPath -> $filePath');
