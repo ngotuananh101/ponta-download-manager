@@ -5,7 +5,7 @@
     python packaging/windows/generate_wix_files.py
     wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs \
       -d ProductVersion=0.1.0.1 \
-      -d SourceDir=build\windows\x64\runner\Release \
+      -d SourceDir=apps\desktop\build\windows\x64\runner\Release \
       -o dist\pdm-0.1.0-windows-x64.msi
 
   Files.wxs is generated (WiX has no wildcard include); it defines

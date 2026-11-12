@@ -159,3 +159,25 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
   full engine runs on his machine (exit 0 each) + `dart analyze`
   clean. Making `dispose` itself await task quiescence is still an
   open production-side improvement if the flake ever returns.
+
+- 2026-11-13 ~01:34 (third run, build jobs): two failures, both in
+  the workflow itself, not the app.
+  * Windows: `iscc` failed with `No files found matching
+    "...\build\windows\x64\runner\Release\*"`. The packaging
+    steps run at the repo root, but the real output is
+    `apps/desktop/build/windows/...`. Same wrong path also lived in
+    the `pdm.iss` default SourceDir, the `pdm.wxs` comment, and
+    `generate_wix_files.py` DEFAULT_SOURCE (the workflow calls it
+    with no args) — all fixed to `apps/desktop/build/...`.
+  * Both jobs: "Fetch external tools" ran AFTER the flutter build.
+    The fetch script writes to `apps/desktop/bundle/bin/` and the
+    CMake bundle/bin rule copies it into the release bundle AT
+    BUILD TIME, so the built bundle had no bin/. The Linux DEB/RPM
+    were created without ffmpeg/yt-dlp, and the AppImage step died
+    on `ln: failed to create symbolic link 'AppDir/usr/bin/pdm'`.
+    Fix: fetch BEFORE the build in both jobs; the AppImage step
+    also does `mkdir -p AppDir/usr/bin` before the ln.
+  * Verified on this run: the Windows fetch branch works on a real
+    runner (ffmpeg.exe 105 MB + yt-dlp.exe 23 MB into
+    `apps/desktop/bundle/bin/`, unzip present in Git Bash); the
+    Windows CMakeLists bundle/bin rule exists (lines 84-87).

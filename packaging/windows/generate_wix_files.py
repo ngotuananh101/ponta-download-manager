@@ -3,7 +3,7 @@
 
 WiX has no wildcard include, so the release workflow runs this script
 before `wix build`: it walks the bundle directory
-(build/windows/x64/runner/Release) and emits one Component per file,
+(apps/desktop/build/windows/x64/runner/Release) and emits one Component per file,
 with Directory elements mirroring the bundle layout (data/, lib/,
 bin/ — the external tools live in bin/).
 
@@ -25,7 +25,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SOURCE = Path("build/windows/x64/runner/Release")
+DEFAULT_SOURCE = Path("apps/desktop/build/windows/x64/runner/Release")
 DEFAULT_OUTPUT = Path("packaging/windows/Files.wxs")
 
 # WiX identifiers: letters, digits, _ and . (must start with a letter

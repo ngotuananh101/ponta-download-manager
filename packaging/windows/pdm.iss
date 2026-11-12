@@ -12,7 +12,7 @@
   #define AppVersion "0.1.0"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\..\build\windows\x64\runner\Release"
+  #define SourceDir "..\..\apps\desktop\build\windows\x64\runner\Release"
 #endif
 
 [Setup]

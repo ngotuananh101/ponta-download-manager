@@ -87,13 +87,13 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build Windows
-        working-directory: apps/desktop
-        run: flutter build windows --release
-
       - name: Fetch external tools
         shell: bash
         run: bash tools/fetch_external_tools.sh windows
+
+      - name: Build Windows
+        working-directory: apps/desktop
+        run: flutter build windows --release
 
       - name: Install Inno Setup
         shell: pwsh
@@ -101,7 +101,7 @@ jobs:
 
       - name: Build EXE installer
         shell: pwsh
-        run: iscc packaging/windows/pdm.iss /DAppVersion="${{ steps.version.outputs.version }}" /DSourceDir="$PWD\build\windows\x64\runner\Release"
+        run: iscc packaging/windows/pdm.iss /DAppVersion="${{ steps.version.outputs.version }}" /DSourceDir="$PWD\apps\desktop\build\windows\x64\runner\Release"
 
       - name: Install WiX
         shell: pwsh
@@ -111,13 +111,13 @@ jobs:
         shell: pwsh
         run: |
           python packaging/windows/generate_wix_files.py
-          wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs -d ProductVersion="${{ steps.version.outputs.msi_version }}" -d SourceDir="$PWD\build\windows\x64\runner\Release" -o "dist\pdm-${{ steps.version.outputs.version }}-windows-x64.msi"
+          wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs -d ProductVersion="${{ steps.version.outputs.msi_version }}" -d SourceDir="$PWD\apps\desktop\build\windows\x64\runner\Release" -o "dist\pdm-${{ steps.version.outputs.version }}-windows-x64.msi"
 
       - name: Build portable ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath "dist\pdm-${{ steps.version.outputs.version }}-windows-x64-portable.zip"
+          Compress-Archive -Path 'apps\desktop\build\windows\x64\runner\Release\*' -DestinationPath "dist\pdm-${{ steps.version.outputs.version }}-windows-x64-portable.zip"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -162,12 +162,12 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Fetch external tools
+        run: bash tools/fetch_external_tools.sh linux
+
       - name: Build Linux
         working-directory: apps/desktop
         run: flutter build linux --release
-
-      - name: Fetch external tools
-        run: bash tools/fetch_external_tools.sh linux
 
       - name: Build DEB and RPM
         run: |
@@ -188,7 +188,7 @@ jobs:
           # binary's $ORIGIN/lib RPATH still finds libflutter: the
           # binary lives at usr/pdm, its libs at usr/lib. The .desktop
           # Exec=pdm needs a usr/bin entry, so link it.
-          mkdir -p AppDir/usr
+          mkdir -p AppDir/usr AppDir/usr/bin
           cp -a apps/desktop/build/linux/x64/release/bundle/. AppDir/usr/
           ln -s ../pdm AppDir/usr/bin/pdm
           cp packaging/linux/com.ponta.pdm.desktop AppDir/com.ponta.pdm.desktop
