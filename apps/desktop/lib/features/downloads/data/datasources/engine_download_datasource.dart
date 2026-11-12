@@ -233,6 +233,18 @@ class EngineDownloadDatasource {
 
   Future<void> retryDownload(String id) => engine.retryDownload(id);
 
+  /// Queue priority: the engine emits no event for a priority
+  /// change, so the local row is updated here, like delete removes
+  /// it.
+  Future<void> setPriority(String id, int priority) async {
+    await engine.setPriority(id, priority);
+    final current = _downloads[id];
+    if (current != null) {
+      _downloads[id] = current.copyWith(priority: priority);
+      _emit();
+    }
+  }
+
   Future<void> deleteDownload(String id, {bool deleteFile = false}) async {
     await engine.deleteDownload(id, deleteFile: deleteFile);
     // The delete is the source of truth for removing the row, like

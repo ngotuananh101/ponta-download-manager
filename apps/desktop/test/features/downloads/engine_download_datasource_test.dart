@@ -341,6 +341,28 @@ void main() {
       ).called(1);
     });
 
+    test('setPriority calls the engine and updates the local row',
+        () async {
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer((_) async => [info()]);
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.setPriority(any(), any()),
+      ).thenAnswer((_) async {});
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.setPriority('dl-1', 1);
+      verify(() => engine.setPriority('dl-1', 1)).called(1);
+      // watchDownloads forwards through two async controllers, so
+      // the updated list needs a turn to arrive.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(emitted.last.single.priority, 1);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

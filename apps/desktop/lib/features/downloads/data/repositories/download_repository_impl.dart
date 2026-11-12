@@ -82,6 +82,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _act(() => _datasource.retryDownload(id));
 
   @override
+  Future<Either<Failure, Unit>> setPriority(String id, int priority) =>
+      _act(() => _datasource.setPriority(id, priority));
+
+  @override
   Future<Either<Failure, Unit>> deleteDownload(
     String id, {
     bool deleteFile = false,

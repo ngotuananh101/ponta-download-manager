@@ -84,7 +84,8 @@ final fileConflictSettingsProvider = Provider<FileConflictSettings>(
   (ref) => FileConflictSettings(),
 );
 
-/// The user-facing download actions (add/pause/resume/cancel/retry).
+/// The user-facing download actions
+/// (add/pause/resume/cancel/retry/delete/priority).
 class DownloadsActions {
   DownloadsActions(this._repository);
 
@@ -118,6 +119,9 @@ class DownloadsActions {
 
   Future<Either<Failure, Unit>> retryDownload(String id) =>
       _repository.retryDownload(id);
+
+  Future<Either<Failure, Unit>> setPriority(String id, int priority) =>
+      _repository.setPriority(id, priority);
 
   Future<Either<Failure, Unit>> deleteDownload(
     String id, {

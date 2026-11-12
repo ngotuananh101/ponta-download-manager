@@ -22,6 +22,9 @@ abstract interface class DownloadRepository {
   Future<Either<Failure, Unit>> resumeDownload(String id);
   Future<Either<Failure, Unit>> cancelDownload(String id);
   Future<Either<Failure, Unit>> retryDownload(String id);
+
+  /// Queue priority: higher runs first (1 high, 0 normal, -1 low).
+  Future<Either<Failure, Unit>> setPriority(String id, int priority);
   Future<Either<Failure, Unit>> deleteDownload(
     String id, {
     bool deleteFile = false,

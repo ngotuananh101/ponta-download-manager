@@ -785,6 +785,69 @@ void main() {
     expect(find.text('Show in folder'), findsNothing);
   });
 
+  testWidgets('Set priority submenu sets the chosen priority',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.setPriority(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set priority'));
+    await tester.pumpAndSettle();
+    expect(find.text('High'), findsOneWidget);
+    expect(find.text('Normal'), findsOneWidget);
+    expect(find.text('Low'), findsOneWidget);
+    await tester.tap(find.text('High'));
+    await tester.pumpAndSettle();
+    verify(() => actions.setPriority('dl-1', 1)).called(1);
+    // The whole menu closes after the choice.
+    expect(find.text('Copy link'), findsNothing);
+  });
+
+  testWidgets('Set priority submenu marks the current priority',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.setPriority(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set priority'));
+    await tester.pumpAndSettle();
+    // The default row is normal priority (0).
+    final normal = find.ancestor(
+      of: find.text('Normal'),
+      matching: find.byType(MenuItemButton),
+    );
+    expect(
+      find.descendant(of: normal, matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    final high = find.ancestor(
+      of: find.text('High'),
+      matching: find.byType(MenuItemButton),
+    );
+    expect(
+      find.descendant(of: high, matching: find.byIcon(Icons.check)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Set priority is hidden for a completed row',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('pdm-prio-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(tester, downloads: [completedWithFile(filePath)]);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set priority'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(
@@ -1180,6 +1243,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pause'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The menu item text is xs (12px) like the table rows.
@@ -1189,7 +1253,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 4);
+    expect(items.length, 5);
     expect(items.every((item) => item.height == 32), isTrue);
   });
 

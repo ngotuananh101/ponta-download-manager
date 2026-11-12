@@ -828,6 +828,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.filePath != null) {
             entries.add(_menuItem('show_in_folder', 'Show in folder'));
           }
+          // Priority only matters while a download can still run:
+          // the scheduler reorders queued and paused jobs, and a
+          // running job keeps the priority it started with.
+          if (item.state == DownloadState.queued ||
+              item.state == DownloadState.downloading ||
+              item.state == DownloadState.paused) {
+            entries.add(_prioritySubmenu(item));
+          }
           switch (item.state) {
             case DownloadState.downloading:
             case DownloadState.queued:
@@ -854,6 +862,52 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           return entries;
         },
       ),
+    );
+  }
+
+  // The Set priority submenu: a PopupMenuItem wrapping a
+  // SubmenuButton, so the High / Normal / Low choices open as a
+  // nested menu like in IDM.
+  PopupMenuItem<String> _prioritySubmenu(Download item) {
+    return PopupMenuItem<String>(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      child: SubmenuButton(
+        style: SubmenuButton.styleFrom(
+          minimumSize: const Size(0, 32),
+          padding: EdgeInsets.zero,
+        ),
+        menuChildren: [
+          _priorityItem(item, 1, 'High', 'priority_high'),
+          _priorityItem(item, 0, 'Normal', 'priority_normal'),
+          _priorityItem(item, -1, 'Low', 'priority_low'),
+        ],
+        child: Text('Set priority', style: AppTextSize.xs.textStyle()),
+      ),
+    );
+  }
+
+  MenuItemButton _priorityItem(
+    Download item,
+    int priority,
+    String label,
+    String action,
+  ) {
+    return MenuItemButton(
+      style: MenuItemButton.styleFrom(
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      ),
+      leadingIcon: item.priority == priority
+          ? const Icon(Icons.check, size: 18)
+          : const SizedBox(width: 18),
+      onPressed: () async {
+        // The submenu closes itself (closeOnActivate); the parent
+        // popup menu is a separate route, so close it too.
+        Navigator.of(context).pop();
+        await _onRowAction(item, action);
+      },
+      child: Text(label, style: AppTextSize.xs.textStyle()),
     );
   }
 
@@ -907,6 +961,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         call = () => actions.cancelDownload(item.id);
       case 'retry':
         call = () => actions.retryDownload(item.id);
+      case 'priority_high':
+        call = () => actions.setPriority(item.id, 1);
+      case 'priority_normal':
+        call = () => actions.setPriority(item.id, 0);
+      case 'priority_low':
+        call = () => actions.setPriority(item.id, -1);
       default:
         return;
     }
