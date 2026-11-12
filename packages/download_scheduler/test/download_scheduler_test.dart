@@ -102,9 +102,11 @@ List<int> bytesOf(int length, [int seed = 0]) =>
 DownloadScheduler _makeScheduler(
   _FakeTransport transport, {
   int maxConcurrent = 3,
+  int maxTotalConnections = 16,
 }) {
   return DownloadScheduler(
     maxConcurrent: maxConcurrent,
+    maxTotalConnections: maxTotalConnections,
     taskFactory: (job) async {
       final sink = _NullSink();
       final task = DownloadTask(
@@ -740,6 +742,99 @@ void main() {
       });
       expect(infoOf(scheduler, id).status, DownloadStatus.completed);
       expect(await File(p.join(tempDir.path, 'a.bin')).readAsBytes(), data);
+    });
+
+    test('a global connection cap holds back jobs that would exceed it', () async {
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 50),
+      );
+      final scheduler = _makeScheduler(
+        transport,
+        maxConcurrent: 3,
+        maxTotalConnections: 8,
+      );
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 4,
+      );
+      final b = scheduler.enqueue(
+        url: 'http://example.test/b',
+        fileName: 'b.bin',
+        maxConnections: 4,
+      );
+      final c = scheduler.enqueue(
+        url: 'http://example.test/c',
+        fileName: 'c.bin',
+        maxConnections: 4,
+      );
+      // Two jobs fill the 8-connection budget while a download slot
+      // is still free: the third job waits on budget, not on a slot.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        transport.startedUrls.toSet(),
+        {'http://example.test/a', 'http://example.test/b'},
+      );
+      expect(infoOf(scheduler, c).status, DownloadStatus.queued);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      await waitForStatus(scheduler, b, DownloadStatus.completed);
+      await waitForStatus(scheduler, c, DownloadStatus.completed);
+      expect(transport.maxOpenStreams, 8);
+    });
+
+    test('a lone job larger than the cap still starts', () async {
+      final transport = _FakeTransport(data: bytesOf(4096));
+      final scheduler = _makeScheduler(
+        transport,
+        maxConcurrent: 3,
+        maxTotalConnections: 4,
+      );
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 8,
+      );
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      expect(transport.maxOpenStreams, 8);
+    });
+
+    test('raising the cap starts jobs waiting on budget', () async {
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 50),
+      );
+      final scheduler = _makeScheduler(
+        transport,
+        maxConcurrent: 3,
+        maxTotalConnections: 8,
+      );
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 4,
+      );
+      final b = scheduler.enqueue(
+        url: 'http://example.test/b',
+        fileName: 'b.bin',
+        maxConnections: 4,
+      );
+      final c = scheduler.enqueue(
+        url: 'http://example.test/c',
+        fileName: 'c.bin',
+        maxConnections: 4,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(infoOf(scheduler, c).status, DownloadStatus.queued);
+      scheduler.setMaxTotalConnections(12);
+      await waitForStatus(scheduler, c, DownloadStatus.downloading);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      await waitForStatus(scheduler, b, DownloadStatus.completed);
+      await waitForStatus(scheduler, c, DownloadStatus.completed);
+      expect(transport.maxOpenStreams, 12);
     });
   });
 }

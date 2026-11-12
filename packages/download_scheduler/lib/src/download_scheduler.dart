@@ -64,10 +64,12 @@ class _RunningJob {
 class DownloadScheduler {
   DownloadScheduler({
     int maxConcurrent = 3,
+    int maxTotalConnections = 16,
     DownloadTaskFactory? taskFactory,
     DownloadTransport? transport,
     this.limiter,
   }) : _maxConcurrent = maxConcurrent,
+       _maxTotalConnections = maxTotalConnections,
        _ownsTransport = transport == null && taskFactory == null {
     _transport = transport;
     _taskFactory = taskFactory ?? _defaultTaskFactory;
@@ -80,6 +82,23 @@ class DownloadScheduler {
   int get maxConcurrent => _maxConcurrent;
 
   int _maxConcurrent;
+
+  /// Maximum total connections (open segment streams) across all
+  /// running downloads (docs/architecture.md §5.6). A running job
+  /// reserves its whole `maxConnections` up front: a task opens at
+  /// most that many streams at once, so the sum over running jobs is
+  /// the upper bound on open connections. Default 16, configurable
+  /// later via Settings.
+  int get maxTotalConnections => _maxTotalConnections;
+
+  int _maxTotalConnections;
+
+  /// Changes the cap at runtime; jobs waiting on budget start when
+  /// it grows.
+  void setMaxTotalConnections(int value) {
+    _maxTotalConnections = value;
+    _pump();
+  }
   DownloadTransport? _transport;
   late final DownloadTaskFactory _taskFactory;
   final bool _ownsTransport;
@@ -468,13 +487,49 @@ class DownloadScheduler {
       return a.job.sequence.compareTo(b.job.sequence);
     });
     while (_running.length + _starting.length < _maxConcurrent) {
-      final next = _pending.indexWhere((q) => !q.paused);
+      final next = _nextStartableIndex();
       if (next == -1) {
         return;
       }
       final queued = _pending.removeAt(next);
       unawaited(_start(queued));
     }
+  }
+
+  /// Index of the first non-paused pending job that fits the
+  /// remaining connection budget, or -1. A job that fits is started
+  /// even when a higher-priority job ahead of it does not fit, so
+  /// one large job cannot stall the whole queue; the large job
+  /// starts once budget frees. When nothing is running or starting,
+  /// the first non-paused job starts even if it alone exceeds the
+  /// cap, so a single job can never deadlock the queue.
+  int _nextStartableIndex() {
+    final reserved = _reservedConnections;
+    for (var i = 0; i < _pending.length; i++) {
+      final queued = _pending[i];
+      if (queued.paused) {
+        continue;
+      }
+      if (reserved + queued.job.maxConnections <= _maxTotalConnections ||
+          (_running.isEmpty && _starting.isEmpty)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /// Connections reserved by running and starting jobs. Each job
+  /// reserves its whole `maxConnections`: a task opens at most that
+  /// many segment streams at once.
+  int get _reservedConnections {
+    var total = 0;
+    for (final running in _running.values) {
+      total += running.job.maxConnections;
+    }
+    for (final id in _starting) {
+      total += _jobs[id]?.maxConnections ?? 0;
+    }
+    return total;
   }
 
   Future<void> _start(_QueuedJob queued) async {

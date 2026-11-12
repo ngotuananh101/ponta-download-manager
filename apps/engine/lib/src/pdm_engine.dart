@@ -71,6 +71,7 @@ class PdmEngine implements DownloadEngine {
     late final PdmEngine engine;
     final scheduler = DownloadScheduler(
       maxConcurrent: config.maxConcurrentDownloads,
+      maxTotalConnections: config.maxTotalConnections,
       limiter: bandwidthLimiter,
       taskFactory: (job) => engine._taskFactory(job),
     );
