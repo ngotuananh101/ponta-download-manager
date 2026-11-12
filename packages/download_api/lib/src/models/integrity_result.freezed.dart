@@ -19,6 +19,10 @@ IntegrityResult _$IntegrityResultFromJson(
           return IntegrityOk.fromJson(
             json
           );
+                case 'unknownSize':
+          return IntegrityUnknownSize.fromJson(
+            json
+          );
                 case 'missing':
           return IntegrityMissing.fromJson(
             json
@@ -93,11 +97,12 @@ extension IntegrityResultPatterns on IntegrityResult {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( IntegrityOk value)?  ok,TResult Function( IntegrityMissing value)?  missing,TResult Function( IntegritySizeMismatch value)?  sizeMismatch,TResult Function( IntegrityChecksumMismatch value)?  checksumMismatch,TResult Function( IntegrityUnreadable value)?  unreadable,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( IntegrityOk value)?  ok,TResult Function( IntegrityUnknownSize value)?  unknownSize,TResult Function( IntegrityMissing value)?  missing,TResult Function( IntegritySizeMismatch value)?  sizeMismatch,TResult Function( IntegrityChecksumMismatch value)?  checksumMismatch,TResult Function( IntegrityUnreadable value)?  unreadable,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case IntegrityOk() when ok != null:
-return ok(_that);case IntegrityMissing() when missing != null:
+return ok(_that);case IntegrityUnknownSize() when unknownSize != null:
+return unknownSize(_that);case IntegrityMissing() when missing != null:
 return missing(_that);case IntegritySizeMismatch() when sizeMismatch != null:
 return sizeMismatch(_that);case IntegrityChecksumMismatch() when checksumMismatch != null:
 return checksumMismatch(_that);case IntegrityUnreadable() when unreadable != null:
@@ -119,11 +124,12 @@ return unreadable(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( IntegrityOk value)  ok,required TResult Function( IntegrityMissing value)  missing,required TResult Function( IntegritySizeMismatch value)  sizeMismatch,required TResult Function( IntegrityChecksumMismatch value)  checksumMismatch,required TResult Function( IntegrityUnreadable value)  unreadable,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( IntegrityOk value)  ok,required TResult Function( IntegrityUnknownSize value)  unknownSize,required TResult Function( IntegrityMissing value)  missing,required TResult Function( IntegritySizeMismatch value)  sizeMismatch,required TResult Function( IntegrityChecksumMismatch value)  checksumMismatch,required TResult Function( IntegrityUnreadable value)  unreadable,}){
 final _that = this;
 switch (_that) {
 case IntegrityOk():
-return ok(_that);case IntegrityMissing():
+return ok(_that);case IntegrityUnknownSize():
+return unknownSize(_that);case IntegrityMissing():
 return missing(_that);case IntegritySizeMismatch():
 return sizeMismatch(_that);case IntegrityChecksumMismatch():
 return checksumMismatch(_that);case IntegrityUnreadable():
@@ -144,11 +150,12 @@ return unreadable(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( IntegrityOk value)?  ok,TResult? Function( IntegrityMissing value)?  missing,TResult? Function( IntegritySizeMismatch value)?  sizeMismatch,TResult? Function( IntegrityChecksumMismatch value)?  checksumMismatch,TResult? Function( IntegrityUnreadable value)?  unreadable,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( IntegrityOk value)?  ok,TResult? Function( IntegrityUnknownSize value)?  unknownSize,TResult? Function( IntegrityMissing value)?  missing,TResult? Function( IntegritySizeMismatch value)?  sizeMismatch,TResult? Function( IntegrityChecksumMismatch value)?  checksumMismatch,TResult? Function( IntegrityUnreadable value)?  unreadable,}){
 final _that = this;
 switch (_that) {
 case IntegrityOk() when ok != null:
-return ok(_that);case IntegrityMissing() when missing != null:
+return ok(_that);case IntegrityUnknownSize() when unknownSize != null:
+return unknownSize(_that);case IntegrityMissing() when missing != null:
 return missing(_that);case IntegritySizeMismatch() when sizeMismatch != null:
 return sizeMismatch(_that);case IntegrityChecksumMismatch() when checksumMismatch != null:
 return checksumMismatch(_that);case IntegrityUnreadable() when unreadable != null:
@@ -169,10 +176,11 @@ return unreadable(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int bytes)?  ok,TResult Function()?  missing,TResult Function( int expectedBytes,  int actualBytes)?  sizeMismatch,TResult Function( String expectedSha256,  String actualSha256)?  checksumMismatch,TResult Function( String message)?  unreadable,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int bytes)?  ok,TResult Function( int bytes)?  unknownSize,TResult Function()?  missing,TResult Function( int expectedBytes,  int actualBytes)?  sizeMismatch,TResult Function( String expectedSha256,  String actualSha256)?  checksumMismatch,TResult Function( String message)?  unreadable,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case IntegrityOk() when ok != null:
-return ok(_that.bytes);case IntegrityMissing() when missing != null:
+return ok(_that.bytes);case IntegrityUnknownSize() when unknownSize != null:
+return unknownSize(_that.bytes);case IntegrityMissing() when missing != null:
 return missing();case IntegritySizeMismatch() when sizeMismatch != null:
 return sizeMismatch(_that.expectedBytes,_that.actualBytes);case IntegrityChecksumMismatch() when checksumMismatch != null:
 return checksumMismatch(_that.expectedSha256,_that.actualSha256);case IntegrityUnreadable() when unreadable != null:
@@ -194,10 +202,11 @@ return unreadable(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int bytes)  ok,required TResult Function()  missing,required TResult Function( int expectedBytes,  int actualBytes)  sizeMismatch,required TResult Function( String expectedSha256,  String actualSha256)  checksumMismatch,required TResult Function( String message)  unreadable,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int bytes)  ok,required TResult Function( int bytes)  unknownSize,required TResult Function()  missing,required TResult Function( int expectedBytes,  int actualBytes)  sizeMismatch,required TResult Function( String expectedSha256,  String actualSha256)  checksumMismatch,required TResult Function( String message)  unreadable,}) {final _that = this;
 switch (_that) {
 case IntegrityOk():
-return ok(_that.bytes);case IntegrityMissing():
+return ok(_that.bytes);case IntegrityUnknownSize():
+return unknownSize(_that.bytes);case IntegrityMissing():
 return missing();case IntegritySizeMismatch():
 return sizeMismatch(_that.expectedBytes,_that.actualBytes);case IntegrityChecksumMismatch():
 return checksumMismatch(_that.expectedSha256,_that.actualSha256);case IntegrityUnreadable():
@@ -218,10 +227,11 @@ return unreadable(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int bytes)?  ok,TResult? Function()?  missing,TResult? Function( int expectedBytes,  int actualBytes)?  sizeMismatch,TResult? Function( String expectedSha256,  String actualSha256)?  checksumMismatch,TResult? Function( String message)?  unreadable,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int bytes)?  ok,TResult? Function( int bytes)?  unknownSize,TResult? Function()?  missing,TResult? Function( int expectedBytes,  int actualBytes)?  sizeMismatch,TResult? Function( String expectedSha256,  String actualSha256)?  checksumMismatch,TResult? Function( String message)?  unreadable,}) {final _that = this;
 switch (_that) {
 case IntegrityOk() when ok != null:
-return ok(_that.bytes);case IntegrityMissing() when missing != null:
+return ok(_that.bytes);case IntegrityUnknownSize() when unknownSize != null:
+return unknownSize(_that.bytes);case IntegrityMissing() when missing != null:
 return missing();case IntegritySizeMismatch() when sizeMismatch != null:
 return sizeMismatch(_that.expectedBytes,_that.actualBytes);case IntegrityChecksumMismatch() when checksumMismatch != null:
 return checksumMismatch(_that.expectedSha256,_that.actualSha256);case IntegrityUnreadable() when unreadable != null:
@@ -298,6 +308,79 @@ class _$IntegrityOkCopyWithImpl<$Res>
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? bytes = null,}) {
   return _then(IntegrityOk(
+bytes: null == bytes ? _self.bytes : bytes // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class IntegrityUnknownSize implements IntegrityResult {
+  const IntegrityUnknownSize({required this.bytes, final  String? $type}): $type = $type ?? 'unknownSize';
+  factory IntegrityUnknownSize.fromJson(Map<String, dynamic> json) => _$IntegrityUnknownSizeFromJson(json);
+
+ final  int bytes;
+
+@JsonKey(name: 'runtimeType')
+final String $type;
+
+
+/// Create a copy of IntegrityResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$IntegrityUnknownSizeCopyWith<IntegrityUnknownSize> get copyWith => _$IntegrityUnknownSizeCopyWithImpl<IntegrityUnknownSize>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$IntegrityUnknownSizeToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityUnknownSize&&(identical(other.bytes, bytes) || other.bytes == bytes));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,bytes);
+
+@override
+String toString() {
+  return 'IntegrityResult.unknownSize(bytes: $bytes)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $IntegrityUnknownSizeCopyWith<$Res> implements $IntegrityResultCopyWith<$Res> {
+  factory $IntegrityUnknownSizeCopyWith(IntegrityUnknownSize value, $Res Function(IntegrityUnknownSize) _then) = _$IntegrityUnknownSizeCopyWithImpl;
+@useResult
+$Res call({
+ int bytes
+});
+
+
+
+
+}
+/// @nodoc
+class _$IntegrityUnknownSizeCopyWithImpl<$Res>
+    implements $IntegrityUnknownSizeCopyWith<$Res> {
+  _$IntegrityUnknownSizeCopyWithImpl(this._self, this._then);
+
+  final IntegrityUnknownSize _self;
+  final $Res Function(IntegrityUnknownSize) _then;
+
+/// Create a copy of IntegrityResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? bytes = null,}) {
+  return _then(IntegrityUnknownSize(
 bytes: null == bytes ? _self.bytes : bytes // ignore: cast_nullable_to_non_nullable
 as int,
   ));

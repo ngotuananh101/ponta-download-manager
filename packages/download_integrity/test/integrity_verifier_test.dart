@@ -55,14 +55,14 @@ void main() {
       );
     });
 
-    test('unknown total is existence-only', () async {
+    test('unknown total reports unknownSize', () async {
       final file = File(p.join(tempDir.path, 'f.bin'));
       await file.writeAsBytes(List<int>.generate(512, (i) => i % 256));
       final result = await verifier.verify(
         path: file.path,
         expectedBytes: -1,
       );
-      expect(result, const IntegrityResult.ok(bytes: 512));
+      expect(result, const IntegrityResult.unknownSize(bytes: 512));
     });
 
     test('checksum match is ok', () async {
@@ -104,6 +104,7 @@ void main() {
       );
       result.when(
         ok: (_) => fail('expected unreadable'),
+        unknownSize: (_) => fail('expected unreadable'),
         missing: () => fail('expected unreadable'),
         sizeMismatch: (_, _) => fail('expected unreadable'),
         checksumMismatch: (_, _) => fail('expected unreadable'),
@@ -122,6 +123,7 @@ void main() {
         );
         result.when(
           ok: (_) => fail('expected unreadable'),
+          unknownSize: (_) => fail('expected unreadable'),
           missing: () => fail('expected unreadable'),
           sizeMismatch: (_, _) => fail('expected unreadable'),
           checksumMismatch: (_, _) => fail('expected unreadable'),

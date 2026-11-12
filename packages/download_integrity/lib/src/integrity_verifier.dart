@@ -5,7 +5,9 @@ import 'package:download_api/download_api.dart';
 
 /// Verifies a finished file on disk (architecture §5.1): it exists,
 /// and — when the expected size is known — its size matches. When an
-/// expected SHA-256 is given, the file's hash must match too.
+/// expected SHA-256 is given, the file's hash must match too. When the
+/// expected size is unknown (negative), the result is unknownSize:
+/// the file exists and is readable, but its size was not checked.
 class IntegrityVerifier {
   const IntegrityVerifier();
 
@@ -35,7 +37,12 @@ class IntegrityVerifier {
     } on FileSystemException catch (e) {
       return IntegrityResult.unreadable(message: e.message);
     }
-    if (expectedBytes >= 0 && stat.size != expectedBytes) {
+    if (expectedBytes < 0) {
+      // The file exists and is readable, but its expected size was
+      // never known, so the size was not checked.
+      return IntegrityResult.unknownSize(bytes: stat.size);
+    }
+    if (stat.size != expectedBytes) {
       return IntegrityResult.sizeMismatch(
         expectedBytes: expectedBytes,
         actualBytes: stat.size,

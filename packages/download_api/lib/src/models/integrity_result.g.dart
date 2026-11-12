@@ -14,6 +14,17 @@ IntegrityOk _$IntegrityOkFromJson(Map<String, dynamic> json) => IntegrityOk(
 Map<String, dynamic> _$IntegrityOkToJson(IntegrityOk instance) =>
     <String, dynamic>{'bytes': instance.bytes, 'runtimeType': instance.$type};
 
+IntegrityUnknownSize _$IntegrityUnknownSizeFromJson(
+  Map<String, dynamic> json,
+) => IntegrityUnknownSize(
+  bytes: (json['bytes'] as num).toInt(),
+  $type: json['runtimeType'] as String?,
+);
+
+Map<String, dynamic> _$IntegrityUnknownSizeToJson(
+  IntegrityUnknownSize instance,
+) => <String, dynamic>{'bytes': instance.bytes, 'runtimeType': instance.$type};
+
 IntegrityMissing _$IntegrityMissingFromJson(Map<String, dynamic> json) =>
     IntegrityMissing($type: json['runtimeType'] as String?);
 

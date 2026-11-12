@@ -1241,6 +1241,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         (check) {
           final message = check.when(
             ok: (bytes) => 'File is intact (${formatBytes(bytes)})',
+            unknownSize: (bytes) =>
+                'File exists (${formatBytes(bytes)}) but the expected '
+                'size is unknown, so the size was not checked',
             missing: () => 'File is missing',
             sizeMismatch: (expected, actual) =>
                 'Size mismatch: expected ${formatBytes(expected)}, '

@@ -1162,7 +1162,7 @@ void main() {
       );
     });
 
-    test('verifyFile is existence-only when the record has no size',
+    test('verifyFile reports unknownSize when the record has no size',
         () async {
       final engine = openEngine(maxConcurrent: 0);
       addTearDown(engine.dispose);
@@ -1173,10 +1173,11 @@ void main() {
         ),
       );
       // The download never runs, so the record has no size; a file
-      // placed at the destination by hand is enough for ok.
+      // placed at the destination by hand exists, but its size was
+      // never known, so it is not checked.
       File(p.join(tempDir.path, 'f.bin')).writeAsBytesSync(bytesOf(512));
       final result = await engine.verifyFile(info.id);
-      expect(result, const IntegrityResult.ok(bytes: 512));
+      expect(result, const IntegrityResult.unknownSize(bytes: 512));
     });
 
     test('addMirror stores the URL and ignores duplicates', () async {

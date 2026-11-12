@@ -8,6 +8,11 @@ part 'integrity_result.g.dart';
 abstract class IntegrityResult with _$IntegrityResult {
   const factory IntegrityResult.ok({required int bytes}) = IntegrityOk;
 
+  /// The file exists and is readable, but its expected size was never
+  /// known, so the size was not checked.
+  const factory IntegrityResult.unknownSize({required int bytes}) =
+      IntegrityUnknownSize;
+
   const factory IntegrityResult.missing() = IntegrityMissing;
 
   const factory IntegrityResult.sizeMismatch({
