@@ -247,6 +247,69 @@ void main() {
       );
     });
 
+    test('probeUrl returns the file name and size', () async {
+      final data = bytesOf(4096);
+      await startServer(data: data);
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final probe = await engine.probeUrl(
+        'http://127.0.0.1:${server.port}/f.bin',
+      );
+      expect(probe.fileName, 'f.bin');
+      expect(probe.totalBytes, 4096);
+    });
+
+    test('probeUrl rejects a non-http URL', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      expect(
+        engine.probeUrl('ftp://example.com/f.bin'),
+        throwsA(
+          isA<DownloadError>().having((e) => e.code, 'code', 'invalid-url'),
+        ),
+      );
+    });
+
+    test('probeUrl reports a playlist size as unknown without probing',
+        () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      // A dead port: the probe must not touch the network for playlists.
+      final probe = await engine.probeUrl(
+        'http://127.0.0.1:9/stream.m3u8',
+      );
+      expect(probe.fileName, 'stream.m3u8');
+      expect(probe.totalBytes, -1);
+    });
+
+    test('createDownload with paused stays paused until resumed', () async {
+      final data = bytesOf(4096);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      expect(info.status, DownloadStatus.paused);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final listed = await engine.listDownloads();
+      final row = listed.firstWhere((d) => d.id == info.id);
+      expect(row.status, DownloadStatus.paused);
+      expect(row.downloadedBytes, 0);
+      expect(File(p.join(tempDir.path, 'f.bin')).existsSync(), isFalse);
+      await engine.resumeDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, 4096);
+    });
+
     test('pauses and resumes a download', () async {
       final data = bytesOf(262144);
       await startServer(
@@ -768,6 +831,41 @@ exit 0
         expect(done.filePath, p.join(tempDir.path, 'live.mp4'));
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
+
+    test('createDownload with paused stores a paused playlist without starting it',
+        () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      expect(info.id.startsWith('yt-'), isTrue);
+      expect(info.status, DownloadStatus.paused);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final listed = await engine.listDownloads();
+      expect(
+        listed.firstWhere((d) => d.id == info.id).status,
+        DownloadStatus.paused,
+      );
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isFalse);
+      await engine.resumeDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.fileName, 'live.mp4');
+    });
 
       test('a yt-dlp download reports one synthetic segment', () async {
         final fake = await makeFakeYtDlp(slowScript);

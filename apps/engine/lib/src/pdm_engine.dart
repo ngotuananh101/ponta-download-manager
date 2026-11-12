@@ -264,6 +264,33 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<ProbeResult> probeUrl(String url) async {
+    _throwIfDisposed();
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      throw const DownloadError(
+        'invalid-url',
+        'URL must start with http:// or https://',
+      );
+    }
+    if (_isStreamingPlaylist(url)) {
+      // yt-dlp decides the size at download time; probing the playlist
+      // file itself would report the playlist's own (tiny) size.
+      final segments = uri.pathSegments;
+      final fileName = segments.isNotEmpty && segments.last.isNotEmpty
+          ? segments.last
+          : 'download';
+      return ProbeResult(url: url, fileName: fileName, totalBytes: -1);
+    }
+    final info = await _transport.probe(uri);
+    return ProbeResult(
+      url: url,
+      fileName: info.fileName,
+      totalBytes: info.contentLength ?? -1,
+    );
+  }
+
+  @override
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
     _throwIfDisposed();
     final destination = request.destination;
@@ -311,13 +338,19 @@ class PdmEngine implements DownloadEngine {
         url: request.url,
         fileName: fileName,
         directory: directory,
-        status: DownloadStatus.queued,
+        status: request.paused
+            ? DownloadStatus.paused
+            : DownloadStatus.queued,
         priority: request.priority ?? 0,
         maxConnections:
             request.maxConnections ?? config.maxConnectionsPerDownload,
       );
       _store.upsertDownload(record);
-      _startYtDlp(record, downloader);
+      // A paused playlist is stored paused and starts only on resume
+      // (resumeDownload starts it through the downloader).
+      if (!request.paused) {
+        _startYtDlp(record, downloader);
+      }
       return _infoFromRecord(record);
     }
     final id = _scheduler.enqueue(
@@ -328,13 +361,16 @@ class PdmEngine implements DownloadEngine {
       maxConnections:
           request.maxConnections ?? config.maxConnectionsPerDownload,
       overwrite: request.conflictPolicy == FileConflictPolicy.overwrite,
+      paused: request.paused,
     );
     final record = DownloadRecord(
       id: id,
       url: request.url,
       fileName: fileName,
       directory: directory,
-      status: DownloadStatus.queued,
+      status: request.paused
+          ? DownloadStatus.paused
+          : DownloadStatus.queued,
       priority: request.priority ?? 0,
       maxConnections:
           request.maxConnections ?? config.maxConnectionsPerDownload,
