@@ -545,6 +545,88 @@ void main() {
       expect(await engine.listDownloads(), hasLength(1));
     });
 
+    test('renameFile renames the finished file and updates the record',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.renameFile(info.id, 'g.bin');
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isFalse);
+      expect(await File(p.join(tempDir.path, 'g.bin')).exists(), isTrue);
+      final listed = await engine.listDownloads();
+      expect(listed, hasLength(1));
+      expect(listed.single.fileName, 'g.bin');
+      expect(listed.single.filePath, p.join(tempDir.path, 'g.bin'));
+    });
+
+    test('renameFile to an existing name throws file-exists', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      File(p.join(tempDir.path, 'g.bin')).writeAsStringSync('other');
+      await expectLater(
+        engine.renameFile(info.id, 'g.bin'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'file-exists'),
+        ),
+      );
+      expect(await File(p.join(tempDir.path, 'f.bin')).exists(), isTrue);
+    });
+
+    test('renameFile with an invalid name throws', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await expectLater(
+        engine.renameFile(info.id, 'sub/g.bin'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-name'),
+        ),
+      );
+      await expectLater(
+        engine.renameFile(info.id, ''),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-name'),
+        ),
+      );
+    });
+
     test(
         'deleteDownload with deleteFile and no file on disk still removes the record',
         () async {
@@ -977,6 +1059,36 @@ exit 0
       await engine.deleteFile(info.id);
       expect(await engine.listDownloads(), hasLength(1));
       expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isFalse);
+    });
+
+    test('renameFile renames the produced file', () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.renameFile(info.id, 'renamed.mp4');
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isFalse);
+      expect(
+        File(p.join(tempDir.path, 'renamed.mp4')).existsSync(),
+        isTrue,
+      );
+      final listed = await engine.listDownloads();
+      expect(listed.single.fileName, 'renamed.mp4');
     });
 
     test('createDownload with paused stores a paused playlist without starting it',

@@ -577,6 +577,33 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<void> renameFile(String downloadId, String newFileName) async {
+    if (newFileName.isEmpty || p.basename(newFileName) != newFileName) {
+      throw const DownloadError(
+        'invalid-name',
+        'A file name cannot be empty or contain a path separator.',
+      );
+    }
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      return;
+    }
+    final target = p.join(record.directory, newFileName);
+    if (File(target).existsSync()) {
+      throw DownloadError(
+        'file-exists',
+        'Destination already exists: $target',
+      );
+    }
+    try {
+      File(record.destinationPath).renameSync(target);
+    } on FileSystemException catch (e) {
+      throw DownloadError('rename-failed', e.message);
+    }
+    _store.upsertDownload(record.copyWith(fileName: newFileName));
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);

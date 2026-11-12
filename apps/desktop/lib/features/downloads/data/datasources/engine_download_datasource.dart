@@ -260,6 +260,13 @@ class EngineDownloadDatasource {
     await _refreshDownload(id);
   }
 
+  /// Renames the finished file: the refresh re-reads the record,
+  /// so the row shows the new name.
+  Future<void> renameFile(String id, String newFileName) async {
+    await engine.renameFile(id, newFileName);
+    await _refreshDownload(id);
+  }
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

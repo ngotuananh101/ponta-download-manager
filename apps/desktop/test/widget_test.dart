@@ -878,6 +878,42 @@ void main() {
     expect(find.text('Delete file'), findsNothing);
   });
 
+  testWidgets('Rename file renames the completed download',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.renameFile(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-rename-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename file'));
+    await tester.pumpAndSettle();
+    // The rename dialog is prefilled with the current name.
+    expect(find.text('Rename file'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'g.bin');
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    verify(() => actions.renameFile('dl-1', 'g.bin')).called(1);
+  });
+
+  testWidgets('Rename file is hidden for a downloading row',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rename file'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(

@@ -18,6 +18,7 @@ import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
 import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
 import 'package:pdm/features/downloads/presentation/new_download_dialog.dart';
+import 'package:pdm/features/downloads/presentation/text_input_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
@@ -836,6 +837,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               item.state == DownloadState.paused) {
             entries.add(_prioritySubmenu(item));
           }
+          // Rename needs the finished file on disk.
+          if (_hasFinishedFile(item)) {
+            entries.add(_menuItem('rename', 'Rename file'));
+          }
           switch (item.state) {
             case DownloadState.downloading:
             case DownloadState.queued:
@@ -916,6 +921,32 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   Future<void> _onRowAction(Download item, String action) async {
+    if (action == 'rename') {
+      final newName = await showTextInputDialog(
+        context: context,
+        title: 'Rename file',
+        label: 'File name',
+        initialValue: item.fileName,
+        validate: (value) {
+          if (value.contains('/') || value.contains('\\')) {
+            return 'A file name cannot contain / or \\';
+          }
+          return null;
+        },
+      );
+      if (!mounted) return;
+      if (newName == null || newName == item.fileName) return;
+      final result =
+          await ref.read(downloadsActionsProvider).renameFile(item.id, newName);
+      result.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(failure.message)),
+          );
+        }
+      }, (_) {});
+      return;
+    }
     if (action == 'open' || action == 'show_in_folder') {
       final opener = ref.read(fileOpenerProvider);
       try {

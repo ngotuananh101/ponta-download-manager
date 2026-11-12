@@ -35,6 +35,12 @@ abstract interface class DownloadEngine {
   /// error.
   Future<void> deleteFile(String downloadId);
 
+  /// Renames the finished file on disk and updates the stored
+  /// record. Throws [DownloadError] `invalid-name` when the name is
+  /// empty or contains a path separator, and `file-exists` when the
+  /// target name is already taken.
+  Future<void> renameFile(String downloadId, String newFileName);
+
   Future<void> setPriority(String downloadId, int priority);
 
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond);

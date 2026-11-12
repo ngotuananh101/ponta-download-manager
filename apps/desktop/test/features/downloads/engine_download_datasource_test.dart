@@ -398,6 +398,25 @@ void main() {
       expect(emitted.last.single.state, DownloadState.missing);
     });
 
+    test('renameFile calls the engine and refreshes the row', () async {
+      when(
+        () => engine.listDownloads(),
+      ).thenAnswer((_) async => [info(status: DownloadStatus.completed)]);
+      final source = datasource();
+      addTearDown(source.dispose);
+      when(
+        () => engine.renameFile(any(), any()),
+      ).thenAnswer((_) async {});
+      final emitted = <List<Download>>[];
+      final sub = source.watchDownloads().listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await source.renameFile('dl-1', 'g.bin');
+      verify(() => engine.renameFile('dl-1', 'g.bin')).called(1);
+      // The refresh re-reads the list (initial load + refresh).
+      verify(() => engine.listDownloads()).called(2);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();
