@@ -19,9 +19,29 @@ class DownloadRepositoryImpl implements DownloadRepository {
   Stream<List<Download>> watchDownloads() => _datasource.watchDownloads();
 
   @override
+  Future<Either<Failure, ProbeResult>> probeUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return const Left(
+        ValidationFailure('URL must start with http:// or https://'),
+      );
+    }
+    try {
+      return Right(await _datasource.probeUrl(url));
+    } on DownloadError catch (e) {
+      return Left(_toFailure(e));
+    }
+  }
+
+  @override
   Future<Either<Failure, Download>> addDownload(
     String url, {
+    String? directory,
+    String? fileName,
     FileConflictPolicy? conflictPolicy,
+    bool paused = false,
   }) async {
     final uri = Uri.tryParse(url);
     if (uri == null ||
@@ -34,7 +54,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
     try {
       final info = await _datasource.addDownload(
         url,
+        directory: directory,
+        fileName: fileName,
         conflictPolicy: conflictPolicy,
+        paused: paused,
       );
       return Right(downloadFromInfo(info));
     } on DownloadError catch (e) {

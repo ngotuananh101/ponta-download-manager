@@ -234,6 +234,41 @@ void main() {
       expect(request.destination, '/tmp/downloads/f.bin');
     });
 
+    test('addDownload passes directory, file name and paused through',
+        () async {
+      when(
+        () => engine.createDownload(any()),
+      ).thenAnswer((_) async => info());
+      final source = datasource();
+      addTearDown(source.dispose);
+      await source.addDownload(
+        'http://127.0.0.1:9/f.bin',
+        directory: '/tmp/other',
+        fileName: 'g.bin',
+        paused: true,
+      );
+      final request =
+          verify(() => engine.createDownload(captureAny())).captured.single
+              as CreateDownloadRequest;
+      expect(request.destination, '/tmp/other/g.bin');
+      expect(request.paused, isTrue);
+    });
+
+    test('probeUrl delegates to the engine', () async {
+      const probe = ProbeResult(
+        url: 'http://127.0.0.1:9/f.bin',
+        fileName: 'f.bin',
+        totalBytes: 1000,
+      );
+      when(() => engine.probeUrl(any())).thenAnswer((_) async => probe);
+      final source = datasource();
+      addTearDown(source.dispose);
+      final got = await source.probeUrl('http://127.0.0.1:9/f.bin');
+      expect(got.fileName, 'f.bin');
+      expect(got.totalBytes, 1000);
+      verify(() => engine.probeUrl('http://127.0.0.1:9/f.bin')).called(1);
+    });
+
     test('pause/resume/cancel/retry delegate to the engine', () async {
       final source = datasource();
       addTearDown(source.dispose);

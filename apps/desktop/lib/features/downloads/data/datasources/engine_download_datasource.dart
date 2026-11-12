@@ -195,16 +195,26 @@ class EngineDownloadDatasource {
     _controller.add(_downloads.values.toList());
   }
 
+  /// Probes a URL before creating a download: the file name the
+  /// server reports (or the URL's last segment) and the total size.
+  Future<ProbeResult> probeUrl(String url) => engine.probeUrl(url);
+
   Future<DownloadInfo> addDownload(
     String url, {
+    String? directory,
+    String? fileName,
     FileConflictPolicy? conflictPolicy,
+    bool paused = false,
   }) async {
-    final fileName = _fileNameFromUrl(url);
     final info = await engine.createDownload(
       CreateDownloadRequest(
         url: url,
-        destination: p.join(downloadDirectory, fileName),
+        destination: p.join(
+          directory ?? downloadDirectory,
+          fileName ?? _fileNameFromUrl(url),
+        ),
         conflictPolicy: conflictPolicy,
+        paused: paused,
       ),
     );
     // The create response is the source of truth for the new

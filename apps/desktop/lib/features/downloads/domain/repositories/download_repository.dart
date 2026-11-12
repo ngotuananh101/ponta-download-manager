@@ -5,9 +5,18 @@ import 'package:pdm/features/downloads/domain/entities/download.dart';
 
 abstract interface class DownloadRepository {
   Stream<List<Download>> watchDownloads();
+
+  /// Probes a URL before creating a download: the file name the server
+  /// reports (or the URL's last segment) and the total size, -1 when
+  /// unknown.
+  Future<Either<Failure, ProbeResult>> probeUrl(String url);
+
   Future<Either<Failure, Download>> addDownload(
     String url, {
+    String? directory,
+    String? fileName,
     FileConflictPolicy? conflictPolicy,
+    bool paused = false,
   });
   Future<Either<Failure, Unit>> pauseDownload(String id);
   Future<Either<Failure, Unit>> resumeDownload(String id);

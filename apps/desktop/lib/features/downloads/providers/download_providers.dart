@@ -78,10 +78,22 @@ class DownloadsActions {
 
   final DownloadRepository _repository;
 
+  Future<Either<Failure, ProbeResult>> probeUrl(String url) =>
+      _repository.probeUrl(url);
+
   Future<Either<Failure, Download>> addDownload(
     String url, {
+    String? directory,
+    String? fileName,
     FileConflictPolicy? conflictPolicy,
-  }) => _repository.addDownload(url, conflictPolicy: conflictPolicy);
+    bool paused = false,
+  }) => _repository.addDownload(
+        url,
+        directory: directory,
+        fileName: fileName,
+        conflictPolicy: conflictPolicy,
+        paused: paused,
+      );
 
   Future<Either<Failure, Unit>> pauseDownload(String id) =>
       _repository.pauseDownload(id);
