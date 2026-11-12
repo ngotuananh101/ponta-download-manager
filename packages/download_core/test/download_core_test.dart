@@ -31,6 +31,7 @@ void main() {
 
   final body = List<int>.generate(1024, (i) => i % 256);
   final bigBody = List<int>.generate(5 * 1024 * 1024, (i) => i % 256);
+  final lyingBody = List<int>.generate(2048, (i) => i % 256);
 
   final requestedRanges = <String>[];
   final ifRangeHeaders = <String?>[];
@@ -58,6 +59,58 @@ void main() {
           }
           response.statusCode = HttpStatus.ok;
           response.headers.contentLength = 0;
+          await response.close();
+          return;
+        }
+        if (path == '/lying-head') {
+          // HEAD lies about the size (1024) while the representation
+          // is 2048 bytes; the range responses carry the true total.
+          if (request.method == 'HEAD') {
+            response.statusCode = HttpStatus.ok;
+            response.headers.contentLength = 1024;
+            response.headers.set('accept-ranges', 'bytes');
+            response.headers.set('etag', '"v1"');
+            await response.close();
+            return;
+          }
+          final range = request.headers.value('range');
+          if (range != null) {
+            final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range);
+            if (match != null) {
+              final start = int.parse(match.group(1)!);
+              final endText = match.group(2)!;
+              final end = endText.isEmpty
+                  ? lyingBody.length - 1
+                  : int.parse(endText);
+              response.statusCode = HttpStatus.partialContent;
+              response.headers.set(
+                'content-range',
+                'bytes $start-$end/${lyingBody.length}',
+              );
+              response.headers.contentLength = end - start + 1;
+              response.add(lyingBody.sublist(start, end + 1));
+              await response.close();
+              return;
+            }
+          }
+          response.statusCode = HttpStatus.ok;
+          response.headers.contentLength = lyingBody.length;
+          response.add(lyingBody);
+          await response.close();
+          return;
+        }
+        if (path == '/zero-head') {
+          // HEAD claims zero bytes while GET returns a 100-byte body.
+          if (request.method == 'HEAD') {
+            response.statusCode = HttpStatus.ok;
+            response.headers.contentLength = 0;
+            await response.close();
+            return;
+          }
+          final data100 = List<int>.generate(100, (i) => i % 256);
+          response.statusCode = HttpStatus.ok;
+          response.headers.contentLength = data100.length;
+          response.add(data100);
           await response.close();
           return;
         }
@@ -309,6 +362,31 @@ void main() {
       expect(info.status, DownloadStatus.completed);
       expect(info.downloadedBytes, 0);
       expect(sink.bytes, isEmpty);
+    });
+
+    test('a HEAD total contradicted by Content-Range uses the range total',
+        () async {
+      final sink = MemorySink();
+      final task = taskFor('/lying-head', sink: sink, maxConnections: 4);
+      final info = await task.run();
+      expect(info.status, DownloadStatus.completed);
+      expect(info.totalBytes, 2048);
+      expect(info.downloadedBytes, 2048);
+      expect(sink.bytes, lyingBody);
+    });
+
+    test('a zero HEAD that hides a body fails instead of completing empty',
+        () async {
+      final sink = MemorySink();
+      final task = taskFor('/zero-head', sink: sink);
+      await expectLater(
+        task.run(),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'size-mismatch'),
+        ),
+      );
+      expect(task.status, DownloadStatus.failed);
     });
 
     test('pause stops progress and resume finishes', () async {

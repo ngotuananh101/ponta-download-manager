@@ -120,9 +120,18 @@ class DownloadTask {
           info.contentLength! > 0) {
         final validation = await transport.validateRange(url, start: 0, end: 0);
         segmented = validation.valid;
-      }
-      if (_total == 0) {
-        return _finish(DownloadStatus.completed);
+        if (segmented &&
+            validation.totalBytes != null &&
+            validation.totalBytes != _total) {
+          // HEAD and Content-Range disagree: trust the range response,
+          // which describes the representation that will actually be
+          // downloaded, before planning segments over the total.
+          _log.info(
+            'HEAD said $_total bytes but Content-Range says '
+            '${validation.totalBytes}; using the range total',
+          );
+          _total = validation.totalBytes!;
+        }
       }
       _setStatus(DownloadStatus.downloading);
       try {
