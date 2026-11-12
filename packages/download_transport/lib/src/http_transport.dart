@@ -15,7 +15,7 @@ class HttpTransport implements DownloadTransport {
     HttpClient? client,
     this.connectionTimeout = const Duration(seconds: 15),
     this.requestTimeout = const Duration(seconds: 30),
-  }) : _client = client ?? HttpClient() {
+  }) : _client = client ?? (HttpClient()..autoUncompress = false) {
     _client.connectionTimeout = connectionTimeout;
   }
 
@@ -188,6 +188,9 @@ class HttpTransport implements DownloadTransport {
     Map<String, String>? headers,
   }) async {
     final request = await _client.openUrl(method, url);
+    // File downloads want the raw bytes: never let the server send a
+    // compressed body whose Content-Length no longer matches it.
+    request.headers.set('accept-encoding', 'identity');
     headers?.forEach(request.headers.set);
     return request.close();
   }

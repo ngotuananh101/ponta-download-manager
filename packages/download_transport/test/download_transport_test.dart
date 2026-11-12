@@ -12,6 +12,8 @@ void main() {
 
   final body = List<int>.generate(1024, (i) => i % 256);
 
+  String? lastAcceptEncoding;
+
   setUpAll(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = Uri.parse('http://127.0.0.1:${server.port}');
@@ -70,6 +72,35 @@ void main() {
             'content-disposition',
             'attachment; filename="archive.zip"',
           );
+          await response.close();
+          return;
+        }
+        if (path == '/gzip' || path == '/gzip-range') {
+          // A server that gzips only when the client asks for it, like
+          // a real CDN: with autoUncompress the client decompresses a
+          // body whose Content-Length is the compressed size.
+          lastAcceptEncoding = request.headers.value('accept-encoding');
+          final acceptsGzip =
+              (lastAcceptEncoding ?? '').contains('gzip');
+          final slice = path == '/gzip-range'
+              ? body.sublist(100, 200)
+              : body;
+          final hasRange = request.headers.value('range') != null;
+          response.statusCode =
+              hasRange ? HttpStatus.partialContent : HttpStatus.ok;
+          if (hasRange) {
+            response.headers.set('accept-ranges', 'bytes');
+            response.headers.set('content-range', 'bytes 100-199/1024');
+          }
+          if (acceptsGzip) {
+            final gzipped = gzip.encode(slice);
+            response.headers.set('content-encoding', 'gzip');
+            response.headers.contentLength = gzipped.length;
+            response.add(gzipped);
+          } else {
+            response.headers.contentLength = slice.length;
+            response.add(slice);
+          }
           await response.close();
           return;
         }
@@ -165,6 +196,21 @@ void main() {
           .openStream(base.resolve('/file'))
           .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
       expect(bytes, body);
+    });
+
+    test('never asks for gzip: the server sees identity', () async {
+      final bytes = await transport
+          .openStream(base.resolve('/gzip'))
+          .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+      expect(bytes, body);
+      expect(lastAcceptEncoding, 'identity');
+    });
+
+    test('a range over a gzip body streams the raw slice', () async {
+      final bytes = await transport
+          .openStream(base.resolve('/gzip-range'), start: 100, end: 199)
+          .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+      expect(bytes, body.sublist(100, 200));
     });
 
     test('downloads an exact byte range', () async {
