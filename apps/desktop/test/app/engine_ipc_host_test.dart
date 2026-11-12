@@ -76,6 +76,9 @@ class FakeEngine implements DownloadEngine {
   Future<void> changeUrl(String downloadId, String url) async {}
 
   @override
+  Future<void> addMirror(String downloadId, String url) async {}
+
+  @override
   Future<UpdateCheckResult> checkForUpdate(String downloadId) async =>
       const UpdateCheckResult(
         hasUpdate: false,

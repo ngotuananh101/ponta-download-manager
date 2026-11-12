@@ -55,6 +55,12 @@ abstract interface class DownloadEngine {
   /// `invalid-url` when the URL is not http(s).
   Future<void> changeUrl(String downloadId, String url);
 
+  /// Adds an alternative URL for the same file. The engine tries
+  /// mirrors in order when the primary URL fails. Throws
+  /// [DownloadError] `invalid-url` when the URL is not http(s);
+  /// a duplicate URL is ignored.
+  Future<void> addMirror(String downloadId, String url);
+
   /// Checks whether the server hosts a newer version of a download,
   /// comparing the server's reported size with the stored one.
   /// Throws [DownloadError] when the download is unknown or the

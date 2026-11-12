@@ -1161,6 +1161,41 @@ void main() {
     expect(find.text('File integrity'), findsNothing);
   });
 
+  testWidgets('Add mirror asks for a URL and adds it', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addMirror(any(), any()),
+    ).thenAnswer((_) async => const Right(unit));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add mirror'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField).last,
+      'http://127.0.0.1:9/m.bin',
+    );
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addMirror('dl-1', 'http://127.0.0.1:9/m.bin'),
+    ).called(1);
+  });
+
+  testWidgets('Add mirror does nothing when the dialog is cancelled',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add mirror'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    verifyNever(() => actions.addMirror(any(), any()));
+  });
+
   testWidgets('Check for update is hidden for a failed row',
       (tester) async {
     const failed = Download(
@@ -1669,6 +1704,7 @@ void main() {
     expect(find.text('Cancel'), findsOneWidget);
     expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Add mirror'), findsOneWidget);
     expect(find.text('Export selected downloads'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The menu item text is xs (12px) like the table rows.
@@ -1678,7 +1714,7 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 6);
+    expect(items.length, 7);
     expect(items.every((item) => item.height == 32), isTrue);
   });
 

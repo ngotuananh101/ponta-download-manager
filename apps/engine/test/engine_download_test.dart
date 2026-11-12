@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
+import 'package:download_recovery/download_recovery.dart';
 import 'package:download_external/download_external.dart';
 import 'package:pdm_engine/pdm_engine.dart';
 import 'package:path/path.dart' as p;
@@ -48,6 +49,10 @@ class _TestServer {
   var _requests = 0;
 
   int get port => _server.port;
+
+  /// How many requests this server has served (for proving which URL
+  /// a download actually tried).
+  int get requests => _requests;
 
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -963,6 +968,223 @@ void main() {
       File(p.join(tempDir.path, 'f.bin')).writeAsBytesSync(bytesOf(512));
       final result = await engine.verifyFile(info.id);
       expect(result, const IntegrityResult.ok(bytes: 512));
+    });
+
+    test('addMirror stores the URL and ignores duplicates', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      const mirror = 'http://127.0.0.1:9/m.bin';
+      await engine.addMirror(info.id, mirror);
+      await engine.addMirror(info.id, mirror);
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      addTearDown(store.close);
+      expect(store.getDownload(info.id)!.mirrors, [mirror]);
+    });
+
+    test('addMirror with a bad URL throws', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await expectLater(
+        engine.addMirror(info.id, 'not-a-url'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'invalid-url'),
+        ),
+      );
+    });
+
+    test('addMirror with an unknown id is a no-op', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      await engine.addMirror('nope', 'http://127.0.0.1:9/m.bin');
+    });
+
+    test('a failed download falls over to its mirror', () async {
+      final primary =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror = _TestServer(data: bytesOf(2048));
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      // Created paused: the primary fails fast, so the mirror must
+      // be stored before the first attempt runs.
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.resumeDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, 2048);
+      expect(File(p.join(tempDir.path, 'f.bin')).lengthSync(), 2048);
+    });
+
+    test('a download fails when all mirrors fail', () async {
+      final primary =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.resumeDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+    });
+
+    test('retry keeps the mirrors so the retry can fail over', () async {
+      final primary =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror = _TestServer(data: bytesOf(2048));
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.retryDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, 2048);
+    });
+
+    test('changeUrl keeps the mirrors', () async {
+      final first =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await first.start();
+      addTearDown(first.close);
+      final second =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await second.start();
+      addTearDown(second.close);
+      final mirror = _TestServer(data: bytesOf(2048));
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      // Paused: the first attempt must not start before the URL
+      // is changed, or its task races the retry on the same id and
+      // the same partial file.
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${first.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.changeUrl(
+        info.id,
+        'http://127.0.0.1:${second.port}/f.bin',
+      );
+      await engine.retryDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, 2048);
+    });
+
+    test('a manual retry restarts from the primary', () async {
+      final primary =
+          _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror = _TestServer(data: bytesOf(2048));
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.resumeDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final triedPrimary = primary.requests;
+      expect(triedPrimary, greaterThan(0));
+      await engine.retryDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      // The retry hit the primary again before falling over.
+      expect(primary.requests, greaterThan(triedPrimary));
     });
 
     test(

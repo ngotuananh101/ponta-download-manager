@@ -109,6 +109,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _act(() => _datasource.changeUrl(id, url));
 
   @override
+  Future<Either<Failure, Unit>> addMirror(String id, String url) =>
+      _act(() => _datasource.addMirror(id, url));
+
+  @override
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id) async {
     // Like getSegments: _act is for void actions, so a
     // value-returning call inlines the same try/catch.

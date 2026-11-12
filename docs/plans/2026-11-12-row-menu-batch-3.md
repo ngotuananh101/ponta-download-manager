@@ -120,9 +120,9 @@ integrity, Perform virus check, Add mirror, Add tag.
 ### Final menu order
 
 Open, Show in folder, Set priority, Rename file, Move to...,
-state actions, Copy link, Check for update, Change URL, Export
-selected downloads, File integrity, Perform virus check
-(disabled), Add tag, Delete file, Delete.
+state actions, Copy link, Check for update, Change URL, Add
+mirror, Export selected downloads, File integrity, Perform virus
+check (disabled), Add tag, Delete file, Delete.
 
 ## Parts
 
@@ -167,7 +167,7 @@ Files:
   column list + params + ON CONFLICT SET, `_recordFromRow`
   decodes both (null → []).
 - `packages/download_api/lib/src/download_engine.dart`:
-  `addMirror`, `addTag`, `removeTag` interface.
+  `addMirror` interface (`addTag` / `removeTag` come in B3.3).
 - `apps/engine/lib/src/pdm_engine.dart`: `addMirror`
   (validate + dedupe + upsert), the `_mirrorIndex` map,
   `_tryFailOver` hooked into `_onSchedulerEvent` before the

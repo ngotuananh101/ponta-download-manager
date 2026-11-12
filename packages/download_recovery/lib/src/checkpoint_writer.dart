@@ -56,16 +56,24 @@ class CheckpointWriter {
     if (_tracked.containsKey(task.id)) {
       return;
     }
-    final record = DownloadRecord(
-      id: task.id,
-      url: task.url.toString(),
-      fileName: fileName,
-      directory: directory,
-      status: DownloadStatus.queued,
-      priority: priority,
-      maxConnections: task.maxConnections,
-    );
-    store.upsertDownload(record);
+    // The record usually already exists (createDownload stored
+    // it, possibly with mirrors and tags): keep it. A fresh record
+    // here would wipe them the moment the task starts, so a mirror
+    // added before the first attempt would never be tried.
+    final existing = store.getDownload(task.id);
+    final record = existing ??
+        DownloadRecord(
+          id: task.id,
+          url: task.url.toString(),
+          fileName: fileName,
+          directory: directory,
+          status: DownloadStatus.queued,
+          priority: priority,
+          maxConnections: task.maxConnections,
+        );
+    if (existing == null) {
+      store.upsertDownload(record);
+    }
     final subscription = task.events.listen((event) {
       final tracked = _tracked[task.id];
       if (tracked == null) {

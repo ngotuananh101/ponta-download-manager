@@ -280,6 +280,10 @@ class EngineDownloadDatasource {
     await _refreshDownload(id);
   }
 
+  // No refresh: the record's mirrors never reach the UI list.
+  Future<void> addMirror(String id, String url) =>
+      engine.addMirror(id, url);
+
   /// Checks the server for a newer version. Read-only: nothing is
   /// written, so no refresh is needed.
   Future<UpdateCheckResult> checkForUpdate(String id) =>

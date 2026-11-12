@@ -19,6 +19,8 @@ class DownloadRecord {
     this.maxConnections = 4,
     this.errorCode,
     this.errorMessage,
+    this.mirrors = const [],
+    this.tags = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -39,6 +41,14 @@ class DownloadRecord {
   final int maxConnections;
   final String? errorCode;
   final String? errorMessage;
+
+  /// Alternative URLs for the same file, tried in order when the
+  /// primary URL fails. Stored as JSON in the database.
+  final List<String> mirrors;
+
+  /// Short labels on the download. Stored as JSON in the database.
+  final List<String> tags;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -61,6 +71,8 @@ class DownloadRecord {
     int? maxConnections,
     String? errorCode,
     String? errorMessage,
+    List<String>? mirrors,
+    List<String>? tags,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -80,6 +92,8 @@ class DownloadRecord {
       maxConnections: maxConnections ?? this.maxConnections,
       errorCode: errorCode ?? this.errorCode,
       errorMessage: errorMessage ?? this.errorMessage,
+      mirrors: mirrors ?? this.mirrors,
+      tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -102,7 +116,17 @@ class DownloadRecord {
         other.priority == priority &&
         other.maxConnections == maxConnections &&
         other.errorCode == errorCode &&
-        other.errorMessage == errorMessage;
+        other.errorMessage == errorMessage &&
+        _sameList(other.mirrors, mirrors) &&
+        _sameList(other.tags, tags);
+  }
+
+  static bool _sameList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -122,6 +146,8 @@ class DownloadRecord {
         maxConnections,
         errorCode,
         errorMessage,
+        Object.hashAll(mirrors),
+        Object.hashAll(tags),
       );
 }
 

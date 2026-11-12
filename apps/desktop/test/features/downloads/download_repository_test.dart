@@ -240,6 +240,20 @@ void main() {
           .called(1);
     });
 
+    test('addMirror forwards to the datasource', () async {
+      when(
+        () => datasource.addMirror(any(), any()),
+      ).thenAnswer((_) async {});
+      expect(
+        (await repository.addMirror('dl-1', 'http://127.0.0.1:9/m.bin'))
+            .isRight(),
+        isTrue,
+      );
+      verify(
+        () => datasource.addMirror('dl-1', 'http://127.0.0.1:9/m.bin'),
+      ).called(1);
+    });
+
     test('checkForUpdate forwards to the datasource', () async {
       when(
         () => datasource.checkForUpdate(any()),

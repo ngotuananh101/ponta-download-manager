@@ -115,6 +115,11 @@ class PdmEngine implements DownloadEngine {
   /// from the scheduler's `dl-N` so the two can never collide.
   var _ytCounter = 0;
 
+  /// Which mirror a download is currently trying (-1 = the primary
+  /// URL, 0..n-1 = the mirrors in record order). In-memory only: a
+  /// restart always begins from the primary again.
+  final _mirrorIndex = <String, int>{};
+
   @override
   Stream<DownloadEvent> get events => _events.stream;
 
@@ -183,18 +188,79 @@ class PdmEngine implements DownloadEngine {
   /// the final file exists; the writer deliberately ignores the
   /// task's own (pre-rename) completed events.
   void _onSchedulerEvent(DownloadEvent event) {
+    // A failed download with mirrors left tries the next mirror
+    // instead of failing: the failed event is swallowed and the
+    // download restarts from the mirror URL.
+    final failedOver = event.maybeWhen(
+      failed: (downloadId, _, _) => _tryFailOver(downloadId),
+      orElse: () => false,
+    );
+    if (failedOver) return;
     _events.add(event);
     event.when(
       progress: (_, _, _, _) {},
       stateChanged: (downloadId, status) {
         if (status == DownloadStatus.completed) {
+          _mirrorIndex.remove(downloadId);
           _writer.complete(downloadId);
         }
       },
-      completed: (downloadId, _) => _writer.complete(downloadId),
-      failed: (downloadId, code, message) =>
-          _writer.fail(downloadId, code, message),
+      completed: (downloadId, _) {
+        _mirrorIndex.remove(downloadId);
+        _writer.complete(downloadId);
+      },
+      failed: (downloadId, code, message) {
+        _mirrorIndex.remove(downloadId);
+        _writer.fail(downloadId, code, message);
+      },
     );
+  }
+
+  /// Tries the next mirror URL for a failed download. Returns true
+  /// when the download was re-enqueued with a mirror (the failed
+  /// event is then swallowed); false when there is no mirror left.
+  bool _tryFailOver(String downloadId) {
+    final record = _store.getDownload(downloadId);
+    if (record == null) return false;
+    // Playlists fail through yt-dlp's own path, not the scheduler.
+    if (_isStreamingPlaylist(record.url)) return false;
+    final next = (_mirrorIndex[downloadId] ?? -1) + 1;
+    if (next >= record.mirrors.length) return false;
+    _mirrorIndex[downloadId] = next;
+    final mirrorUrl = record.mirrors[next];
+    // A resume would need the primary's validators, which the
+    // mirror may not honour: restart from scratch.
+    final partial = File(record.partialPath);
+    if (partial.existsSync()) {
+      partial.deleteSync();
+    }
+    // Same destination as the failed attempt: overwrite, or the
+    // sink factory refuses it when a finished file is already
+    // there (a retry of a completed download failing over).
+    _scheduler.enqueue(
+      id: downloadId,
+      url: mirrorUrl,
+      fileName: record.fileName,
+      directory: record.directory,
+      priority: record.priority,
+      maxConnections: record.maxConnections,
+      overwrite: true,
+    );
+    _store.upsertDownload(
+      DownloadRecord(
+        id: record.id,
+        url: record.url,
+        fileName: record.fileName,
+        directory: record.directory,
+        status: DownloadStatus.queued,
+        priority: record.priority,
+        maxConnections: record.maxConnections,
+        createdAt: record.createdAt,
+        mirrors: record.mirrors,
+        tags: record.tags,
+      ),
+    );
+    return true;
   }
 
   /// Forwards a yt-dlp event to the engine stream and updates the
@@ -425,6 +491,7 @@ class PdmEngine implements DownloadEngine {
 
   @override
   Future<void> retryDownload(String downloadId) async {
+    _mirrorIndex.remove(downloadId);
     final record = _store.getDownload(downloadId);
     if (record == null) {
       return;
@@ -451,6 +518,8 @@ class PdmEngine implements DownloadEngine {
           status: DownloadStatus.queued,
           priority: record.priority,
           maxConnections: record.maxConnections,
+          mirrors: record.mirrors,
+          tags: record.tags,
           createdAt: record.createdAt,
         ),
       );
@@ -467,6 +536,11 @@ class PdmEngine implements DownloadEngine {
     // counter past this id. The record is reset to a fresh queued
     // download, keeping its createdAt so the Added column does not
     // move and the old error is cleared.
+    // A retry of a completed download replaces the finished file:
+    // without overwrite the sink factory refuses the destination
+    // (`file-exists`) and the retry fails before its first request.
+    // The old file stays until the new download renames over it, so
+    // a failed retry keeps it.
     _scheduler.enqueue(
       id: downloadId,
       url: record.url,
@@ -474,6 +548,7 @@ class PdmEngine implements DownloadEngine {
       directory: record.directory,
       priority: record.priority,
       maxConnections: record.maxConnections,
+      overwrite: true,
     );
     _store.upsertDownload(
       DownloadRecord(
@@ -484,6 +559,8 @@ class PdmEngine implements DownloadEngine {
         status: DownloadStatus.queued,
         priority: record.priority,
         maxConnections: record.maxConnections,
+        mirrors: record.mirrors,
+        tags: record.tags,
         createdAt: record.createdAt,
       ),
     );
@@ -670,8 +747,27 @@ class PdmEngine implements DownloadEngine {
         totalBytes: record.totalBytes,
         priority: record.priority,
         maxConnections: record.maxConnections,
+        mirrors: record.mirrors,
+        tags: record.tags,
         createdAt: record.createdAt,
       ),
+    );
+  }
+
+  @override
+  Future<void> addMirror(String downloadId, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      throw const DownloadError(
+        'invalid-url',
+        'URL must start with http:// or https://',
+      );
+    }
+    final record = _store.getDownload(downloadId);
+    if (record == null) return;
+    if (record.mirrors.contains(url)) return;
+    _store.upsertDownload(
+      record.copyWith(mirrors: [...record.mirrors, url]),
     );
   }
 

@@ -456,6 +456,17 @@ void main() {
       verify(() => engine.listDownloads()).called(2);
     });
 
+    test('addMirror forwards to the engine', () async {
+      when(
+        () => engine.addMirror(any(), any()),
+      ).thenAnswer((_) async {});
+      final source = datasource();
+      addTearDown(source.dispose);
+      await source.addMirror('dl-1', 'http://127.0.0.1:9/m.bin');
+      verify(() => engine.addMirror('dl-1', 'http://127.0.0.1:9/m.bin'))
+          .called(1);
+    });
+
     test('checkForUpdate forwards to the engine', () async {
       when(
         () => engine.checkForUpdate(any()),

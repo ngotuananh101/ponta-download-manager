@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:download_api/download_api.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -44,6 +46,8 @@ class DownloadStore {
           max_connections INTEGER NOT NULL DEFAULT 4,
           error_code TEXT,
           error_message TEXT,
+          mirrors TEXT,
+          tags TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -64,6 +68,16 @@ class DownloadStore {
       ''');
       _db.userVersion = 1;
     }
+    // Only a database that already existed at v1 (created by the
+    // old code, without the columns) needs the ALTER: a fresh
+    // database just created the tables WITH them.
+    if (version == 1) {
+      // Mirrors and tags, stored as JSON text.
+      _db.execute('ALTER TABLE downloads ADD COLUMN mirrors TEXT;');
+      _db.execute('ALTER TABLE downloads ADD COLUMN tags TEXT;');
+    }
+    // Both paths end at the same schema.
+    _db.userVersion = 2;
   }
 
   void upsertDownload(DownloadRecord record) {
@@ -74,8 +88,8 @@ class DownloadStore {
         id, url, final_url, destination_path, partial_path, file_name,
         directory, total_bytes, downloaded_bytes, etag, last_modified,
         supports_range, status, priority, max_connections, error_code,
-        error_message, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        error_message, mirrors, tags, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         url = excluded.url,
         final_url = excluded.final_url,
@@ -93,6 +107,8 @@ class DownloadStore {
         max_connections = excluded.max_connections,
         error_code = excluded.error_code,
         error_message = excluded.error_message,
+        mirrors = excluded.mirrors,
+        tags = excluded.tags,
         updated_at = excluded.updated_at;
       ''',
       [
@@ -115,6 +131,8 @@ class DownloadStore {
         record.maxConnections,
         record.errorCode,
         record.errorMessage,
+        jsonEncode(record.mirrors),
+        jsonEncode(record.tags),
         record.createdAt.millisecondsSinceEpoch,
         now,
       ],
@@ -208,6 +226,11 @@ class DownloadStore {
 
   void close() => _db.dispose();
 
+  static List<String> _stringList(String? json) {
+    if (json == null || json.isEmpty) return const [];
+    return (jsonDecode(json) as List).cast<String>();
+  }
+
   DownloadRecord _recordFromRow(Row row) {
     return DownloadRecord(
       id: row['id'] as String,
@@ -227,6 +250,8 @@ class DownloadStore {
       maxConnections: row['max_connections'] as int,
       errorCode: row['error_code'] as String?,
       errorMessage: row['error_message'] as String?,
+      mirrors: _stringList(row['mirrors'] as String?),
+      tags: _stringList(row['tags'] as String?),
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         row['created_at'] as int,
       ),

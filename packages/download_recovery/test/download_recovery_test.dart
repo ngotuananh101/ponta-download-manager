@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:download_core/download_core.dart';
 import 'package:download_recovery/download_recovery.dart';
 import 'package:download_transport/download_transport.dart';
@@ -112,6 +113,8 @@ DownloadRecord makeRecord({
   int totalBytes = 1024,
   int maxConnections = 4,
   int priority = 0,
+  List<String> mirrors = const [],
+  List<String> tags = const [],
 }) {
   return DownloadRecord(
     id: id,
@@ -123,6 +126,8 @@ DownloadRecord makeRecord({
     totalBytes: totalBytes,
     maxConnections: maxConnections,
     priority: priority,
+    mirrors: mirrors,
+    tags: tags,
   );
 }
 
@@ -163,6 +168,93 @@ void main() {
       expect(store.listNonTerminal().length, 1);
       store.upsertDownload(record.copyWith(status: DownloadStatus.completed));
       expect(store.listNonTerminal(), isEmpty);
+    });
+
+    test('mirrors and tags round-trip through the store', () {
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final record = makeRecord(
+        mirrors: [
+          'http://127.0.0.1:9/m1.bin',
+          'http://127.0.0.1:9/m2.bin',
+        ],
+        tags: ['iso', 'large'],
+      );
+      store.upsertDownload(record);
+      final read = store.getDownload('dl-1')!;
+      expect(
+        read.mirrors,
+        ['http://127.0.0.1:9/m1.bin', 'http://127.0.0.1:9/m2.bin'],
+      );
+      expect(read.tags, ['iso', 'large']);
+    });
+
+    test('a v1 database gains the mirrors and tags columns', () {
+      final dir = Directory.systemTemp.createTempSync('pdm-migrate-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final dbPath = p.join(dir.path, 'pdm.db');
+      // Build a v1 database by hand: the old schema, user_version 1.
+      final db = sqlite3.open(dbPath);
+      db.execute('''
+        CREATE TABLE downloads (
+          id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          final_url TEXT,
+          destination_path TEXT NOT NULL,
+          partial_path TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          directory TEXT NOT NULL,
+          total_bytes INTEGER NOT NULL DEFAULT -1,
+          downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+          etag TEXT,
+          last_modified TEXT,
+          supports_range INTEGER,
+          status TEXT NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0,
+          max_connections INTEGER NOT NULL DEFAULT 4,
+          error_code TEXT,
+          error_message TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      ''');
+      db.execute('''
+        CREATE TABLE segments (
+          download_id TEXT NOT NULL,
+          segment_index INTEGER NOT NULL,
+          start_byte INTEGER NOT NULL,
+          end_byte INTEGER,
+          written_bytes INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (download_id, segment_index),
+          FOREIGN KEY (download_id) REFERENCES downloads(id)
+            ON DELETE CASCADE
+        );
+      ''');
+      db.execute(
+        "INSERT INTO downloads (id, url, destination_path, partial_path,"
+        " file_name, directory, status, created_at, updated_at)"
+        " VALUES ('dl-1', 'http://127.0.0.1:9/f.bin', '/tmp/f.bin',"
+        " '/tmp/f.bin.partial', 'f.bin', '/tmp', 'paused', 1000, 1000)",
+      );
+      db.userVersion = 1;
+      db.dispose();
+      final store = DownloadStore.open(dbPath);
+      addTearDown(store.close);
+      final read = store.getDownload('dl-1')!;
+      expect(read.url, 'http://127.0.0.1:9/f.bin');
+      expect(read.mirrors, isEmpty);
+      expect(read.tags, isEmpty);
+      store.upsertDownload(
+        read.copyWith(
+          mirrors: ['http://127.0.0.1:9/m.bin'],
+          tags: ['iso'],
+        ),
+      );
+      final reread = store.getDownload('dl-1')!;
+      expect(reread.mirrors, ['http://127.0.0.1:9/m.bin']);
+      expect(reread.tags, ['iso']);
     });
 
     test('delete removes the download and its segments', () {
@@ -252,6 +344,44 @@ void main() {
         segments.fold(0, (sum, s) => sum + s.downloaded),
         1024,
       );
+    });
+
+    test('tracking keeps the stored mirrors and tags', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-recovery-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      store.upsertDownload(
+        makeRecord(
+          mirrors: ['http://127.0.0.1:9/m.bin'],
+          tags: ['iso'],
+        ),
+      );
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final sink = _MemorySink();
+      final task = DownloadTask(
+        transport: transport,
+        sink: sink,
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 2,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: tempDir.path, fileName: 'f.bin');
+      // track() must not wipe the stored mirrors/tags, and neither
+      // must the checkpoint it writes.
+      writer.flush();
+      final record = store.getDownload('dl-1')!;
+      expect(record.mirrors, ['http://127.0.0.1:9/m.bin']);
+      expect(record.tags, ['iso']);
     });
 
     test('does not report completed before the download is finalized',

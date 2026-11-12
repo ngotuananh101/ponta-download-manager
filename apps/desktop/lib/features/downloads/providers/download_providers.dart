@@ -157,6 +157,9 @@ class DownloadsActions {
   Future<Either<Failure, Unit>> changeUrl(String id, String url) =>
       _repository.changeUrl(id, url);
 
+  Future<Either<Failure, Unit>> addMirror(String id, String url) =>
+      _repository.addMirror(id, url);
+
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id) =>
       _repository.checkForUpdate(id);
 

@@ -875,6 +875,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.state == DownloadState.failed) {
             entries.add(_menuItem('change_url', 'Change URL'));
           }
+          // An alternative URL for the same file, tried when the
+          // primary fails.
+          entries.add(_menuItem('add_mirror', 'Add mirror'));
           // Every row can export the current selection (or itself).
           entries.add(_menuItem('export', 'Export selected downloads'));
           // Delete file only: the row stays and becomes Missing.
@@ -1071,6 +1074,33 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           );
         },
       );
+      return;
+    }
+    if (action == 'add_mirror') {
+      final url = await showTextInputDialog(
+        context: context,
+        title: 'Add mirror',
+        label: 'Mirror URL',
+        initialValue: '',
+        validate: (value) {
+          if (!value.startsWith('http://') &&
+              !value.startsWith('https://')) {
+            return 'URL must start with http:// or https://';
+          }
+          return null;
+        },
+      );
+      if (!mounted) return;
+      if (url == null || url.isEmpty) return;
+      final result =
+          await ref.read(downloadsActionsProvider).addMirror(item.id, url);
+      result.fold((failure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(failure.message)),
+          );
+        }
+      }, (_) {});
       return;
     }
     if (action == 'change_url') {

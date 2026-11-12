@@ -43,6 +43,8 @@ abstract interface class DownloadRepository {
   /// Changes the download's URL and clears its stored validators.
   Future<Either<Failure, Unit>> changeUrl(String id, String url);
 
+  Future<Either<Failure, Unit>> addMirror(String id, String url);
+
   /// Checks whether the server hosts a newer version.
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id);
 
