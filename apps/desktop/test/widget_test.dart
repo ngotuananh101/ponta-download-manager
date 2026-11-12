@@ -13,6 +13,7 @@ import 'package:pdm/app/app.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
+import 'package:pdm/features/downloads/data/services/file_opener.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
@@ -35,6 +36,7 @@ Widget app({
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
   String? settingsPath,
+  FileOpener? fileOpener,
 }) {
   return ProviderScope(
     overrides: [
@@ -45,6 +47,8 @@ Widget app({
         fileConflictSettingsProvider.overrideWithValue(
           FileConflictSettings(filePath: settingsPath),
         ),
+      if (fileOpener != null)
+        fileOpenerProvider.overrideWithValue(fileOpener),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -61,6 +65,7 @@ Future<void> pumpApp(
   List<Download> downloads = const [_download],
   MockDownloadsActions? actions,
   String? settingsPath,
+  FileOpener? fileOpener,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -68,9 +73,40 @@ Future<void> pumpApp(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
-    app(downloads: downloads, actions: actions, settingsPath: settingsPath),
+    app(
+      downloads: downloads,
+      actions: actions,
+      settingsPath: settingsPath,
+      fileOpener: fileOpener,
+    ),
   );
   await tester.pumpAndSettle();
+}
+
+/// A completed row backed by a real temp file, for menu items that
+/// need a file on disk (Open, Show in folder, Delete file).
+Download completedWithFile(String filePath) {
+  return Download(
+    id: 'dl-1',
+    url: 'http://127.0.0.1:9/f.bin',
+    fileName: 'f.bin',
+    state: DownloadState.completed,
+    downloadedBytes: 1000,
+    totalBytes: 1000,
+    filePath: filePath,
+  );
+}
+
+/// A FileOpener that records every launch instead of running one.
+({FileOpener opener, List<List<String>> calls}) recordingOpener() {
+  final calls = <List<String>>[];
+  final opener = FileOpener(
+    run: (executable, args) async {
+      calls.add([executable, ...args]);
+      return ProcessResult(0, 0, '', '');
+    },
+  );
+  return (opener: opener, calls: calls);
 }
 
 /// Drives the toolbar Add download dialog for [url] through both
@@ -696,6 +732,57 @@ void main() {
     await tester.pumpAndSettle();
     expect(texts, ['http://127.0.0.1:9/f.bin']);
     expect(find.text('Link copied to clipboard'), findsOneWidget);
+  });
+
+  testWidgets('Open opens the completed file with the default app',
+      (tester) async {
+    final (:opener, :calls) = recordingOpener();
+    final dir = Directory.systemTemp.createTempSync('pdm-open-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      fileOpener: opener,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(calls, [
+      ['xdg-open', filePath],
+    ]);
+  });
+
+  testWidgets('Show in folder opens the download folder',
+      (tester) async {
+    final (:opener, :calls) = recordingOpener();
+    final dir = Directory.systemTemp.createTempSync('pdm-open-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      fileOpener: opener,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show in folder'));
+    await tester.pumpAndSettle();
+    expect(calls, [
+      ['xdg-open', dir.path],
+    ]);
+  });
+
+  testWidgets('Open and Show in folder are hidden for a downloading row',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsNothing);
+    expect(find.text('Show in folder'), findsNothing);
   });
 
   testWidgets('deleting a row calls deleteDownload', (tester) async {

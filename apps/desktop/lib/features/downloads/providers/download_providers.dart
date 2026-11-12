@@ -10,6 +10,7 @@ import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
+import 'package:pdm/features/downloads/data/services/file_opener.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
 import 'package:pdm_engine/pdm_engine.dart';
@@ -70,6 +71,11 @@ final downloadsActionsProvider = Provider<DownloadsActions>((ref) {
 /// this is true; tests override it to false so the screen renders
 /// without the native target.
 final dropTargetEnabledProvider = Provider<bool>((ref) => true);
+
+/// Opens a downloaded file or shows it in the file manager. A
+/// separate provider so tests can record launches instead of opening
+/// real files.
+final fileOpenerProvider = Provider<FileOpener>((ref) => const FileOpener());
 
 /// The remembered file-conflict choice (overwrite/rename), if any.
 /// Persisted as JSON under the app data dir. The downloads screen

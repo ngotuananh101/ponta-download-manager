@@ -819,6 +819,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         onSelected: (value) => _onRowAction(item, value),
         itemBuilder: (context) {
           final entries = <PopupMenuEntry<String>>[];
+          // File actions first, as in IDM: Open needs the finished
+          // file on disk, Show in folder only needs its path.
+          if (item.state == DownloadState.completed &&
+              _hasFinishedFile(item)) {
+            entries.add(_menuItem('open', 'Open'));
+          }
+          if (item.filePath != null) {
+            entries.add(_menuItem('show_in_folder', 'Show in folder'));
+          }
           switch (item.state) {
             case DownloadState.downloading:
             case DownloadState.queued:
@@ -849,6 +858,23 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   }
 
   Future<void> _onRowAction(Download item, String action) async {
+    if (action == 'open' || action == 'show_in_folder') {
+      final opener = ref.read(fileOpenerProvider);
+      try {
+        if (action == 'open') {
+          await opener.openFile(item.filePath!);
+        } else {
+          await opener.showInFolder(item.filePath!);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
+      }
+      return;
+    }
     if (action == 'copy_link') {
       try {
         await Clipboard.setData(ClipboardData(text: item.url));
