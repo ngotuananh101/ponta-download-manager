@@ -37,6 +37,13 @@ build once after P1 and once at the end.
 - R-P2a (items 7, 8, 9, 11, 12, 13) — DONE: item 7 `a0415ee`, item 8
   `6c7c361`, item 9 `2429811`, item 11 `e227dd9`, item 13 `2a3c1a3`,
   item 12 `6f6705f`.
+- R-P2b (items 10, 14, 15, 16, 17, 19, 20) — DONE: item 10
+  `3149d96`, item 14 `5e5b094`, item 15 `27c33b2`, item 16 `9ed86b8`,
+  item 17 `028cb63`, item 19 `51230a7`, item 20 `4b4dc9f`. Item 20 also
+  fixed a latent client-side race it exposed: `IpcClient.syncSnapshots`
+  could lose a sync arriving between the replay and the live
+  subscription; the replay and the subscription are now one
+  synchronous step.
 
 ## Batches
 
