@@ -862,6 +862,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           }
           // Every row can hand out its URL.
           entries.add(_menuItem('copy_link', 'Copy link'));
+          // A completed download can be checked against the server.
+          if (item.state == DownloadState.completed) {
+            entries.add(_menuItem('check_for_update', 'Check for update'));
+          }
           // A failed download's link may have expired.
           if (item.state == DownloadState.failed) {
             entries.add(_menuItem('change_url', 'Change URL'));
@@ -950,6 +954,55 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           );
         }
       }, (_) {});
+      return;
+    }
+    if (action == 'check_for_update') {
+      final result = await ref
+          .read(downloadsActionsProvider)
+          .checkForUpdate(item.id);
+      if (!mounted) return;
+      result.fold((failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(failure.message)),
+        );
+      }, (check) {
+        if (check.inconclusive) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not determine whether an update is available',
+              ),
+            ),
+          );
+        } else if (check.hasUpdate) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'A newer version is available '
+                '(${formatBytes(check.newTotalBytes)})',
+              ),
+              action: SnackBarAction(
+                label: 'Download',
+                onPressed: () async {
+                  final retryResult = await ref
+                      .read(downloadsActionsProvider)
+                      .retryDownload(item.id);
+                  if (!mounted) return;
+                  retryResult.fold((failure) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(failure.message)),
+                    );
+                  }, (_) {});
+                },
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('You have the latest version')),
+          );
+        }
+      });
       return;
     }
     if (action == 'change_url') {

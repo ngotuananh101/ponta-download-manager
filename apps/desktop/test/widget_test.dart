@@ -1015,6 +1015,130 @@ void main() {
     expect(find.text('Change URL'), findsNothing);
   });
 
+  testWidgets('Check for update reports up to date', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.checkForUpdate(any()),
+    ).thenAnswer(
+      (_) async => const Right(
+        UpdateCheckResult(
+          hasUpdate: false,
+          inconclusive: false,
+          newTotalBytes: 1000,
+        ),
+      ),
+    );
+    final dir = Directory.systemTemp.createTempSync('pdm-update-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check for update'));
+    await tester.pumpAndSettle();
+    expect(find.text('You have the latest version'), findsOneWidget);
+    verify(() => actions.checkForUpdate('dl-1')).called(1);
+  });
+
+  testWidgets('Check for update offers to download the newer version',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.checkForUpdate(any()),
+    ).thenAnswer(
+      (_) async => const Right(
+        UpdateCheckResult(
+          hasUpdate: true,
+          inconclusive: false,
+          newTotalBytes: 2048,
+        ),
+      ),
+    );
+    when(
+      () => actions.retryDownload(any()),
+    ).thenAnswer((_) async => const Right(unit));
+    final dir = Directory.systemTemp.createTempSync('pdm-update-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check for update'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('A newer version is available (2.0 KiB)'),
+      findsOneWidget,
+    );
+    // 'Download' also matches the table's Download column header,
+    // so scope the tap to the snackbar's action.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Download'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    verify(() => actions.retryDownload('dl-1')).called(1);
+  });
+
+  testWidgets('Check for update reports when it cannot tell',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.checkForUpdate(any()),
+    ).thenAnswer(
+      (_) async => const Right(
+        UpdateCheckResult(
+          hasUpdate: false,
+          inconclusive: true,
+          newTotalBytes: -1,
+        ),
+      ),
+    );
+    final dir = Directory.systemTemp.createTempSync('pdm-update-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check for update'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Could not determine whether an update is available'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Check for update is hidden for a failed row',
+      (tester) async {
+    const failed = Download(
+      id: 'dl-1',
+      url: 'http://127.0.0.1:9/f.bin',
+      fileName: 'f.bin',
+      state: DownloadState.failed,
+      totalBytes: 1000,
+    );
+    await pumpApp(tester, downloads: [failed]);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check for update'), findsNothing);
+  });
+
   testWidgets('deleting a row calls deleteDownload', (tester) async {
     final actions = MockDownloadsActions();
     when(

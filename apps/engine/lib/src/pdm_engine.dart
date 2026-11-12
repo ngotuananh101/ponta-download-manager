@@ -675,6 +675,40 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<UpdateCheckResult> checkForUpdate(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      throw const DownloadError('not-found', 'Download not found');
+    }
+    if (_isStreamingPlaylist(record.url)) {
+      // yt-dlp decides the size at download time; probing the
+      // playlist file itself would report the playlist's own size.
+      return const UpdateCheckResult(
+        hasUpdate: false,
+        inconclusive: true,
+        newTotalBytes: -1,
+      );
+    }
+    final info = await _transport.probe(Uri.parse(record.url));
+    final newSize = info.contentLength;
+    // The record does not store the server's eTag / lastModified
+    // (the engine never persists response validators), so the size
+    // is the only comparable signal.
+    if (newSize == null || record.totalBytes < 0) {
+      return UpdateCheckResult(
+        hasUpdate: false,
+        inconclusive: true,
+        newTotalBytes: newSize ?? -1,
+      );
+    }
+    return UpdateCheckResult(
+      hasUpdate: newSize != record.totalBytes,
+      inconclusive: false,
+      newTotalBytes: newSize,
+    );
+  }
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     _scheduler.setPriority(downloadId, priority);
     final record = _store.getDownload(downloadId);

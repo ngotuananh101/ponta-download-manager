@@ -93,6 +93,14 @@ class FakeEngine implements DownloadEngine {
   Future<void> changeUrl(String downloadId, String url) async {}
 
   @override
+  Future<UpdateCheckResult> checkForUpdate(String downloadId) async =>
+      const UpdateCheckResult(
+        hasUpdate: false,
+        inconclusive: false,
+        newTotalBytes: 0,
+      );
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {
     calls.add('setPriority:$downloadId:$priority');
   }

@@ -31,7 +31,9 @@ class _TestServer {
     this.chunkSize = 256,
   });
 
-  final List<int> data;
+  // Mutable on purpose: a test can swap the hosted file between
+  // requests, so the same URL reports a different size.
+  List<int> data;
   final Duration chunkDelay;
   final int failFirst;
 
@@ -773,6 +775,98 @@ void main() {
       await engine.changeUrl('nope', 'http://127.0.0.1:9/g.bin');
     });
 
+    test('checkForUpdate reports up to date when the size matches',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final result = await engine.checkForUpdate(info.id);
+      expect(result.hasUpdate, isFalse);
+      expect(result.inconclusive, isFalse);
+      expect(result.newTotalBytes, 2048);
+    });
+
+    test('checkForUpdate reports an update when the size changed',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      // The server now hosts a bigger file at the same URL.
+      server.data = bytesOf(4096);
+      final result = await engine.checkForUpdate(info.id);
+      expect(result.hasUpdate, isTrue);
+      expect(result.inconclusive, isFalse);
+      expect(result.newTotalBytes, 4096);
+    });
+
+    test('checkForUpdate is inconclusive when the record has no size',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      final result = await engine.checkForUpdate(info.id);
+      expect(result.hasUpdate, isFalse);
+      expect(result.inconclusive, isTrue);
+      expect(result.newTotalBytes, 2048);
+    });
+
+    test('checkForUpdate with an unknown id throws', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      await expectLater(
+        engine.checkForUpdate('nope'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'not-found'),
+        ),
+      );
+    });
+
+    test('checkForUpdate propagates a probe failure', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await expectLater(
+        engine.checkForUpdate(info.id),
+        throwsA(isA<DownloadError>()),
+      );
+    });
+
     test(
         'deleteDownload with deleteFile and no file on disk still removes the record',
         () async {
@@ -1263,6 +1357,32 @@ exit 0
       expect(File(p.join(other.path, 'live.mp4')).existsSync(), isTrue);
       final listed = await engine.listDownloads();
       expect(listed.single.filePath, p.join(other.path, 'live.mp4'));
+    });
+
+    test('checkForUpdate is inconclusive for a playlist URL', () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final result = await engine.checkForUpdate(info.id);
+      expect(result.hasUpdate, isFalse);
+      expect(result.inconclusive, isTrue);
+      expect(result.newTotalBytes, -1);
     });
 
     test('createDownload with paused stores a paused playlist without starting it',

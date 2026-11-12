@@ -149,6 +149,9 @@ class DownloadsActions {
   Future<Either<Failure, Unit>> changeUrl(String id, String url) =>
       _repository.changeUrl(id, url);
 
+  Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id) =>
+      _repository.checkForUpdate(id);
+
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _repository.setGlobalBandwidthLimit(bytesPerSecond);

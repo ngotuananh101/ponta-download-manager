@@ -43,6 +43,9 @@ abstract interface class DownloadRepository {
   /// Changes the download's URL and clears its stored validators.
   Future<Either<Failure, Unit>> changeUrl(String id, String url);
 
+  /// Checks whether the server hosts a newer version.
+  Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id);
+
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 

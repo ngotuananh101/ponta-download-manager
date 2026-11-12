@@ -280,6 +280,11 @@ class EngineDownloadDatasource {
     await _refreshDownload(id);
   }
 
+  /// Checks the server for a newer version. Read-only: nothing is
+  /// written, so no refresh is needed.
+  Future<UpdateCheckResult> checkForUpdate(String id) =>
+      engine.checkForUpdate(id);
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

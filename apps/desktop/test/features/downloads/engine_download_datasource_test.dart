@@ -456,6 +456,23 @@ void main() {
       verify(() => engine.listDownloads()).called(2);
     });
 
+    test('checkForUpdate forwards to the engine', () async {
+      when(
+        () => engine.checkForUpdate(any()),
+      ).thenAnswer(
+        (_) async => const UpdateCheckResult(
+          hasUpdate: false,
+          inconclusive: false,
+          newTotalBytes: 2048,
+        ),
+      );
+      final source = datasource();
+      addTearDown(source.dispose);
+      final result = await source.checkForUpdate('dl-1');
+      expect(result.hasUpdate, isFalse);
+      verify(() => engine.checkForUpdate('dl-1')).called(1);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

@@ -240,6 +240,24 @@ void main() {
           .called(1);
     });
 
+    test('checkForUpdate forwards to the datasource', () async {
+      when(
+        () => datasource.checkForUpdate(any()),
+      ).thenAnswer(
+        (_) async => const UpdateCheckResult(
+          hasUpdate: true,
+          inconclusive: false,
+          newTotalBytes: 4096,
+        ),
+      );
+      final result = await repository.checkForUpdate('dl-1');
+      result.fold(
+        (l) => fail('expected right, got $l'),
+        (r) => expect(r.hasUpdate, isTrue),
+      );
+      verify(() => datasource.checkForUpdate('dl-1')).called(1);
+    });
+
     test('deleteDownload forwards the deleteFile flag', () async {
       when(
         () => datasource.deleteDownload(

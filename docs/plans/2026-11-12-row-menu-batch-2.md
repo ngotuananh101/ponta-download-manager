@@ -157,12 +157,17 @@ engine methods.
   in `packages/download_api`. Unknown id → `DownloadError`
   with the not-found code the repository already maps. A
   playlist URL → inconclusive (no size signal). Otherwise probe
-  with `_transport.probe` and compare: `hasUpdate` when the
-  eTag differs (both present), the size differs (both known), or
-  `lastModified` differs (both present); `inconclusive` when no
-  comparable signal exists (no eTag on either side and no size).
-  Probe errors propagate. Read-only: the record is never
-  written.
+  with `_transport.probe` and compare SIZES ONLY: `hasUpdate`
+  when the server's size differs from the record's `totalBytes`
+  (both known); `inconclusive` when the server reports no size
+  or the record has none. Probe errors propagate. Read-only: the
+  record is never written.
+  - CORRECTION 2026-11-12 (found while implementing): the record
+  never stores the server's eTag / lastModified — the engine
+  never persists response validators — so no eTag/lastModified
+  comparison is possible yet. Comparing them is a follow-up once
+  the engine stores response headers. The research doc's "record
+  stores eTag" was wrong.
 - Desktop: datasource `checkForUpdate(id)` → engine call;
   repository + actions passthrough (returns
   `Either<Failure, UpdateCheckResult>`).

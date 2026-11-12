@@ -1,5 +1,6 @@
 import 'package:download_api/src/models/create_download_request.dart';
 import 'package:download_api/src/models/probe_result.dart';
+import 'package:download_api/src/models/update_check_result.dart';
 import 'package:download_api/src/models/download_event.dart';
 import 'package:download_api/src/models/download_info.dart';
 import 'package:download_api/src/models/download_segment.dart';
@@ -52,6 +53,12 @@ abstract interface class DownloadEngine {
   /// lastModified belong to the old URL. Throws [DownloadError]
   /// `invalid-url` when the URL is not http(s).
   Future<void> changeUrl(String downloadId, String url);
+
+  /// Checks whether the server hosts a newer version of a download,
+  /// comparing the server's reported size with the stored one.
+  /// Throws [DownloadError] when the download is unknown or the
+  /// probe fails.
+  Future<UpdateCheckResult> checkForUpdate(String downloadId);
 
   Future<void> setPriority(String downloadId, int priority);
 
