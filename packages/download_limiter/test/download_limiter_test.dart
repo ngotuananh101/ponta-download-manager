@@ -169,6 +169,20 @@ void main() {
       await bucket.acquire(2048);
       expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(800));
     });
+
+    test('a small request skips ahead of a large one that does not fit',
+        () async {
+      final bucket = TokenBucket(rateBytesPerSecond: 1024);
+      addTearDown(bucket.dispose);
+      // The large request needs ~3 s of refill (burst 1024, deficit
+      // 3072 at rate 1024); the small one fits the tokens on hand.
+      final large = bucket.acquire(4096);
+      final stopwatch = Stopwatch()..start();
+      await bucket.acquire(512);
+      expect(stopwatch.elapsedMilliseconds, lessThan(500));
+      // The large request still completes once the refill covers it.
+      await large;
+    });
   });
 
   group('BandwidthLimiter', () {

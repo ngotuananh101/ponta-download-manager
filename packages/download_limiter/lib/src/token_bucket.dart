@@ -19,7 +19,10 @@ class _PendingRequest {
 /// [rateBytesPerSecond], capped at the burst (default: one second of
 /// rate). Requests wait in a queue ordered by priority desc, arrival
 /// asc, so higher-priority work is served first and same-priority
-/// work is served fairly in arrival order.
+/// work is served fairly in arrival order. A request that does not
+/// fit the tokens on hand yet does not block smaller requests behind
+/// it: any queued request whose bytes fit the current tokens is
+/// served, in queue order.
 ///
 /// A null rate is unlimited: requests pass immediately.
 class TokenBucket {
@@ -133,21 +136,32 @@ class TokenBucket {
       return;
     }
     _refill();
-    while (_pending.isNotEmpty) {
-      final head = _pending.first;
-      if (_tokens >= head.bytes) {
-        _tokens -= head.bytes;
-        _pending.removeAt(0);
-        head.completer.complete();
+    // Skip-ahead: serve every queued request whose bytes fit the
+    // tokens on hand, in queue order. A large request at the head
+    // waits for the refill without blocking smaller ones behind it.
+    var i = 0;
+    while (i < _pending.length) {
+      final request = _pending[i];
+      if (_tokens >= request.bytes) {
+        _tokens -= request.bytes;
+        _pending.removeAt(i);
+        request.completer.complete();
+        // Do not advance i: the next request shifted into this slot.
       } else {
-        final deficit = head.bytes - _tokens;
-        final wait = Duration(
-          microseconds: (deficit / _rate! * 1000000).ceil(),
-        );
-        _timer?.cancel();
-        _timer = Timer(wait, _pump);
-        return;
+        i++;
       }
+    }
+    if (_pending.isNotEmpty) {
+      // No remaining request fits yet; wake when the refill covers
+      // the first remaining request's deficit.
+      final first = _pending.first;
+      final deficit = first.bytes - _tokens;
+      final wait = Duration(
+        microseconds: (deficit / _rate! * 1000000).ceil(),
+      );
+      _timer?.cancel();
+      _timer = Timer(wait, _pump);
+      return;
     }
     _timer?.cancel();
     _timer = null;
