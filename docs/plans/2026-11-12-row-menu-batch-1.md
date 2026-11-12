@@ -1,6 +1,23 @@
 # Plan: row menu Batch 1 — Copy link, Open, Show in folder, Set priority, Delete file — 2026-11-12
 
-## Status: IN PROGRESS 2026-11-12
+## Status: DONE 2026-11-12
+
+Commits (all pushed): B1.1 Copy link `d6ad9ae`, B1.2 Open + Show in
+folder `4ee5ca9`, B1.3 Set priority `8e75100`, B1.4 Delete file
+`e0e2bab`.
+
+## Outcome notes
+
+- The Set priority submenu works as designed: `SubmenuButton`
+  inside a `PopupMenuItem` opens on tap, and choosing a priority
+  calls the action. The one wrinkle: the submenu closes itself but
+  leaves the parent popup open, so the submenu item's `onPressed`
+  also pops the parent route (`Navigator.of(context).pop()`) before
+  running the action. Covered by the widget test that asserts the
+  whole menu is gone after the choice.
+- "Remove from list" stayed out of scope: the delete dialog's
+  keep-file choice already does it, and Tuấn Anh did not contradict
+  that recommendation when he chose Batch 1.
 
 ## Goal
 
