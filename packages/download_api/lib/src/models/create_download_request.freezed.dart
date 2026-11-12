@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$CreateDownloadRequest {
 
- String get url; String get destination; int? get maxConnections; int? get priority; FileConflictPolicy? get conflictPolicy;
+ String get url; String get destination; int? get maxConnections; int? get priority; FileConflictPolicy? get conflictPolicy; bool get paused;
 /// Create a copy of CreateDownloadRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $CreateDownloadRequestCopyWith<CreateDownloadRequest> get copyWith => _$CreateDo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CreateDownloadRequest&&(identical(other.url, url) || other.url == url)&&(identical(other.destination, destination) || other.destination == destination)&&(identical(other.maxConnections, maxConnections) || other.maxConnections == maxConnections)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.conflictPolicy, conflictPolicy) || other.conflictPolicy == conflictPolicy));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CreateDownloadRequest&&(identical(other.url, url) || other.url == url)&&(identical(other.destination, destination) || other.destination == destination)&&(identical(other.maxConnections, maxConnections) || other.maxConnections == maxConnections)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.conflictPolicy, conflictPolicy) || other.conflictPolicy == conflictPolicy)&&(identical(other.paused, paused) || other.paused == paused));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,url,destination,maxConnections,priority,conflictPolicy);
+int get hashCode => Object.hash(runtimeType,url,destination,maxConnections,priority,conflictPolicy,paused);
 
 @override
 String toString() {
-  return 'CreateDownloadRequest(url: $url, destination: $destination, maxConnections: $maxConnections, priority: $priority, conflictPolicy: $conflictPolicy)';
+  return 'CreateDownloadRequest(url: $url, destination: $destination, maxConnections: $maxConnections, priority: $priority, conflictPolicy: $conflictPolicy, paused: $paused)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $CreateDownloadRequestCopyWith<$Res>  {
   factory $CreateDownloadRequestCopyWith(CreateDownloadRequest value, $Res Function(CreateDownloadRequest) _then) = _$CreateDownloadRequestCopyWithImpl;
 @useResult
 $Res call({
- String url, String destination, int? maxConnections, int? priority, FileConflictPolicy? conflictPolicy
+ String url, String destination, int? maxConnections, int? priority, FileConflictPolicy? conflictPolicy, bool paused
 });
 
 
@@ -65,14 +65,15 @@ class _$CreateDownloadRequestCopyWithImpl<$Res>
 
 /// Create a copy of CreateDownloadRequest
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? url = null,Object? destination = null,Object? maxConnections = freezed,Object? priority = freezed,Object? conflictPolicy = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? url = null,Object? destination = null,Object? maxConnections = freezed,Object? priority = freezed,Object? conflictPolicy = freezed,Object? paused = null,}) {
   return _then(_self.copyWith(
 url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
 as String,destination: null == destination ? _self.destination : destination // ignore: cast_nullable_to_non_nullable
 as String,maxConnections: freezed == maxConnections ? _self.maxConnections : maxConnections // ignore: cast_nullable_to_non_nullable
 as int?,priority: freezed == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
 as int?,conflictPolicy: freezed == conflictPolicy ? _self.conflictPolicy : conflictPolicy // ignore: cast_nullable_to_non_nullable
-as FileConflictPolicy?,
+as FileConflictPolicy?,paused: null == paused ? _self.paused : paused // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 
@@ -157,10 +158,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy,  bool paused)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CreateDownloadRequest() when $default != null:
-return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy);case _:
+return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy,_that.paused);case _:
   return orElse();
 
 }
@@ -178,10 +179,10 @@ return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy,  bool paused)  $default,) {final _that = this;
 switch (_that) {
 case _CreateDownloadRequest():
-return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy);case _:
+return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy,_that.paused);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -198,10 +199,10 @@ return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String url,  String destination,  int? maxConnections,  int? priority,  FileConflictPolicy? conflictPolicy,  bool paused)?  $default,) {final _that = this;
 switch (_that) {
 case _CreateDownloadRequest() when $default != null:
-return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy);case _:
+return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,_that.conflictPolicy,_that.paused);case _:
   return null;
 
 }
@@ -213,7 +214,7 @@ return $default(_that.url,_that.destination,_that.maxConnections,_that.priority,
 @JsonSerializable()
 
 class _CreateDownloadRequest implements CreateDownloadRequest {
-  const _CreateDownloadRequest({required this.url, required this.destination, this.maxConnections, this.priority, this.conflictPolicy});
+  const _CreateDownloadRequest({required this.url, required this.destination, this.maxConnections, this.priority, this.conflictPolicy, this.paused = false});
   factory _CreateDownloadRequest.fromJson(Map<String, dynamic> json) => _$CreateDownloadRequestFromJson(json);
 
 @override final  String url;
@@ -221,6 +222,7 @@ class _CreateDownloadRequest implements CreateDownloadRequest {
 @override final  int? maxConnections;
 @override final  int? priority;
 @override final  FileConflictPolicy? conflictPolicy;
+@override@JsonKey() final  bool paused;
 
 /// Create a copy of CreateDownloadRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -235,16 +237,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CreateDownloadRequest&&(identical(other.url, url) || other.url == url)&&(identical(other.destination, destination) || other.destination == destination)&&(identical(other.maxConnections, maxConnections) || other.maxConnections == maxConnections)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.conflictPolicy, conflictPolicy) || other.conflictPolicy == conflictPolicy));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CreateDownloadRequest&&(identical(other.url, url) || other.url == url)&&(identical(other.destination, destination) || other.destination == destination)&&(identical(other.maxConnections, maxConnections) || other.maxConnections == maxConnections)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.conflictPolicy, conflictPolicy) || other.conflictPolicy == conflictPolicy)&&(identical(other.paused, paused) || other.paused == paused));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,url,destination,maxConnections,priority,conflictPolicy);
+int get hashCode => Object.hash(runtimeType,url,destination,maxConnections,priority,conflictPolicy,paused);
 
 @override
 String toString() {
-  return 'CreateDownloadRequest(url: $url, destination: $destination, maxConnections: $maxConnections, priority: $priority, conflictPolicy: $conflictPolicy)';
+  return 'CreateDownloadRequest(url: $url, destination: $destination, maxConnections: $maxConnections, priority: $priority, conflictPolicy: $conflictPolicy, paused: $paused)';
 }
 
 
@@ -255,7 +257,7 @@ abstract mixin class _$CreateDownloadRequestCopyWith<$Res> implements $CreateDow
   factory _$CreateDownloadRequestCopyWith(_CreateDownloadRequest value, $Res Function(_CreateDownloadRequest) _then) = __$CreateDownloadRequestCopyWithImpl;
 @override @useResult
 $Res call({
- String url, String destination, int? maxConnections, int? priority, FileConflictPolicy? conflictPolicy
+ String url, String destination, int? maxConnections, int? priority, FileConflictPolicy? conflictPolicy, bool paused
 });
 
 
@@ -272,14 +274,15 @@ class __$CreateDownloadRequestCopyWithImpl<$Res>
 
 /// Create a copy of CreateDownloadRequest
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? url = null,Object? destination = null,Object? maxConnections = freezed,Object? priority = freezed,Object? conflictPolicy = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? url = null,Object? destination = null,Object? maxConnections = freezed,Object? priority = freezed,Object? conflictPolicy = freezed,Object? paused = null,}) {
   return _then(_CreateDownloadRequest(
 url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
 as String,destination: null == destination ? _self.destination : destination // ignore: cast_nullable_to_non_nullable
 as String,maxConnections: freezed == maxConnections ? _self.maxConnections : maxConnections // ignore: cast_nullable_to_non_nullable
 as int?,priority: freezed == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
 as int?,conflictPolicy: freezed == conflictPolicy ? _self.conflictPolicy : conflictPolicy // ignore: cast_nullable_to_non_nullable
-as FileConflictPolicy?,
+as FileConflictPolicy?,paused: null == paused ? _self.paused : paused // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

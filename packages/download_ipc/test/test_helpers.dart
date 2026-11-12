@@ -104,6 +104,10 @@ class FakeEngine implements DownloadEngine {
     return segments[downloadId] ?? [];
   }
 
+  @override
+  Future<ProbeResult> probeUrl(String url) async =>
+      ProbeResult(url: url, fileName: 'f.bin', totalBytes: 1000);
+
   void _setStatus(String id, DownloadStatus status) {
     final info = infos[id];
     if (info != null) {

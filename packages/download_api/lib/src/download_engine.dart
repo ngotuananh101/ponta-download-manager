@@ -1,4 +1,5 @@
 import 'package:download_api/src/models/create_download_request.dart';
+import 'package:download_api/src/models/probe_result.dart';
 import 'package:download_api/src/models/download_event.dart';
 import 'package:download_api/src/models/download_info.dart';
 import 'package:download_api/src/models/download_segment.dart';
@@ -7,6 +8,11 @@ import 'package:download_api/src/models/download_segment.dart';
 /// The UI talks to this interface, never to internal segment workers.
 abstract interface class DownloadEngine {
   Future<DownloadInfo> createDownload(CreateDownloadRequest request);
+
+  /// Probes a URL before creating a download: the file name the server
+  /// reports (or the URL's last segment) and the total size, -1 when
+  /// unknown. Throws [DownloadError] when the URL is unreachable.
+  Future<ProbeResult> probeUrl(String url);
 
   Future<void> pauseDownload(String downloadId);
 

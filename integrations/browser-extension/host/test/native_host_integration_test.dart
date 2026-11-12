@@ -67,6 +67,10 @@ class FakeEngine implements DownloadEngine {
 
   @override
   Future<List<DownloadSegment>> getSegments(String downloadId) async => [];
+
+  @override
+  Future<ProbeResult> probeUrl(String url) async =>
+      ProbeResult(url: url, fileName: 'f.bin', totalBytes: 1000);
 }
 
 (IpcChannel, IpcChannel) channelPair() {

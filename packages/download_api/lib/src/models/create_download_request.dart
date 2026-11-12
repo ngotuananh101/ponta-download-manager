@@ -13,6 +13,7 @@ abstract class CreateDownloadRequest with _$CreateDownloadRequest {
     int? maxConnections,
     int? priority,
     FileConflictPolicy? conflictPolicy,
+    @Default(false) bool paused,
   }) = _CreateDownloadRequest;
 
   factory CreateDownloadRequest.fromJson(Map<String, dynamic> json) =>

@@ -17,6 +17,7 @@ _CreateDownloadRequest _$CreateDownloadRequestFromJson(
     _$FileConflictPolicyEnumMap,
     json['conflictPolicy'],
   ),
+  paused: json['paused'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$CreateDownloadRequestToJson(
@@ -27,6 +28,7 @@ Map<String, dynamic> _$CreateDownloadRequestToJson(
   'maxConnections': instance.maxConnections,
   'priority': instance.priority,
   'conflictPolicy': _$FileConflictPolicyEnumMap[instance.conflictPolicy],
+  'paused': instance.paused,
 };
 
 const _$FileConflictPolicyEnumMap = {
