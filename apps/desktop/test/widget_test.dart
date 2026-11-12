@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pdm/app/app.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/core/services/window_service.dart';
 import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
 import 'package:pdm/features/downloads/data/services/file_opener.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
@@ -40,6 +41,7 @@ Widget app({
   Future<String?> Function()? directoryPicker,
   Future<String?> Function(String fileName)? saveFile,
   Future<String?> Function()? pickFile,
+  Future<void> Function()? quitApp,
 }) {
   return ProviderScope(
     overrides: [
@@ -58,6 +60,7 @@ Widget app({
         saveFileProvider.overrideWithValue(saveFile),
       if (pickFile != null)
         pickFileProvider.overrideWithValue(pickFile),
+      if (quitApp != null) quitAppProvider.overrideWithValue(quitApp),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -78,6 +81,7 @@ Future<void> pumpApp(
   Future<String?> Function()? directoryPicker,
   Future<String?> Function(String fileName)? saveFile,
   Future<String?> Function()? pickFile,
+  Future<void> Function()? quitApp,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -93,6 +97,7 @@ Future<void> pumpApp(
       directoryPicker: directoryPicker,
       saveFile: saveFile,
       pickFile: pickFile,
+      quitApp: quitApp,
     ),
   );
   await tester.pumpAndSettle();
@@ -1821,23 +1826,33 @@ void main() {
     expect(find.text('Paste urls from clipboard'), findsOneWidget);
     expect(find.text('Paste urls from file'), findsOneWidget);
     expect(find.text('Export/Import'), findsOneWidget);
+    expect(find.text('About'), findsOneWidget);
+    expect(find.text('Quit'), findsOneWidget);
     final menuText = tester.widget<Text>(find.text('Pause all'));
     expect(menuText.style?.fontSize, 12);
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 5);
+    expect(items.length, 7);
     expect(items.every((item) => item.height == 32), isTrue);
-    // Pause/Resume | paste actions.
-    final divider = find.byType(PopupMenuDivider);
-    expect(divider, findsOneWidget);
+    // Pause/Resume | paste actions | Export/Import | About, Quit.
+    final dividers = find.byType(PopupMenuDivider);
+    expect(dividers, findsNWidgets(2));
     expect(
-      tester.getCenter(divider).dy,
+      tester.getCenter(dividers.at(0)).dy,
       greaterThan(tester.getCenter(find.text('Resume all')).dy),
     );
     expect(
-      tester.getCenter(divider).dy,
+      tester.getCenter(dividers.at(0)).dy,
       lessThan(tester.getCenter(find.text('Paste urls from clipboard')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(1)).dy,
+      greaterThan(tester.getCenter(find.text('Export/Import')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(1)).dy,
+      lessThan(tester.getCenter(find.text('About')).dy),
     );
   });
 
@@ -2120,6 +2135,48 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Could not import settings'), findsOneWidget);
     expect(File(settingsPath).existsSync(), isFalse);
+  });
+
+  testWidgets('About opens a dialog with the app name and version',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
+    // The title bar already shows the app name, so scope the dialog
+    // assertions to the dialog itself.
+    final dialog = find.byType(PdmDialog);
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('Ponta Download Manager'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('Version 0.1.0')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PdmDialog), findsNothing);
+  });
+
+  testWidgets('Quit calls the quit action', (tester) async {
+    var quitCalls = 0;
+    await pumpApp(
+      tester,
+      quitApp: () async {
+        quitCalls++;
+      },
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quit'));
+    await tester.pumpAndSettle();
+    expect(quitCalls, 1);
   });
 
   testWidgets('the row menu uses xs text in compact rows',

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:logging/logging.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 // window_manager 0.6 re-exports nativeapi's windowing API; the tray and window
 // types here all come from nativeapi, so this file names its source directly
 // instead of going through the re-export.
@@ -233,6 +234,15 @@ class WindowService extends _$WindowService {
     currentWindow()?.hide();
   }
 }
+
+/// Quits the app for real, through the [WindowService].
+///
+/// A plain provider (not generated) so widget tests can override it
+/// with a recording stub: building the real service starts the tray,
+/// which cannot run in a widget test.
+final quitAppProvider = Provider<Future<void> Function()>(
+  (ref) => () => ref.read(windowServiceProvider.notifier).quit(),
+);
 
 /// Owns every native wrapper created for one context menu.
 ///

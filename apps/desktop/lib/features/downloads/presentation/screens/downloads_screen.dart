@@ -7,9 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdm/app/about_dialog.dart';
 import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/core/services/window_service.dart';
 import 'package:pdm/features/downloads/data/services/download_export.dart';
 import 'package:pdm/features/downloads/data/services/url_list.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
@@ -296,6 +298,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 _menuItem('paste-clipboard', 'Paste urls from clipboard'),
                 _menuItem('paste-file', 'Paste urls from file'),
                 _exportImportSubmenu(),
+                const PopupMenuDivider(),
+                _menuItem('about', 'About'),
+                _menuItem('quit', 'Quit'),
               ],
               // An explicit child (not the icon form): the icon form
               // builds an IconButton whose 48px minimum survives both
@@ -440,6 +445,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         await _pasteUrlsFromClipboard();
       case 'paste-file':
         await _pasteUrlsFromFile();
+      case 'about':
+        await showPdmAboutDialog(context: context);
+      case 'quit':
+        await ref.read(quitAppProvider)();
     }
   }
 
