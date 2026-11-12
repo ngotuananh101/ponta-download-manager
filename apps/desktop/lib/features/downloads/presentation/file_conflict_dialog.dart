@@ -1,6 +1,7 @@
 import 'package:download_api/download_api.dart';
 import 'package:flutter/material.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
+import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
 /// The user's answer to the file-exists dialog: which policy to apply
 /// for this download, and whether to remember it for the next conflict.
@@ -24,9 +25,21 @@ Future<FileConflictDecision?> showFileConflictDialog({
   return showDialog<FileConflictDecision>(
     context: context,
     builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('File already exists'),
-        content: Column(
+      builder: (context, setState) => PdmDialog(
+        title: 'File already exists',
+        actions: [
+          PdmDialogButton.secondary(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          PdmDialogButton.primary(
+            label: 'Download',
+            onPressed: () => Navigator.of(context).pop(
+              FileConflictDecision(policy: policy, remember: remember),
+            ),
+          ),
+        ],
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -66,18 +79,6 @@ Future<FileConflictDecision?> showFileConflictDialog({
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(
-              FileConflictDecision(policy: policy, remember: remember),
-            ),
-            child: const Text('Download'),
-          ),
-        ],
       ),
     ),
   );

@@ -16,6 +16,7 @@ import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
 class MockDownloadsActions extends Mock implements DownloadsActions {}
 
@@ -76,7 +77,7 @@ Future<void> addDownloadViaDialog(WidgetTester tester, String url) async {
   await tester.tap(find.text('Add download'));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField).last, url);
-  await tester.tap(find.text('Add'));
+  await tester.tap(find.text('ADD'));
   await tester.pumpAndSettle();
 }
 
@@ -313,7 +314,24 @@ void main() {
     await pumpApp(tester, downloads: const []);
     await tester.tap(find.text('Drag-and-drop URL or torrent file'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(PdmDialog), findsNothing);
+  });
+
+  testWidgets('the add dialog closes with the X button', (tester) async {
+    final actions = MockDownloadsActions();
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PdmDialog), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.byTooltip('Close'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(PdmDialog), findsNothing);
+    verifyNever(() => actions.addDownload(any()));
   });
 
   testWidgets('only a selected row has a background fill',
@@ -1080,7 +1098,7 @@ void main() {
       settingsPath: fixture.settingsPath,
     );
     await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
-    final dialog = find.byType(AlertDialog);
+    final dialog = find.byType(PdmDialog);
     expect(
       find.descendant(of: dialog, matching: find.text('File already exists')),
       findsOneWidget,
@@ -1137,7 +1155,7 @@ void main() {
       settingsPath: fixture.settingsPath,
     );
     await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
-    final dialog = find.byType(AlertDialog);
+    final dialog = find.byType(PdmDialog);
     await tester.tap(
       find.descendant(
         of: dialog,
@@ -1145,7 +1163,7 @@ void main() {
       ),
     );
     await tester.tap(
-      find.descendant(of: dialog, matching: find.text('Download')),
+      find.descendant(of: dialog, matching: find.text('DOWNLOAD')),
     );
     await tester.pumpAndSettle();
     expect(policies, [null, FileConflictPolicy.rename]);
@@ -1187,12 +1205,12 @@ void main() {
       settingsPath: fixture.settingsPath,
     );
     await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
-    final dialog = find.byType(AlertDialog);
+    final dialog = find.byType(PdmDialog);
     await tester.tap(
       find.descendant(of: dialog, matching: find.text('Overwrite')),
     );
     await tester.tap(
-      find.descendant(of: dialog, matching: find.text('Download')),
+      find.descendant(of: dialog, matching: find.text('DOWNLOAD')),
     );
     await tester.pumpAndSettle();
     expect(policies, [null, FileConflictPolicy.overwrite]);
@@ -1269,7 +1287,7 @@ void main() {
     await addDownloadViaDialog(tester, 'http://127.0.0.1:9/f.bin');
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byType(PdmDialog),
         matching: find.text('Cancel'),
       ),
     );

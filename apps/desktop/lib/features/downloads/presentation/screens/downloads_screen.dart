@@ -15,6 +15,7 @@ import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
+import 'package:pdm/shared/widgets/pdm_dialog.dart';
 import 'package:pdm/shared/widgets/dashed_border.dart';
 import 'package:pdm_engine/pdm_engine.dart';
 
@@ -1043,23 +1044,23 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final controller = TextEditingController();
     final url = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add download'),
-        content: TextField(
+      builder: (context) => PdmDialog(
+        title: 'Add download',
+        actions: [
+          PdmDialogButton.secondary(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          PdmDialogButton.primary(
+            label: 'Add',
+            onPressed: () => Navigator.of(context).pop(controller.text),
+          ),
+        ],
+        child: TextField(
           controller: controller,
           decoration: const InputDecoration(hintText: 'https://...'),
           keyboardType: TextInputType.url,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
     if (url != null && url.isNotEmpty) {
