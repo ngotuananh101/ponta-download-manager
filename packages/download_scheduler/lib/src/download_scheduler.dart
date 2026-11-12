@@ -543,6 +543,11 @@ class DownloadScheduler {
       }
     } catch (e) {
       _starting.remove(job.id);
+      // A pause that landed while the task was being built must not
+      // survive the failed start: the flag is consumed here, or the
+      // next attempt for the same id would be parked as paused even
+      // though nobody paused it.
+      _pausedWhileStarting.remove(job.id);
       if (_cancelledWhileStarting.remove(job.id)) {
         _markCancelled(job);
       } else {

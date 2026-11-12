@@ -346,6 +346,59 @@ void main() {
       expect(infoOf(scheduler, a).downloadedBytes, 4096);
     });
 
+    test('a pause during a failing start does not stick to the retry',
+        () async {
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final factoryStarted = Completer<void>();
+      final failFactory = Completer<void>();
+      var factoryCalls = 0;
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          factoryCalls++;
+          if (factoryCalls == 1) {
+            factoryStarted.complete();
+            await failFactory.future;
+            throw StateError('factory boom');
+          }
+          final sink = _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: job.maxConnections,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryStarted.future.timeout(const Duration(seconds: 5));
+      scheduler.pause(id);
+      failFactory.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.failed);
+      // Retry the same id: it must run instead of sitting paused
+      // on the stale flag from the failed start.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(
+        () => infoOf(scheduler, id).status == DownloadStatus.completed,
+        timeout: const Duration(seconds: 3),
+      );
+      expect(infoOf(scheduler, id).downloadedBytes, 1024);
+    });
+
     test('pauseAll pauses everything and resumeAll restarts it', () async {
       final transport = _FakeTransport(
         data: bytesOf(4096),
