@@ -122,6 +122,27 @@ void main() {
           await response.close();
           return;
         }
+        if (path == '/wrong-range' &&
+            request.headers.value('range') != null) {
+          // Answers 206 for a range the client never asked for.
+          response.statusCode = HttpStatus.partialContent;
+          response.headers.set('accept-ranges', 'bytes');
+          response.headers.set('content-range', 'bytes 500-599/1024');
+          response.headers.contentLength = 100;
+          response.add(body.sublist(500, 600));
+          await response.close();
+          return;
+        }
+        if (path == '/no-content-range' &&
+            request.headers.value('range') != null) {
+          // Answers 206 with no Content-Range at all.
+          response.statusCode = HttpStatus.partialContent;
+          response.headers.set('accept-ranges', 'bytes');
+          response.headers.contentLength = 100;
+          response.add(body.sublist(0, 100));
+          await response.close();
+          return;
+        }
         final range = request.headers.value('range');
         if (range != null && path != '/no-range') {
           final match = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range);
@@ -266,6 +287,33 @@ void main() {
       await expectLater(
         transport
             .openStream(base.resolve('/no-range'), start: 0, end: 99)
+            .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk)),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'range-ignored'),
+        ),
+      );
+    });
+
+    test('a 206 for the wrong range throws range-ignored', () async {
+      // The server answers bytes 500-599 to a request for 0-99:
+      // streaming those bytes into the 0-99 segment would write
+      // them at the wrong offsets yet still complete.
+      await expectLater(
+        transport
+            .openStream(base.resolve('/wrong-range'), start: 0, end: 99)
+            .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk)),
+        throwsA(
+          isA<DownloadError>()
+              .having((e) => e.code, 'code', 'range-ignored'),
+        ),
+      );
+    });
+
+    test('a 206 without Content-Range throws range-ignored', () async {
+      await expectLater(
+        transport
+            .openStream(base.resolve('/no-content-range'), start: 0, end: 99)
             .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk)),
         throwsA(
           isA<DownloadError>()

@@ -139,6 +139,7 @@ class HttpTransport implements DownloadTransport {
     }
     final response = await _openResponse(url, headers);
     if (response.statusCode == HttpStatus.partialContent) {
+      _validateContentRange(response, start: start, end: end);
       yield* _withNetworkErrors(response);
     } else if (response.statusCode == HttpStatus.ok) {
       if (start != null && (start != 0 || end != null)) {
@@ -161,6 +162,32 @@ class HttpTransport implements DownloadTransport {
     } else {
       await response.drain<void>();
       _throwForStatus(url, response.statusCode);
+    }
+  }
+
+  /// A 206 must serve the range that was asked for: a server
+  /// answering with a different range would write bytes at the wrong
+  /// offsets yet still complete. The probe-time `validateRange` only
+  /// checks the `bytes=0-0` probe, so every segment stream checks
+  /// its own response. A mismatch is a 'range-ignored': the task
+  /// falls back to a single stream from the start.
+  void _validateContentRange(
+    HttpClientResponse response, {
+    required int? start,
+    required int? end,
+  }) {
+    if (start == null) {
+      return;
+    }
+    final parsed =
+        _parseContentRange(response.headers.value('content-range'));
+    if (parsed == null ||
+        parsed.$1 != start ||
+        (end != null && parsed.$2 != end)) {
+      throw const DownloadError(
+        'range-ignored',
+        'Server answered 206 with a Content-Range that does not match the requested range',
+      );
     }
   }
 
