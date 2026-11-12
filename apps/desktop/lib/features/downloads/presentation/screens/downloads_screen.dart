@@ -323,9 +323,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   // One menu row for the toolbar selects and the per-row action
   // menu: xs text like the table rows, in a compact 32px row instead
   // of the 48px PopupMenuItem default.
-  PopupMenuItem<T> _menuItem<T>(T value, String label) {
+  PopupMenuItem<T> _menuItem<T>(T value, String label,
+      {bool enabled = true}) {
     return PopupMenuItem<T>(
       value: value,
+      enabled: enabled,
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
       child: Text(label, style: AppTextSize.xs.textStyle()),
@@ -871,6 +873,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.state == DownloadState.completed) {
             entries.add(_menuItem('file_integrity', 'File integrity'));
           }
+          // Virus check is not implemented yet: the item is
+          // visible but disabled, so it never fires.
+          entries.add(
+            _menuItem('virus_check', 'Perform virus check', enabled: false),
+          );
           // Every row can be tagged: the submenu lists every tag
           // used anywhere, with a check on this row's tags.
           entries.add(_tagSubmenu(item, _knownTags()));

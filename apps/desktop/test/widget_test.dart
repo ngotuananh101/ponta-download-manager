@@ -1832,6 +1832,7 @@ void main() {
     expect(find.text('Set priority'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
     expect(find.text('Add mirror'), findsOneWidget);
+    expect(find.text('Perform virus check'), findsOneWidget);
     expect(find.text('Add tag'), findsOneWidget);
     expect(find.text('Export selected downloads'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
@@ -1842,8 +1843,27 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 8);
+    expect(items.length, 9);
     expect(items.every((item) => item.height == 32), isTrue);
+  });
+
+  testWidgets('Perform virus check is disabled and does nothing',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Perform virus check'), findsOneWidget);
+    final item = find.ancestor(
+      of: find.text('Perform virus check'),
+      matching: find.byType(PopupMenuItem<String>),
+    );
+    expect(tester.widget<PopupMenuItem<String>>(item).enabled, isFalse);
+    await tester.tap(find.text('Perform virus check'));
+    await tester.pumpAndSettle();
+    // The disabled item fires nothing: the menu stays open, no
+    // snackbar appears.
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('the status bar uses xs text and a bigger snail toggle',
