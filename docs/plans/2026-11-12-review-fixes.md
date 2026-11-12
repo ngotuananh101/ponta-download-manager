@@ -60,6 +60,17 @@ build once after P1 and once at the end.
   Gates at close-out: desktop 272/272, engine 99/99 (after 3 full runs
   hit the known single-test teardown flake on two moving tests),
   analyze clean.
+- R-P3b (items 30–40) — DONE: item 30 `013ad6d`, item 31 `803c20e`,
+  item 32 `5281d1f`, item 33 `b366828`, item 34 `c25ad15`, item 35
+  `6015b3b`, item 36 `9065317`, item 37 `fe67eff`, item 38 `1c187eb`,
+  item 39 `48be1da`, item 40 `1bc0697`. Item 25's global connection
+  cap (added in `4e3f138`) was reverted in `4744183` per Tuan Anh's
+  decision: no total cap at all, only 8 connections per download and
+  3 concurrent downloads; architecture §5.6 synced in `eff15b7`.
+  Gates at close-out: desktop 272/272, engine 99/99, scheduler 18/18,
+  limiter 14/14, integrity 9/9, ipc 29/29, host 35/35, extension
+  38/38, pytest 3/3, analyze clean (root, desktop, engine), release
+  build OK.
 
 ## Batches
 
@@ -251,7 +262,4 @@ build once after P1 and once at the end.
 
 ## Follow-ups (not in this plan)
 
-- Item 25's global-cap default value if the proposed 16 is wrong.
-- Item 36 if deleting the stub packages is preferred over implementing
-  them.
 - Item 18's Windows behaviour still needs a real Windows run.
