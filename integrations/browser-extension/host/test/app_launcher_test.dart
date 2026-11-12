@@ -153,7 +153,11 @@ void main() {
         'already running', () async {
       var started = 0;
       await File('$socketPath.token').writeAsString('tok');
-      await File(socketPath).writeAsString('');
+      final server = await ServerSocket.bind(
+        InternetAddress(socketPath, type: InternetAddressType.unix),
+        0,
+      );
+      addTearDown(server.close);
       final l = launcher(
         processStarter: (_) async {
           started++;
@@ -167,7 +171,9 @@ void main() {
         'already running on Windows', () async {
       var started = 0;
       await File('$socketPath.token').writeAsString('tok');
-      await File('$socketPath.port').writeAsString('47931');
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(server.close);
+      await File('$socketPath.port').writeAsString('${server.port}');
       final l = launcher(
         isWindows: true,
         processStarter: (_) async {
@@ -176,6 +182,58 @@ void main() {
       );
       expect(await l.launchAndWait(), isTrue);
       expect(started, 0);
+    });
+
+    test('launchAndWait launches the app when the endpoint files are stale',
+        () async {
+      final path = await writeDesktopFile('Exec=/opt/pdm/pdm %u');
+      final started = <String>[];
+      // Crash leftovers: the files exist but nothing listens.
+      await File('$socketPath.token').writeAsString('tok');
+      await File(socketPath).writeAsString('');
+      final l = launcher(
+        desktopFilePath: path,
+        processStarter: (appPath) async {
+          started.add(appPath);
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 100),
+                () async {
+              await File('$socketPath.token').writeAsString('tok');
+              await File(socketPath).writeAsString('');
+            }),
+          );
+        },
+      );
+      expect(await l.launchAndWait(), isTrue);
+      expect(started, ['/opt/pdm/pdm']);
+    });
+
+    test('launchAndWait launches the app when the port file is stale on Windows',
+        () async {
+      final path = await writeDesktopFile('Exec=/opt/pdm/pdm %u');
+      final started = <String>[];
+      // A port file pointing at a closed port: crash leftovers.
+      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final stalePort = probe.port;
+      await probe.close();
+      await File('$socketPath.token').writeAsString('tok');
+      await File('$socketPath.port').writeAsString('$stalePort');
+      final l = launcher(
+        desktopFilePath: path,
+        isWindows: true,
+        processStarter: (appPath) async {
+          started.add(appPath);
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 100),
+                () async {
+              await File('$socketPath.token').writeAsString('tok');
+              await File('$socketPath.port').writeAsString('47931');
+            }),
+          );
+        },
+      );
+      expect(await l.launchAndWait(), isTrue);
+      expect(started, ['/opt/pdm/pdm']);
     });
 
     test('launchAndWait starts the app and waits for the endpoint',

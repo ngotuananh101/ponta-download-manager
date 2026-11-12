@@ -97,7 +97,10 @@ class AppLauncher {
 
   /// Whether the IPC endpoint currently exists: token + socket on
   /// POSIX, token + port file on Windows (there is no socket file
-  /// there — the server listens on loopback TCP).
+  /// there — the server listens on loopback TCP). File existence
+  /// alone does not mean the app is running: a crash leaves these
+  /// files behind, so [launchAndWait] probes liveness before
+  /// trusting them.
   bool endpointExists() {
     if (!File(_tokenPath).existsSync()) {
       return false;
@@ -121,12 +124,75 @@ class AppLauncher {
     }
   }
 
+  /// Whether a process is actually listening at the endpoint: a bare
+  /// socket connect, closed at once. Files alone prove nothing — a
+  /// crash leaves them behind.
+  Future<bool> _isEndpointLive() async {
+    if (await _probeOnce()) {
+      return true;
+    }
+    // The app may be mid-startup (files written just before the
+    // socket starts listening): give it one short grace period
+    // before treating the files as crash leftovers.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    return _probeOnce();
+  }
+
+  Future<bool> _probeOnce() async {
+    try {
+      final socket = _isWindows ? await _probeTcp() : await _probeUnix();
+      socket.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Socket> _probeUnix() {
+    return Socket.connect(
+      InternetAddress(socketPath, type: InternetAddressType.unix),
+      0,
+      timeout: const Duration(seconds: 1),
+    );
+  }
+
+  Future<Socket> _probeTcp() async {
+    final port = int.tryParse(
+      (await File(_portPath).readAsString()).trim(),
+    );
+    if (port == null) {
+      throw const FormatException('No port in port file');
+    }
+    return Socket.connect(
+      InternetAddress.loopbackIPv4,
+      port,
+      timeout: const Duration(seconds: 1),
+    );
+  }
+
+  void _deleteStaleEndpoint() {
+    for (final path in [_tokenPath, _isWindows ? _portPath : socketPath]) {
+      try {
+        File(path).deleteSync();
+      } catch (_) {
+        // Best effort: the app rebinds over a stale socket file
+        // anyway (UnixSocketTransport unlinks before bind).
+      }
+    }
+  }
+
   /// Starts the app if it is not already running, then waits for its
   /// IPC endpoint. Returns false when the app path cannot be resolved,
   /// the launch fails, or the endpoint never appears.
   Future<bool> launchAndWait() async {
     if (endpointExists()) {
-      return true;
+      if (await _isEndpointLive()) {
+        return true;
+      }
+      // The token/socket (or port) files are leftovers from a crash:
+      // no process is listening. Drop them so the fresh app can bind
+      // and waitForEndpoint waits for its files, not these stale ones.
+      _deleteStaleEndpoint();
     }
     final appPath = resolveAppPath();
     if (appPath == null) {
