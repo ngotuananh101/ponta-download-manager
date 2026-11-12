@@ -50,6 +50,36 @@ Freezed/json_serializable codegen, when a model changes (in
 dart run build_runner build --delete-conflicting-outputs
 ```
 
+## Release
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`).
+Pushing a tag `v*` runs the tests, builds all 7 artifacts and creates a
+GitHub Release; a manual run (`workflow_dispatch`) builds the same
+artifacts without creating a release.
+
+```sh
+# 1. Bump the version in apps/desktop/pubspec.yaml (e.g. 0.1.0+1 -> 0.2.0+1)
+#    and keep kAppVersion in apps/desktop/lib/app/app_info.dart in sync.
+# 2. Commit and push, then tag:
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Artifacts (all for x64):
+
+| File | Platform |
+|---|---|
+| `pdm-<version>-windows-x64-setup.exe` | Windows installer (Inno Setup) |
+| `pdm-<version>-windows-x64.msi` | Windows installer (WiX) |
+| `pdm-<version>-windows-x64-portable.zip` | Windows portable |
+| `pdm-<version>-linux-x64.deb` | Debian/Ubuntu |
+| `pdm-<version>-linux-x64.rpm` | Fedora/RHEL |
+| `pdm-<version>-linux-x64.AppImage` | Linux portable |
+| `pdm-<version>-linux-x64-portable.tar.gz` | Linux portable |
+
+The installers are unsigned (no code signing certificate yet): Windows
+shows a SmartScreen warning on first run.
+
 ## Notes
 
 - The app id is the `flutter create` default (`com.example.pdm`).
