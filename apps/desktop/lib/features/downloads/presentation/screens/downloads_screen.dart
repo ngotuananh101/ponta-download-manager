@@ -842,7 +842,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               const SizedBox(width: AppSpacing.s2),
               Text(
                 'Drag-and-drop URL or torrent file',
-                style: AppTextSize.base.textStyle(
+                style: AppTextSize.xs.textStyle(
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),

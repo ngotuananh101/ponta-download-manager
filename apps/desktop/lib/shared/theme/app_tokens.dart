@@ -80,10 +80,11 @@ class AppFontWeight {
 }
 
 /// A button size: fixed height, horizontal padding and text size.
-/// `md` is the default used by the theme.
+/// `md` is the default used by the theme. Text is xs by the app
+/// standard; only `lg` keeps a larger text, for emphasis.
 enum AppButtonSize {
-  sm(32, 12, AppTextSize.sm),
-  md(40, 16, AppTextSize.base),
+  sm(32, 12, AppTextSize.xs),
+  md(40, 16, AppTextSize.xs),
   lg(48, 20, AppTextSize.lg);
 
   const AppButtonSize(this.height, this.horizontalPadding, this.textSize);

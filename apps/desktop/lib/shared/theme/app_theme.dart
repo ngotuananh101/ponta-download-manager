@@ -124,6 +124,10 @@ class AppTheme {
     );
   }
 
+  /// The standard text size is xs (12px): body, title and label all
+  /// resolve to xs, so plain text, text fields, list tiles and
+  /// snackbars are xs unless a widget sets its own style. Display and
+  /// headline stay larger for the few places that need bigger text.
   static TextTheme _textTheme(ColorScheme colorScheme) {
     final onSurface = colorScheme.onSurface;
     return TextTheme(
@@ -151,22 +155,22 @@ class AppTheme {
         weight: AppFontWeight.semibold,
         color: onSurface,
       ),
-      titleLarge: AppTextSize.lg.textStyle(
+      titleLarge: AppTextSize.xs.textStyle(
         weight: AppFontWeight.semibold,
         color: onSurface,
       ),
-      titleMedium: AppTextSize.base.textStyle(
+      titleMedium: AppTextSize.xs.textStyle(
         weight: AppFontWeight.medium,
         color: onSurface,
       ),
-      titleSmall: AppTextSize.sm.textStyle(
+      titleSmall: AppTextSize.xs.textStyle(
         weight: AppFontWeight.medium,
         color: onSurface,
       ),
-      bodyLarge: AppTextSize.base.textStyle(color: onSurface),
-      bodyMedium: AppTextSize.sm.textStyle(color: onSurface),
+      bodyLarge: AppTextSize.xs.textStyle(color: onSurface),
+      bodyMedium: AppTextSize.xs.textStyle(color: onSurface),
       bodySmall: AppTextSize.xs.textStyle(color: onSurface),
-      labelLarge: AppTextSize.sm.textStyle(
+      labelLarge: AppTextSize.xs.textStyle(
         weight: AppFontWeight.medium,
         color: onSurface,
       ),

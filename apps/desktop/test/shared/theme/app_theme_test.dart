@@ -5,13 +5,20 @@ import 'package:pdm/shared/theme/app_tokens.dart';
 
 void main() {
   group('AppTheme', () {
-    test('light textTheme uses the token sizes', () {
+    test('light textTheme uses the xs standard', () {
+      // The standard text size is xs (12px); display/headline stay
+      // larger for the few places that need bigger text.
       final textTheme = AppTheme.light.textTheme;
-      expect(textTheme.bodyLarge?.fontSize, 16);
-      expect(textTheme.bodyMedium?.fontSize, 14);
+      expect(textTheme.bodyLarge?.fontSize, 12);
+      expect(textTheme.bodyMedium?.fontSize, 12);
       expect(textTheme.bodySmall?.fontSize, 12);
-      expect(textTheme.titleLarge?.fontSize, 18);
+      expect(textTheme.titleLarge?.fontSize, 12);
+      expect(textTheme.titleMedium?.fontSize, 12);
+      expect(textTheme.titleSmall?.fontSize, 12);
+      expect(textTheme.labelLarge?.fontSize, 12);
       expect(textTheme.titleLarge?.fontWeight, FontWeight.w600);
+      expect(textTheme.displayLarge?.fontSize, 30);
+      expect(textTheme.headlineMedium?.fontSize, 18);
     });
 
     test('dark theme is dark', () {
@@ -22,7 +29,7 @@ void main() {
     test('buttonStyle resolves height and text size per size', () {
       final sm = AppTheme.buttonStyle(AppButtonSize.sm);
       expect(sm.minimumSize?.resolve({})?.height, 32);
-      expect(sm.textStyle?.resolve({})?.fontSize, 14);
+      expect(sm.textStyle?.resolve({})?.fontSize, 12);
 
       final lg = AppTheme.buttonStyle(AppButtonSize.lg);
       expect(lg.minimumSize?.resolve({})?.height, 48);
@@ -32,7 +39,7 @@ void main() {
     test('the default button theme uses the md size', () {
       final style = AppTheme.light.elevatedButtonTheme.style;
       expect(style?.minimumSize?.resolve({})?.height, 40);
-      expect(style?.textStyle?.resolve({})?.fontSize, 16);
+      expect(style?.textStyle?.resolve({})?.fontSize, 12);
     });
   });
 

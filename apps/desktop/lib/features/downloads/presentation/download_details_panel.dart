@@ -215,7 +215,7 @@ class _DownloadDetailsPanelState
                 children: [
                   Text(
                     download.fileName,
-                    style: AppTextSize.base.textStyle(
+                    style: AppTextSize.xs.textStyle(
                       weight: AppFontWeight.semibold,
                     ),
                     overflow: TextOverflow.ellipsis,

@@ -317,6 +317,31 @@ void main() {
     expect(find.byType(PdmDialog), findsNothing);
   });
 
+  testWidgets('a failed add shows the error in xs text', (tester) async {
+    final actions = MockDownloadsActions();
+    when(() => actions.addDownload(any())).thenAnswer(
+      (_) async => const Left(
+        ValidationFailure('URL must start with http:// or https://'),
+      ),
+    );
+    await pumpApp(tester, actions: actions);
+    await addDownloadViaDialog(tester, 'not-a-url');
+    const message = 'URL must start with http:// or https://';
+    expect(find.text(message), findsOneWidget);
+    // The snackbar text has no style of its own: it inherits the
+    // theme's bodyMedium, which is xs by the app standard.
+    final element = tester.element(find.text(message));
+    expect(DefaultTextStyle.of(element).style.fontSize, 12);
+  });
+
+  testWidgets('the drop zone hint uses xs text', (tester) async {
+    await pumpApp(tester, downloads: const []);
+    final hintStyle = tester
+        .widget<Text>(find.text('Drag-and-drop URL or torrent file'))
+        .style;
+    expect(hintStyle?.fontSize, 12);
+  });
+
   testWidgets('the add dialog uses xs text', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('Add download'));
@@ -803,6 +828,21 @@ void main() {
     expect(find.text('500 B / 1000 B'), findsOneWidget);
     expect(find.text('50%'), findsOneWidget);
   });
+
+  testWidgets('the details panel file name uses xs text', (tester) async {
+    await pumpApp(tester);
+    await openDetailsPanel(tester);
+    final nameStyle = tester
+        .widget<Text>(
+          find.descendant(
+            of: find.byType(DownloadDetailsPanel),
+            matching: find.text('f.bin'),
+          ),
+        )
+        .style;
+    expect(nameStyle?.fontSize, 12);
+  });
+
 
   testWidgets('the details panel GENERAL tab shows the download fields',
       (tester) async {

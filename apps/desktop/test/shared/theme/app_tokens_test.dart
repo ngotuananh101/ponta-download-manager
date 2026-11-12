@@ -51,10 +51,10 @@ void main() {
     test('sm/md/lg carry height, padding and text size', () {
       expect(AppButtonSize.sm.height, 32);
       expect(AppButtonSize.sm.horizontalPadding, 12);
-      expect(AppButtonSize.sm.textSize, AppTextSize.sm);
+      expect(AppButtonSize.sm.textSize, AppTextSize.xs);
       expect(AppButtonSize.md.height, 40);
       expect(AppButtonSize.md.horizontalPadding, 16);
-      expect(AppButtonSize.md.textSize, AppTextSize.base);
+      expect(AppButtonSize.md.textSize, AppTextSize.xs);
       expect(AppButtonSize.lg.height, 48);
       expect(AppButtonSize.lg.horizontalPadding, 20);
       expect(AppButtonSize.lg.textSize, AppTextSize.lg);
