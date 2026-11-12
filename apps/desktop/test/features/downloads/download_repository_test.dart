@@ -258,6 +258,20 @@ void main() {
       verify(() => datasource.checkForUpdate('dl-1')).called(1);
     });
 
+    test('verifyFile forwards to the datasource', () async {
+      when(
+        () => datasource.verifyFile(any()),
+      ).thenAnswer(
+        (_) async => const IntegrityResult.ok(bytes: 2048),
+      );
+      final result = await repository.verifyFile('dl-1');
+      result.fold(
+        (l) => fail('expected right, got $l'),
+        (r) => expect(r, const IntegrityResult.ok(bytes: 2048)),
+      );
+      verify(() => datasource.verifyFile('dl-1')).called(1);
+    });
+
     test('deleteDownload forwards the deleteFile flag', () async {
       when(
         () => datasource.deleteDownload(

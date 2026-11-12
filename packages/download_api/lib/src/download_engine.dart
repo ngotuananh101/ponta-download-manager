@@ -4,6 +4,7 @@ import 'package:download_api/src/models/update_check_result.dart';
 import 'package:download_api/src/models/download_event.dart';
 import 'package:download_api/src/models/download_info.dart';
 import 'package:download_api/src/models/download_segment.dart';
+import 'package:download_api/src/models/integrity_result.dart';
 
 /// Application-level engine API (docs/architecture.md §16).
 /// The UI talks to this interface, never to internal segment workers.
@@ -59,6 +60,11 @@ abstract interface class DownloadEngine {
   /// Throws [DownloadError] when the download is unknown or the
   /// probe fails.
   Future<UpdateCheckResult> checkForUpdate(String downloadId);
+
+  /// Verifies the finished file on disk: it exists and (when the
+  /// record knows the size) its size matches. Throws
+  /// [DownloadError] when the download is unknown.
+  Future<IntegrityResult> verifyFile(String downloadId);
 
   Future<void> setPriority(String downloadId, int priority);
 

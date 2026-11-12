@@ -473,6 +473,19 @@ void main() {
       verify(() => engine.checkForUpdate('dl-1')).called(1);
     });
 
+    test('verifyFile forwards to the engine', () async {
+      when(
+        () => engine.verifyFile(any()),
+      ).thenAnswer(
+        (_) async => const IntegrityResult.ok(bytes: 2048),
+      );
+      final source = datasource();
+      addTearDown(source.dispose);
+      final result = await source.verifyFile('dl-1');
+      expect(result, const IntegrityResult.ok(bytes: 2048));
+      verify(() => engine.verifyFile('dl-1')).called(1);
+    });
+
     test('setGlobalBandwidthLimit forwards the limit to the engine',
         () async {
       final source = datasource();

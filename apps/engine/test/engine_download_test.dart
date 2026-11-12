@@ -867,6 +867,104 @@ void main() {
       );
     });
 
+    test('verifyFile reports ok for a completed download', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final result = await engine.verifyFile(info.id);
+      expect(result, const IntegrityResult.ok(bytes: 2048));
+    });
+
+    test('verifyFile reports missing when the file is gone', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      File(p.join(tempDir.path, 'f.bin')).deleteSync();
+      final result = await engine.verifyFile(info.id);
+      expect(result, const IntegrityResult.missing());
+    });
+
+    test('verifyFile reports a size mismatch when the file changed',
+        () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      File(p.join(tempDir.path, 'f.bin'))
+          .writeAsBytesSync([0], mode: FileMode.append);
+      final result = await engine.verifyFile(info.id);
+      expect(
+        result,
+        const IntegrityResult.sizeMismatch(
+          expectedBytes: 2048,
+          actualBytes: 2049,
+        ),
+      );
+    });
+
+    test('verifyFile with an unknown id throws', () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      await expectLater(
+        engine.verifyFile('nope'),
+        throwsA(
+          predicate<DownloadError>((e) => e.code == 'not-found'),
+        ),
+      );
+    });
+
+    test('verifyFile is existence-only when the record has no size',
+        () async {
+      final engine = openEngine(maxConcurrent: 0);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      // The download never runs, so the record has no size; a file
+      // placed at the destination by hand is enough for ok.
+      File(p.join(tempDir.path, 'f.bin')).writeAsBytesSync(bytesOf(512));
+      final result = await engine.verifyFile(info.id);
+      expect(result, const IntegrityResult.ok(bytes: 512));
+    });
+
     test(
         'deleteDownload with deleteFile and no file on disk still removes the record',
         () async {

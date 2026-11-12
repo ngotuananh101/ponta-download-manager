@@ -84,6 +84,10 @@ class FakeEngine implements DownloadEngine {
       );
 
   @override
+  Future<IntegrityResult> verifyFile(String downloadId) async =>
+      const IntegrityResult.ok(bytes: 0);
+
+  @override
   Future<void> setPriority(String downloadId, int priority) async {}
 
   @override

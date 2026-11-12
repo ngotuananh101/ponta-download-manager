@@ -285,6 +285,8 @@ class EngineDownloadDatasource {
   Future<UpdateCheckResult> checkForUpdate(String id) =>
       engine.checkForUpdate(id);
 
+  Future<IntegrityResult> verifyFile(String id) => engine.verifyFile(id);
+
   /// Snail mode: a global speed cap (null = unlimited). Forwarded to
   /// the engine's token-bucket limiter.
   Future<void> setGlobalBandwidthLimit(int? bytesPerSecond) =>

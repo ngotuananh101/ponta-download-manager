@@ -1129,6 +1129,38 @@ void main() {
     );
   });
 
+  testWidgets('File integrity reports an intact file', (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.verifyFile(any()),
+    ).thenAnswer(
+      (_) async => const Right(IntegrityResult.ok(bytes: 2048)),
+    );
+    final dir = Directory.systemTemp.createTempSync('pdm-integrity-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    await pumpApp(
+      tester,
+      downloads: [completedWithFile(filePath)],
+      actions: actions,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('File integrity'));
+    await tester.pumpAndSettle();
+    expect(find.text('File is intact (2.0 KiB)'), findsOneWidget);
+    verify(() => actions.verifyFile('dl-1')).called(1);
+  });
+
+  testWidgets('File integrity is hidden for a downloading row',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('File integrity'), findsNothing);
+  });
+
   testWidgets('Check for update is hidden for a failed row',
       (tester) async {
     const failed = Download(

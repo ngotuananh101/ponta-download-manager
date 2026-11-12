@@ -120,6 +120,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }
 
   @override
+  Future<Either<Failure, IntegrityResult>> verifyFile(String id) async {
+    // Like getSegments: _act is for void actions, so a
+    // value-returning call inlines the same try/catch.
+    try {
+      return Right(await _datasource.verifyFile(id));
+    } on DownloadError catch (e) {
+      return Left(_toFailure(e));
+    }
+  }
+
+  @override
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(
     int? bytesPerSecond,
   ) => _act(() => _datasource.setGlobalBandwidthLimit(bytesPerSecond));

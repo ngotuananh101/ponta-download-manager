@@ -1,1 +1,2 @@
-// TODO: implement `download_integrity` (see docs/architecture.md sections 14 and 21).
+export 'src/integrity_verifier.dart';
+export 'package:download_api/src/models/integrity_result.dart';

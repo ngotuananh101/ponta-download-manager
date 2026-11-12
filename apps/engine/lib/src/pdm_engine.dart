@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
+import 'package:download_integrity/download_integrity.dart';
 import 'package:download_core/download_core.dart';
 import 'package:download_external/download_external.dart';
 import 'package:download_limiter/download_limiter.dart';
@@ -705,6 +706,18 @@ class PdmEngine implements DownloadEngine {
       hasUpdate: newSize != record.totalBytes,
       inconclusive: false,
       newTotalBytes: newSize,
+    );
+  }
+
+  @override
+  Future<IntegrityResult> verifyFile(String downloadId) async {
+    final record = _store.getDownload(downloadId);
+    if (record == null) {
+      throw const DownloadError('not-found', 'Download not found');
+    }
+    return const IntegrityVerifier().verify(
+      path: record.destinationPath,
+      expectedBytes: record.totalBytes,
     );
   }
 

@@ -867,6 +867,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           if (item.state == DownloadState.completed) {
             entries.add(_menuItem('check_for_update', 'Check for update'));
           }
+          // A completed download's file can be verified on disk.
+          if (item.state == DownloadState.completed) {
+            entries.add(_menuItem('file_integrity', 'File integrity'));
+          }
           // A failed download's link may have expired.
           if (item.state == DownloadState.failed) {
             entries.add(_menuItem('change_url', 'Change URL'));
@@ -1038,6 +1042,35 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
         );
       }
+      return;
+    }
+    if (action == 'file_integrity') {
+      final result =
+          await ref.read(downloadsActionsProvider).verifyFile(item.id);
+      if (!mounted) return;
+      result.fold(
+        (failure) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(failure.message)),
+          );
+        },
+        (check) {
+          final message = check.when(
+            ok: (bytes) => 'File is intact (${formatBytes(bytes)})',
+            missing: () => 'File is missing',
+            sizeMismatch: (expected, actual) =>
+                'Size mismatch: expected ${formatBytes(expected)}, '
+                'found ${formatBytes(actual)}',
+            checksumMismatch: (_, _) =>
+                'Checksum mismatch: the file does not match the '
+                'expected checksum',
+            unreadable: (message) => 'Could not read the file: $message',
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        },
+      );
       return;
     }
     if (action == 'change_url') {

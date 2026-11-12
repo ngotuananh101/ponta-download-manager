@@ -46,6 +46,8 @@ abstract interface class DownloadRepository {
   /// Checks whether the server hosts a newer version.
   Future<Either<Failure, UpdateCheckResult>> checkForUpdate(String id);
 
+  Future<Either<Failure, IntegrityResult>> verifyFile(String id);
+
   /// Snail mode: a global speed cap in bytes/s (null = unlimited).
   Future<Either<Failure, Unit>> setGlobalBandwidthLimit(int? bytesPerSecond);
 
