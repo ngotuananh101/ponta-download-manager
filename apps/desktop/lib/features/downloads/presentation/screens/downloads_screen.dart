@@ -1,5 +1,7 @@
+import 'package:download_api/download_api.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
@@ -12,6 +14,7 @@ import 'package:pdm/features/downloads/presentation/download_table.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
 import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
+import 'package:pdm/features/downloads/presentation/new_download_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
@@ -1044,58 +1047,97 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   // --- Add download dialog ---
 
-  Future<void> _showAddDialog() async {
-    final controller = TextEditingController();
-    final url = await showDialog<String>(
-      context: context,
-      builder: (context) => PdmDialog(
-        title: 'Add download',
-        actions: [
-          PdmDialogButton.secondary(
-            label: 'Cancel',
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          PdmDialogButton.primary(
-            label: 'Add',
-            onPressed: () => Navigator.of(context).pop(controller.text),
-          ),
-        ],
-        child: TextField(
-          controller: controller,
-          style: AppTextSize.xs.textStyle(),
-          decoration: InputDecoration(
-            hintText: 'https://...',
-            hintStyle: AppTextSize.xs.textStyle(),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s3,
-              vertical: AppSpacing.s2,
-            ),
-          ),
-          keyboardType: TextInputType.url,
-        ),
-      ),
-    );
-    if (url != null && url.isNotEmpty) {
-      await _addDownload(url);
+  /// Reads a URL from the clipboard, if it holds one. Best-effort: a
+  /// clipboard failure or non-URL text leaves the field empty.
+  Future<String?> _readClipboardUrl() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text == null || text.isEmpty) return null;
+      final uri = Uri.tryParse(text);
+      if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+        return null;
+      }
+      return text;
+    } catch (_) {
+      return null;
     }
+  }
+
+  /// Step 1 of the Add download flow: the URL, prefilled from the
+  /// clipboard when it holds one. OK probes the URL (reachable +
+  /// size); a failed probe stays in this dialog with the error inline,
+  /// a successful one opens the New download dialog.
+  Future<void> _showAddDialog() async {
+    final initial = await _readClipboardUrl();
+    if (!mounted) return;
+    final probe = await showDialog<ProbeResult>(
+      context: context,
+      builder: (context) => _AddDownloadDialog(initialUrl: initial),
+    );
+    if (probe == null || !mounted) return;
+    await _showNewDownload(probe);
+  }
+
+  /// Step 2 of the Add download flow: the save location, file name
+  /// and immediate vs scheduled choice. A picked directory is
+  /// remembered for the next Save to dropdown, most recent first.
+  Future<void> _showNewDownload(ProbeResult probe) async {
+    final settings = ref.read(fileConflictSettingsProvider);
+    final defaultDirectory = ref.read(downloadDirectoryProvider);
+    final decision = await showNewDownloadDialog(
+      context: context,
+      probe: probe,
+      defaultDirectory: defaultDirectory,
+      recentDirectories: settings.loadRecentDirectories(),
+    );
+    if (decision == null || !mounted) return;
+    if (decision.directory != defaultDirectory) {
+      final recent = [
+        decision.directory,
+        ...settings
+            .loadRecentDirectories()
+            .where((d) => d != decision.directory),
+      ].take(5).toList();
+      settings.saveRecentDirectories(recent);
+    }
+    await _addDownload(
+      probe.url,
+      directory: decision.directory,
+      fileName: decision.fileName,
+      paused: decision.paused,
+    );
   }
 
   /// Adds one download, asking what to do when the destination file
   /// already exists. A remembered choice is applied without asking;
   /// the dialog's choice can be remembered for the next conflict.
-  Future<void> _addDownload(String url) async {
+  Future<void> _addDownload(
+    String url, {
+    String? directory,
+    String? fileName,
+    bool paused = false,
+  }) async {
     final actions = ref.read(downloadsActionsProvider);
     final settings = ref.read(fileConflictSettingsProvider);
     final remembered = settings.load();
     if (remembered != null) {
       final result = await actions.addDownload(
         url,
+        directory: directory,
+        fileName: fileName,
         conflictPolicy: remembered,
+        paused: paused,
       );
       result.fold(_showFailure, (_) {});
       return;
     }
-    final result = await actions.addDownload(url);
+    final result = await actions.addDownload(
+      url,
+      directory: directory,
+      fileName: fileName,
+      paused: paused,
+    );
     if (!mounted) return;
     final failure = result.fold<Failure?>((f) => f, (_) => null);
     if (failure == null) return;
@@ -1112,7 +1154,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     if (decision.remember) settings.save(decision.policy);
     final retry = await actions.addDownload(
       url,
+      directory: directory,
+      fileName: fileName,
       conflictPolicy: decision.policy,
+      paused: paused,
     );
     retry.fold(_showFailure, (_) {});
   }
@@ -1129,3 +1174,126 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 /// The select dropdown's options (FDM). Kept private: the widget test
 /// taps the menu items by their labels.
 enum _SelectBy { all, downloadsOnly, uploadsOnly, completed, stopped }
+
+/// Step 1 of the Add download flow: the URL field. The dialog owns its
+/// [TextEditingController], so it is disposed with the dialog route
+/// (after the exit animation), never while the field is still mounted.
+class _AddDownloadDialog extends ConsumerStatefulWidget {
+  const _AddDownloadDialog({required this.initialUrl});
+
+  /// The URL prefilled from the clipboard, if it held one.
+  final String? initialUrl;
+
+  @override
+  ConsumerState<_AddDownloadDialog> createState() =>
+      _AddDownloadDialogState();
+}
+
+class _AddDownloadDialogState extends ConsumerState<_AddDownloadDialog> {
+  late final TextEditingController _controller;
+  String? _error;
+  var _probing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialUrl);
+    if (widget.initialUrl != null) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.initialUrl!.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _probe() async {
+    final url = _controller.text.trim();
+    setState(() {
+      _probing = true;
+      _error = null;
+    });
+    final result = await ref.read(downloadsActionsProvider).probeUrl(url);
+    if (!mounted) return;
+    result.fold(
+      (failure) => setState(() {
+        _probing = false;
+        _error = failure.message;
+      }),
+      (probe) => Navigator.of(context).pop(probe),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PdmDialog(
+      title: 'Add download',
+      actions: [
+        PdmDialogButton.secondary(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        PdmDialogButton.primary(
+          label: 'OK',
+          onPressed: _probing || _controller.text.trim().isEmpty
+              ? null
+              : _probe,
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _controller,
+            style: AppTextSize.xs.textStyle(),
+            decoration: InputDecoration(
+              hintText: 'https://...',
+              hintStyle: AppTextSize.xs.textStyle(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s3,
+                vertical: AppSpacing.s2,
+              ),
+            ),
+            keyboardType: TextInputType.url,
+            onChanged: (_) => setState(() {}),
+          ),
+          if (_probing) ...[
+            const SizedBox(height: AppSpacing.s2),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: AppSpacing.s2),
+                Text(
+                  'Checking link…',
+                  style: AppTextSize.xs.textStyle(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: AppSpacing.s2),
+            Text(
+              _error!,
+              style: AppTextSize.xs.textStyle(
+                color: colorScheme.error,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}

@@ -85,4 +85,4 @@ Cancel / Download later / DOWNLOAD).
   and free disk space; Download later leaves the row paused;
   Scheduler checked + DOWNLOAD also leaves it paused.
 
-## Status: IN PROGRESS 2026-11-12 (P1-P3 done, P5 next — the step-2 dialog is built before the step-1 wiring so the flow has something to call)
+## Status: DONE 2026-11-12 (P1-P6 done, all pushed; P4+P6 landed in one commit with the step-1 dialog, clipboard prefill, probe wiring and conflict-retry passthrough)

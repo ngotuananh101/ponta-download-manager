@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:download_api/download_api.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -72,13 +73,51 @@ Future<void> pumpApp(
   await tester.pumpAndSettle();
 }
 
-/// Drives the toolbar Add download dialog for [url].
+/// Drives the toolbar Add download dialog for [url] through both
+/// steps: the URL, OK (the probe is stubbed by the test), then
+/// DOWNLOAD in the New download dialog.
 Future<void> addDownloadViaDialog(WidgetTester tester, String url) async {
+  mockClipboard(tester, null);
   await tester.tap(find.text('Add download'));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField).last, url);
-  await tester.tap(find.text('Add'));
+  // The OK button enables only once the field is non-empty; pump so
+  // the dialog rebuilds before tapping it.
+  await tester.pump();
+  await tester.tap(find.text('OK'));
   await tester.pumpAndSettle();
+  await tester.tap(find.text('DOWNLOAD'));
+  await tester.pumpAndSettle();
+}
+
+/// Mocks the platform clipboard to hold [text] (null = empty).
+void mockClipboard(WidgetTester tester, String? text) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, Object?>{'text': text};
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+}
+
+/// Stubs a successful probe for the 100MB test URL.
+void stubProbe(MockDownloadsActions actions) {
+  when(() => actions.probeUrl(any())).thenAnswer(
+    (_) async => const Right(
+      ProbeResult(
+        url: 'http://127.0.0.1:9/f.bin',
+        fileName: 'f.bin',
+        totalBytes: 1000,
+      ),
+    ),
+  );
 }
 
 /// A temp dir with a settings file path and an existing f.bin, so the
@@ -342,21 +381,154 @@ void main() {
     expect(find.byType(PdmDialog), findsNothing);
   });
 
-  testWidgets('a failed add shows the error in xs text', (tester) async {
+  testWidgets('a failed probe shows the error in xs text',
+      (tester) async {
+    mockClipboard(tester, null);
     final actions = MockDownloadsActions();
-    when(() => actions.addDownload(any())).thenAnswer(
+    when(() => actions.probeUrl(any())).thenAnswer(
       (_) async => const Left(
         ValidationFailure('URL must start with http:// or https://'),
       ),
     );
     await pumpApp(tester, actions: actions);
-    await addDownloadViaDialog(tester, 'not-a-url');
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'not-a-url');
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
     const message = 'URL must start with http:// or https://';
     expect(find.text(message), findsOneWidget);
-    // The snackbar text has no style of its own: it inherits the
-    // theme's bodyMedium, which is xs by the app standard.
-    final element = tester.element(find.text(message));
-    expect(DefaultTextStyle.of(element).style.fontSize, 12);
+    // The inline error carries the xs style itself, and the New
+    // download dialog never opens for a failed probe.
+    final error = tester.widget<Text>(find.text(message));
+    expect(error.style?.fontSize, 12);
+    expect(find.text('New download'), findsNothing);
+    verifyNever(() => actions.addDownload(any()));
+  });
+
+  testWidgets('the add dialog prefills the URL from the clipboard',
+      (tester) async {
+    mockClipboard(tester, 'https://127.0.0.1:9/f.bin');
+    await pumpApp(tester);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller?.text, 'https://127.0.0.1:9/f.bin');
+  });
+
+  testWidgets('the add dialog stays empty for a non-URL clipboard',
+      (tester) async {
+    mockClipboard(tester, 'just some words');
+    await pumpApp(tester);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller?.text, '');
+  });
+
+  testWidgets('the add dialog URL field stays compact', (tester) async {
+    mockClipboard(tester, null);
+    await pumpApp(tester);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    // The rendered height depends on the test font's line metrics
+    // (Ahem inflates it to 48px, Roboto renders ~34px), so lock the
+    // design inputs that make it compact instead: xs text and tight
+    // 12/8 padding.
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(PdmDialog),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.style?.fontSize, 12);
+    expect(
+      field.decoration?.contentPadding,
+      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    );
+  });
+
+  testWidgets('the add flow probes the URL then confirms the new download',
+      (tester) async {
+    mockClipboard(tester, null);
+    final actions = MockDownloadsActions();
+    stubProbe(actions);
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((_) async => Right(_download));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField).last,
+      'http://127.0.0.1:9/f.bin',
+    );
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text('New download'), findsOneWidget);
+    await tester.tap(find.text('DOWNLOAD'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addDownload(
+        'http://127.0.0.1:9/f.bin',
+        directory: any(named: 'directory'),
+        fileName: 'f.bin',
+        paused: false,
+      ),
+    ).called(1);
+  });
+
+  testWidgets('Download later adds the download paused', (tester) async {
+    mockClipboard(tester, null);
+    final actions = MockDownloadsActions();
+    stubProbe(actions);
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((_) async => Right(_download));
+    await pumpApp(tester, actions: actions);
+    await tester.tap(find.text('Add download'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField).last,
+      'http://127.0.0.1:9/f.bin',
+    );
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Download later'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addDownload(
+        'http://127.0.0.1:9/f.bin',
+        directory: any(named: 'directory'),
+        fileName: 'f.bin',
+        paused: true,
+      ),
+    ).called(1);
   });
 
   testWidgets('the drop zone hint uses xs text', (tester) async {
@@ -368,6 +540,7 @@ void main() {
   });
 
   testWidgets('the add dialog uses xs text', (tester) async {
+    mockClipboard(tester, null);
     await pumpApp(tester);
     await tester.tap(find.text('Add download'));
     await tester.pumpAndSettle();
@@ -385,6 +558,7 @@ void main() {
   });
 
   testWidgets('the add dialog closes with the X button', (tester) async {
+    mockClipboard(tester, null);
     final actions = MockDownloadsActions();
     await pumpApp(tester, actions: actions);
     await tester.tap(find.text('Add download'));
@@ -1157,7 +1331,14 @@ void main() {
       Right(_download),
     ];
     final policies = <FileConflictPolicy?>[];
-    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((invocation) async {
       policies.add(
         invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
       );
@@ -1166,7 +1347,10 @@ void main() {
     when(
       () => actions.addDownload(
         any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
         conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
       ),
     ).thenAnswer((invocation) async {
       policies.add(
@@ -1174,6 +1358,7 @@ void main() {
       );
       return queued.removeAt(0);
     });
+    stubProbe(actions);
     await pumpApp(
       tester,
       actions: actions,
@@ -1214,7 +1399,14 @@ void main() {
       Right(_download),
     ];
     final policies = <FileConflictPolicy?>[];
-    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((invocation) async {
       policies.add(
         invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
       );
@@ -1223,7 +1415,10 @@ void main() {
     when(
       () => actions.addDownload(
         any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
         conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
       ),
     ).thenAnswer((invocation) async {
       policies.add(
@@ -1231,6 +1426,7 @@ void main() {
       );
       return queued.removeAt(0);
     });
+    stubProbe(actions);
     await pumpApp(
       tester,
       actions: actions,
@@ -1264,7 +1460,14 @@ void main() {
       Right(_download),
     ];
     final policies = <FileConflictPolicy?>[];
-    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((invocation) async {
       policies.add(
         invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
       );
@@ -1273,7 +1476,10 @@ void main() {
     when(
       () => actions.addDownload(
         any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
         conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
       ),
     ).thenAnswer((invocation) async {
       policies.add(
@@ -1281,6 +1487,7 @@ void main() {
       );
       return queued.removeAt(0);
     });
+    stubProbe(actions);
     await pumpApp(
       tester,
       actions: actions,
@@ -1309,7 +1516,14 @@ void main() {
     ).writeAsStringSync('{"fileConflictPolicy": "overwrite"}');
     final actions = MockDownloadsActions();
     final policies = <FileConflictPolicy?>[];
-    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((invocation) async {
       policies.add(
         invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
       );
@@ -1318,7 +1532,10 @@ void main() {
     when(
       () => actions.addDownload(
         any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
         conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
       ),
     ).thenAnswer((invocation) async {
       policies.add(
@@ -1326,6 +1543,7 @@ void main() {
       );
       return Right(_download);
     });
+    stubProbe(actions);
     await pumpApp(
       tester,
       actions: actions,
@@ -1344,7 +1562,14 @@ void main() {
       Right(_download),
     ];
     final policies = <FileConflictPolicy?>[];
-    when(() => actions.addDownload(any())).thenAnswer((invocation) async {
+    when(
+      () => actions.addDownload(
+        any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
+        paused: any(named: 'paused'),
+      ),
+    ).thenAnswer((invocation) async {
       policies.add(
         invocation.namedArguments[#conflictPolicy] as FileConflictPolicy?,
       );
@@ -1353,7 +1578,10 @@ void main() {
     when(
       () => actions.addDownload(
         any(),
+        directory: any(named: 'directory'),
+        fileName: any(named: 'fileName'),
         conflictPolicy: any(named: 'conflictPolicy'),
+        paused: any(named: 'paused'),
       ),
     ).thenAnswer((invocation) async {
       policies.add(
@@ -1361,6 +1589,7 @@ void main() {
       );
       return queued.removeAt(0);
     });
+    stubProbe(actions);
     await pumpApp(
       tester,
       actions: actions,

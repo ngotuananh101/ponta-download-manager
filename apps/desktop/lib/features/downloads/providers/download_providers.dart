@@ -21,12 +21,18 @@ String _defaultDownloadDirectory() {
   return p.join(Platform.environment['HOME'] ?? '.', 'Downloads');
 }
 
+/// The default download directory (~/Downloads). A separate provider
+/// so the screen can read it without opening the engine.
+final downloadDirectoryProvider = Provider<String>(
+  (ref) => _defaultDownloadDirectory(),
+);
+
 /// The engine, running in this process. Opening it runs startup
 /// recovery; disposing the datasource disposes the engine.
 final downloadDatasourceProvider = Provider<EngineDownloadDatasource>((ref) {
   final datasource = EngineDownloadDatasource(
     engine: PdmEngine.open(),
-    downloadDirectory: _defaultDownloadDirectory(),
+    downloadDirectory: ref.watch(downloadDirectoryProvider),
   );
   ref.onDispose(() => unawaited(datasource.dispose()));
   return datasource;
