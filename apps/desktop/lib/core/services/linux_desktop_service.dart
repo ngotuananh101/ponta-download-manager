@@ -177,20 +177,34 @@ StartupWMClass=$appId
     return null;
   }
 
+  /// Installs the bundled icon, re-installing it when the bundled
+  /// icon changed: the first version returned early whenever a file
+  /// already existed, so an icon update never reached the installed
+  /// copy and the dock, app switcher and tray kept the old icon.
   static Future<void> _ensureIconInstalled(File targetIcon) async {
-    if (targetIcon.existsSync() && targetIcon.lengthSync() > 0) {
-      return;
+    final bytes = await _loadBundledIconBytes();
+    if (bytes == null || bytes.isEmpty) return;
+
+    if (targetIcon.existsSync()) {
+      try {
+        if (_bytesEqual(await targetIcon.readAsBytes(), bytes)) return;
+      } catch (_) {}
     }
 
-    // Try reading from Flutter asset bundle first
+    try {
+      await targetIcon.writeAsBytes(bytes, flush: true);
+    } catch (_) {}
+  }
+
+  /// Loads the bundled icon bytes: the Flutter asset bundle first, then
+  /// the on-disk fallbacks. Returns null when none can be read.
+  static Future<List<int>?> _loadBundledIconBytes() async {
     try {
       final byteData = await rootBundle.load('assets/images/icon.png');
-      final bytes = byteData.buffer.asUint8List(
+      return byteData.buffer.asUint8List(
         byteData.offsetInBytes,
         byteData.lengthInBytes,
       );
-      await targetIcon.writeAsBytes(bytes, flush: true);
-      return;
     } catch (_) {}
 
     // Fallback: look for icon file relative to executable or working dir
@@ -212,10 +226,18 @@ StartupWMClass=$appId
       final file = File(path);
       if (file.existsSync() && file.lengthSync() > 0) {
         try {
-          await file.copy(targetIcon.path);
-          return;
+          return await file.readAsBytes();
         } catch (_) {}
       }
     }
+    return null;
+  }
+
+  static bool _bytesEqual(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 }
