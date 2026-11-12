@@ -91,7 +91,7 @@ void main() {
       );
       await opener.showInFolder(r'C:\Users\anhnt\Downloads\f.bin');
       expect(calls, [
-        ['explorer', r'/select,C:\Users\anhnt\Downloads\f.bin'],
+        ['explorer', '/select,', r'C:\Users\anhnt\Downloads\f.bin'],
       ]);
     });
 
@@ -104,6 +104,15 @@ void main() {
         opener.openFile('/home/anhnt/Downloads/f.bin'),
         throwsException,
       );
+    });
+
+    test('a non-zero explorer exit does not throw on Windows', () async {
+      final opener = FileOpener(
+        run: (_, _) async => ProcessResult(0, 1, '', 'nope'),
+        operatingSystem: 'windows',
+      );
+      await opener.openFile(r'C:\Users\anhnt\Downloads\f.bin');
+      await opener.showInFolder(r'C:\Users\anhnt\Downloads\f.bin');
     });
 
     test('an unknown platform throws UnsupportedError', () async {
