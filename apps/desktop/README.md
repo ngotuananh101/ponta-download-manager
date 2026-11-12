@@ -1,17 +1,26 @@
-# pdm
+# pdm (desktop)
 
-A new Flutter project.
+Flutter desktop app for Ponta Download Manager (Windows, Linux).
+Dark-only, FDM-style UI: downloads table, per-row menu, details panel,
+main menu, tray. The download engine runs in-process (`PdmEngine`);
+the app also hosts the IPC server the browser extension talks to.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```sh
+flutter run -d linux
+```
 
-A few resources to get you started if this is your first Flutter project:
+Or run the release build: `build/linux/x64/release/bundle/pdm`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Before building, fetch the bundled ffmpeg/yt-dlp binaries (not
+committed): `tools/fetch_external_tools.sh` from the repo root.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Tests
+
+```sh
+flutter test
+flutter analyze
+```
+
+Downloads default to `~/Downloads`.
