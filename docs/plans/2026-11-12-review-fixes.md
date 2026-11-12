@@ -27,6 +27,17 @@ item (small related items in one commit when they share one file and one
 test run, e.g. items 4+5). Report per batch, then continue. Release
 build once after P1 and once at the end.
 
+## Progress
+
+- R-P1a (items 4, 5, 6) — DONE: item 6 `ddb3f51`, items 4+5 `c0cfb14`.
+  Release build OK.
+- R-P1b (items 1, 2) — DONE: item 1 `e9c85d6` + race follow-up `9fae451`,
+  item 2 `9fb7793`.
+- R-P1c (item 3) — DONE: `cc17629`.
+- R-P2a (items 7, 8, 9, 11, 12, 13) — DONE: item 7 `a0415ee`, item 8
+  `6c7c361`, item 9 `2429811`, item 11 `e227dd9`, item 13 `2a3c1a3`,
+  item 12 `6f6705f`.
+
 ## Batches
 
 ### Batch R-P1a — transport probe phase (items 4, 5, 6)
