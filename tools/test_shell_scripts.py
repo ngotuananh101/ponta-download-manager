@@ -5,10 +5,13 @@ Run: pytest tools/test_shell_scripts.py
 Each test copies the real script into a temp layout and runs it with
 fake tools on PATH, so no network and no real binaries are involved.
 """
+import io
+import lzma
 import os
 import shutil
 import stat
 import subprocess
+import tarfile
 import textwrap
 from pathlib import Path
 
@@ -148,3 +151,108 @@ def test_fetch_skips_binaries_that_already_work(tmp_path):
     assert "ffmpeg already present, skipping" in result.stdout
     assert "yt-dlp already present, skipping" in result.stdout
     assert not curl_log.exists(), "the script tried to download"
+
+def test_fetch_downloads_binaries_on_clean_clone(tmp_path):
+    """Review 38: on a clean clone (no bundle/bin at all) the fetch
+    script must download both binaries and leave working ones behind.
+    A fake curl serves the fixtures, so no network is involved: a
+    .tar.xz holding a fake ffmpeg, and a fake yt-dlp script."""
+    root = tmp_path / "pdm"
+    tools_dir = root / "tools"
+    tools_dir.mkdir(parents=True)
+    shutil.copy(
+        REPO_ROOT / "tools" / "fetch_external_tools.sh",
+        tools_dir / "fetch_external_tools.sh",
+    )
+    bin_dir = root / "apps" / "desktop" / "bundle" / "bin"
+    assert not bin_dir.exists(), "clean clone must have no bundle/bin"
+
+    # Fixture 1: a .tar.xz holding a fake ffmpeg, like the real
+    # johnvansickle static build (binary nested one level deep).
+    fake_ffmpeg = (
+        b"#!/bin/sh\n"
+        b'if [ "$1" = "-version" ]; then echo "ffmpeg version fake"; exit 0; fi\n'
+        b"exit 8\n"
+    )
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+        info = tarfile.TarInfo("ffmpeg-7.0.2-amd64-static/ffmpeg")
+        info.size = len(fake_ffmpeg)
+        info.mode = 0o755
+        tf.addfile(info, io.BytesIO(fake_ffmpeg))
+    ffmpeg_fixture = tmp_path / "ffmpeg.tar.xz"
+    ffmpeg_fixture.write_bytes(buf.getvalue())
+
+    # Fixture 2: a fake yt-dlp, served as the standalone binary.
+    ytdlp_fixture = tmp_path / "yt-dlp"
+    write_executable(
+        ytdlp_fixture,
+        """\
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then echo "2026.01.01"; exit 0; fi
+        exit 1
+        """,
+    )
+
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    curl_log = tmp_path / "curl.log"
+    # A fake curl that serves the fixtures into the -o target instead
+    # of hitting the network.
+    write_executable(
+        fakebin / "curl",
+        f"""\
+        #!/bin/sh
+        out=""
+        prev=""
+        url=""
+        for arg in "$@"; do
+          if [ "$prev" = "-o" ]; then out="$arg"; fi
+          prev="$arg"
+          url="$arg"
+        done
+        echo "$url" >> "{curl_log}"
+        case "$url" in
+          *johnvansickle*) cat "$FFMPEG_FIXTURE" > "$out" ;;
+          *yt-dlp*) cat "$YTDLP_FIXTURE" > "$out" ;;
+          *) exit 1 ;;
+        esac
+        """,
+    )
+    result = run_script(
+        tools_dir / "fetch_external_tools.sh",
+        cwd=root,
+        args=["linux"],
+        env_extra={
+            "PATH": f"{fakebin}:{os.environ['PATH']}",
+            "FFMPEG_FIXTURE": str(ffmpeg_fixture),
+            "YTDLP_FIXTURE": str(ytdlp_fixture),
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already present, skipping" not in result.stdout
+    assert curl_log.is_file()
+    urls = curl_log.read_text().splitlines()
+    assert len(urls) == 2, urls
+    assert any("johnvansickle" in u for u in urls)
+    assert any("yt-dlp" in u for u in urls)
+
+    ffmpeg = bin_dir / "ffmpeg"
+    ytdlp = bin_dir / "yt-dlp"
+    assert ffmpeg.is_file() and os.access(ffmpeg, os.X_OK)
+    assert ytdlp.is_file() and os.access(ytdlp, os.X_OK)
+    assert (bin_dir / "ffmpeg.version").read_text().startswith(
+        "ffmpeg version fake"
+    )
+    assert (bin_dir / "yt-dlp.version").read_text().startswith("2026.01.01")
+    probe = subprocess.run(
+        [str(ffmpeg), "-version"], capture_output=True, text=True
+    )
+    assert probe.returncode == 0
+    assert "ffmpeg version fake" in probe.stdout
+    probe = subprocess.run(
+        [str(ytdlp), "--version"], capture_output=True, text=True
+    )
+    assert probe.returncode == 0
+    assert "2026.01.01" in probe.stdout
+
