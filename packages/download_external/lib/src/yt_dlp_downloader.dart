@@ -232,7 +232,7 @@ class YtDlpDownloader {
   }
 
   /// Fallback when the printed final path was not captured: the
-  /// output file matching the template stem, excluding `.part`.
+  /// output file belonging to the template stem, excluding `.part`.
   String? _globFinalPath(_RunningDownload running) {
     final stem = p
         .basename(running.outputTemplate)
@@ -246,7 +246,7 @@ class YtDlpDownloader {
         continue;
       }
       final name = p.basename(entity.path);
-      if (!name.startsWith(stem)) {
+      if (!_isOwnOutput(name, stem)) {
         continue;
       }
       if (name.endsWith('.part')) {
@@ -257,15 +257,64 @@ class YtDlpDownloader {
     return null;
   }
 
-  /// Deletes every file matching the output template stem
-  /// (the finished file and any partial). Used by cancel and retry,
-  /// where the download is restarted from scratch.
+  /// Extensions yt-dlp can write for the `-o <stem>.%(ext)s` template
+  /// (default merge, no --remux/--recode).
+  static const _outputExtensions = <String>{
+    'mp4',
+    'mkv',
+    'webm',
+    'mov',
+    'm4v',
+    'avi',
+    '3gp',
+    'flv',
+    'wmv',
+    'mp3',
+    'm4a',
+    'opus',
+    'ogg',
+    'oga',
+    'wav',
+    'flac',
+    'aac',
+    'mka',
+    'ts',
+    'm2ts',
+  };
+
+  /// True when [name] is a file yt-dlp wrote for the template with
+  /// this [stem]: `<stem>.<ext>` or a format intermediate
+  /// `<stem>.f<id>.<ext>`, optionally with a `.part` suffix. A plain
+  /// prefix match would also catch unrelated files in the same
+  /// directory, e.g. `<stem>-notes.txt` or `<stem>2.mp4`.
+  static bool _isOwnOutput(String name, String stem) {
+    if (!name.startsWith('$stem.')) {
+      return false;
+    }
+    var rest = name.substring(stem.length + 1);
+    if (rest.endsWith('.part')) {
+      rest = rest.substring(0, rest.length - 5);
+    }
+    final dot = rest.lastIndexOf('.');
+    final ext = dot == -1 ? rest : rest.substring(dot + 1);
+    if (!_outputExtensions.contains(ext)) {
+      return false;
+    }
+    if (dot == -1) {
+      return true;
+    }
+    return RegExp(r'^f\d+$').hasMatch(rest.substring(0, dot));
+  }
+
+  /// Deletes this download's own output files for the template
+  /// (the finished file and any partials). Used by cancel and
+  /// retry, where the download is restarted from scratch.
   void deleteOutput(String outputTemplate) {
     _deleteMatching(outputTemplate, partialOnly: false);
   }
 
-  /// Deletes only the `.part` files matching the output template
-  /// stem. Used by delete, where a finished file on disk is kept.
+  /// Deletes only this download's own `.part` files for the
+  /// template. Used by delete, where a finished file on disk is kept.
   void deletePartial(String outputTemplate) {
     _deleteMatching(outputTemplate, partialOnly: true);
   }
@@ -281,7 +330,7 @@ class YtDlpDownloader {
         continue;
       }
       final name = p.basename(entity.path);
-      if (!name.startsWith(stem)) {
+      if (!_isOwnOutput(name, stem)) {
         continue;
       }
       if (partialOnly && !name.endsWith('.part')) {

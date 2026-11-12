@@ -44,6 +44,19 @@ echo "$final"
 exit 0
 ''';
 
+const _unrelatedOnlyScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+stem=$(printf '%s' "$out" | sed 's/\.%(ext)s//')
+mkdir -p "$(dirname "$stem")"
+touch "$stem-notes.txt"
+exit 0
+''';
+
 void main() {
   late Directory tmp;
 
@@ -235,5 +248,102 @@ void main() {
       throwsStateError,
     );
     await downloader.cancel('dl-1');
+  });
+
+  test('deleteOutput deletes only this download\'s own files', () {
+    final downloader = YtDlpDownloader(
+      ytDlpPath: p.join(tmp.path, 'no-such-yt-dlp'),
+      ffmpegDir: tmp.path,
+    );
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final template = p.join(outDir.path, 'live.%(ext)s');
+    for (final name in [
+      'live.mp4',
+      'live.mp4.part',
+      'live.f137.mp4.part',
+      'live.mkv',
+      'live-notes.txt',
+      'live2.mp4',
+      'other.mp4',
+    ]) {
+      File(p.join(outDir.path, name)).writeAsStringSync('x');
+    }
+    downloader.deleteOutput(template);
+    expect(File(p.join(outDir.path, 'live.mp4')).existsSync(), isFalse);
+    expect(
+      File(p.join(outDir.path, 'live.mp4.part')).existsSync(),
+      isFalse,
+    );
+    expect(
+      File(p.join(outDir.path, 'live.f137.mp4.part')).existsSync(),
+      isFalse,
+    );
+    expect(File(p.join(outDir.path, 'live.mkv')).existsSync(), isFalse);
+    expect(
+      File(p.join(outDir.path, 'live-notes.txt')).existsSync(),
+      isTrue,
+    );
+    expect(File(p.join(outDir.path, 'live2.mp4')).existsSync(), isTrue);
+    expect(File(p.join(outDir.path, 'other.mp4')).existsSync(), isTrue);
+  });
+
+  test('deletePartial deletes only this download\'s partial files', () {
+    final downloader = YtDlpDownloader(
+      ytDlpPath: p.join(tmp.path, 'no-such-yt-dlp'),
+      ffmpegDir: tmp.path,
+    );
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final template = p.join(outDir.path, 'live.%(ext)s');
+    for (final name in [
+      'live.mp4',
+      'live.mp4.part',
+      'live.f140.m4a.part',
+      'live-notes.txt.part',
+      'live2.mp4.part',
+    ]) {
+      File(p.join(outDir.path, name)).writeAsStringSync('x');
+    }
+    downloader.deletePartial(template);
+    expect(File(p.join(outDir.path, 'live.mp4')).existsSync(), isTrue);
+    expect(
+      File(p.join(outDir.path, 'live.mp4.part')).existsSync(),
+      isFalse,
+    );
+    expect(
+      File(p.join(outDir.path, 'live.f140.m4a.part')).existsSync(),
+      isFalse,
+    );
+    expect(
+      File(p.join(outDir.path, 'live-notes.txt.part')).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(p.join(outDir.path, 'live2.mp4.part')).existsSync(),
+      isTrue,
+    );
+  });
+
+  test(
+      'the output fallback does not mistake an unrelated file for the download',
+      () async {
+    final fake = await makeFake('yt-dlp', _unrelatedOnlyScript);
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final downloader = YtDlpDownloader(
+      ytDlpPath: fake,
+      ffmpegDir: tmp.path,
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/live.m3u8',
+          outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+        )
+        .listen(events.add, onDone: done.complete);
+    await done.future.timeout(const Duration(seconds: 10));
+    expect(events.length, 1);
+    final failed = events.single as DownloadFailed;
+    expect(failed.code, 'yt-dlp-no-output');
   });
 }
