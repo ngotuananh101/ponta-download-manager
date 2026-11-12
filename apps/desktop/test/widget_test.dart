@@ -1846,6 +1846,42 @@ void main() {
     expect(items.length, 9);
     expect(items.every((item) => item.height == 32), isTrue);
   });
+  testWidgets('the row menu separates its sections with dividers',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    // Downloading row: Set priority | Pause, Cancel | link and
+    // tools | Delete, so three dividers.
+    final dividers = find.byType(PopupMenuDivider);
+    expect(dividers, findsNWidgets(3));
+    expect(
+      tester.getCenter(dividers.at(0)).dy,
+      greaterThan(tester.getCenter(find.text('Set priority')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(0)).dy,
+      lessThan(tester.getCenter(find.text('Pause')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(1)).dy,
+      greaterThan(tester.getCenter(find.text('Cancel')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(1)).dy,
+      lessThan(tester.getCenter(find.text('Copy link')).dy),
+    );
+    expect(
+      tester.getCenter(dividers.at(2)).dy,
+      greaterThan(
+        tester.getCenter(find.text('Export selected downloads')).dy,
+      ),
+    );
+    expect(
+      tester.getCenter(dividers.at(2)).dy,
+      lessThan(tester.getCenter(find.text('Delete')).dy),
+    );
+  });
 
   testWidgets('Perform virus check is disabled and does nothing',
       (tester) async {

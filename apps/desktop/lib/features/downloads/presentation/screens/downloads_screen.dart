@@ -823,6 +823,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         onSelected: (value) => _onRowAction(item, value),
         itemBuilder: (context) {
           final entries = <PopupMenuEntry<String>>[];
+          // A divider only goes between two non-empty groups: it
+          // is skipped at the start of the menu and never doubled
+          // when the group before it is empty.
+          void addDivider() {
+            if (entries.isNotEmpty &&
+                entries.last is! PopupMenuDivider) {
+              entries.add(const PopupMenuDivider());
+            }
+          }
           // File actions first, as in IDM: Open needs the finished
           // file on disk, Show in folder only needs its path.
           if (item.state == DownloadState.completed &&
@@ -845,6 +854,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             entries.add(_menuItem('rename', 'Rename file'));
             entries.add(_menuItem('move', 'Move to...'));
           }
+          // File actions above, control actions below.
+          addDivider();
           switch (item.state) {
             case DownloadState.downloading:
             case DownloadState.queued:
@@ -863,6 +874,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             case DownloadState.cancelled:
               break;
           }
+          // Control actions above, link and tool actions below.
+          addDivider();
           // Every row can hand out its URL.
           entries.add(_menuItem('copy_link', 'Copy link'));
           // A completed download can be checked against the server.
@@ -890,6 +903,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           entries.add(_menuItem('add_mirror', 'Add mirror'));
           // Every row can export the current selection (or itself).
           entries.add(_menuItem('export', 'Export selected downloads'));
+          // Destructive actions last, behind their own divider.
+          addDivider();
           // Delete file only: the row stays and becomes Missing.
           if (_hasFinishedFile(item)) {
             entries.add(_menuItem('delete_file', 'Delete file'));
