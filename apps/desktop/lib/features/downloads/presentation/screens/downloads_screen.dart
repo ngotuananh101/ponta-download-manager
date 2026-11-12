@@ -179,7 +179,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   Text(
                     _sortLabel(_sort),
                     style: AppTextSize.xs.textStyle(
-                      color: const Color(0xFFF4F5F5),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const Icon(Icons.arrow_drop_down, size: 18),
@@ -208,7 +208,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   Text(
                     _filterLabel(_filter),
                     style: AppTextSize.xs.textStyle(
-                      color: const Color(0xFFF4F5F5),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const Icon(Icons.arrow_drop_down, size: 18),

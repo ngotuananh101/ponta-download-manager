@@ -273,19 +273,22 @@ void main() {
     expect(menuRect.right, greaterThan(930));
   });
 
-  testWidgets('the toolbar button texts use the FDM colors',
+  testWidgets('the toolbar button texts use the theme colour',
       (tester) async {
     await pumpApp(tester);
-    // The sort/filter pill labels are FDM's near-white, sampled from
-    // the screenshot; the Add button's dark text comes from the theme's
-    // onPrimary (covered by the AppTheme palette test).
+    // The sort/filter pill labels use the theme's onSurface, not a
+    // hardcoded near-white; the Add button's dark text comes from the
+    // theme's onPrimary (covered by the AppTheme palette test).
+    final onSurface = Theme.of(
+      tester.element(find.text('Newest')),
+    ).colorScheme.onSurface;
     expect(
       tester.widget<Text>(find.text('Newest')).style?.color,
-      const Color(0xFFF4F5F5),
+      onSurface,
     );
     expect(
       tester.widget<Text>(find.text('All files')).style?.color,
-      const Color(0xFFF4F5F5),
+      onSurface,
     );
   });
 
