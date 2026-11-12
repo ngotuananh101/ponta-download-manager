@@ -14,7 +14,9 @@ final _log = Logger('IpcServer');
 /// [close] (the §16 [DownloadEngine] has no dispose method).
 /// A client must send `hello` with the server token first; on
 /// success it gets `hello-ok` plus a `download.sync` snapshot, and
-/// from then on every engine event is broadcast to it.
+/// from then on every engine event is broadcast to it. Events that
+/// arrive while the snapshot is pending are buffered and sent right
+/// after it, so the client always sees the snapshot first.
 class IpcServer {
   IpcServer({
     required DownloadEngine engine,
@@ -52,7 +54,7 @@ class IpcServer {
     final message = downloadEventToMessage(event);
     for (final client in _clients.toList()) {
       if (client.authenticated) {
-        client.send(message);
+        client.sendBroadcast(message);
       }
     }
   }
@@ -93,6 +95,15 @@ class _ClientConnection {
   late final StreamSubscription<Map<String, Object?>> _subscription;
   late final Timer _helloTimer;
   var _authenticated = false;
+
+  /// True once the sync snapshot has been sent. Broadcasts that arrive
+  /// before that are buffered in [_pendingBroadcasts] so a client never
+  /// sees an event for a download it has not learned from the snapshot.
+  var _synced = false;
+
+  /// Broadcasts that arrived while the sync snapshot was pending, in
+  /// arrival order. Flushed right after the snapshot.
+  final _pendingBroadcasts = <Map<String, Object?>>[];
   var _closed = false;
 
   /// Requests on one connection run sequentially, in arrival order.
@@ -112,6 +123,18 @@ class _ClientConnection {
     }
   }
 
+  /// Sends a broadcast engine event, or buffers it until the sync
+  /// snapshot has been sent: a client must see the snapshot before
+  /// any event, and the snapshot is taken after the event, so nothing
+  /// is lost by holding it back.
+  void sendBroadcast(Map<String, Object?> message) {
+    if (_synced) {
+      send(message);
+    } else {
+      _pendingBroadcasts.add(message);
+    }
+  }
+
   Future<void> close() async {
     if (_closed) {
       return;
@@ -128,13 +151,13 @@ class _ClientConnection {
       return;
     }
     if (!_authenticated) {
-      _handleHello(message);
+      unawaited(_handleHello(message));
       return;
     }
     _queue = _queue.then((_) => _handleRequest(message)).catchError((_) {});
   }
 
-  void _handleHello(Map<String, Object?> message) {
+  Future<void> _handleHello(Map<String, Object?> message) async {
     if (message['type'] != 'hello') {
       _sendError(
         IpcErrorCode.invalidMessage,
@@ -158,8 +181,16 @@ class _ClientConnection {
     }
     _authenticated = true;
     _helloTimer.cancel();
-    send({'type': 'hello-ok', 'v': ipcProtocolVersion});
-    _sendSync();
+    await send({'type': 'hello-ok', 'v': ipcProtocolVersion});
+    await _sendSync();
+    // Events that arrived while the snapshot was pending are sent now,
+    // in arrival order, so the client sees the snapshot first and no
+    // event is lost.
+    for (final pending in _pendingBroadcasts) {
+      send(pending);
+    }
+    _pendingBroadcasts.clear();
+    _synced = true;
   }
 
   Future<void> _sendSync() async {

@@ -51,11 +51,26 @@ class IpcClient {
 
   /// The latest sync snapshot first (when one was already received),
   /// then every snapshot that follows.
-  Stream<List<DownloadInfo>> get syncSnapshots async* {
-    if (_latestSync != null) {
-      yield _latestSync!;
-    }
-    yield* _syncs.stream;
+  ///
+  /// The replay and the live subscription happen in one synchronous
+  /// step: a sync arriving between a replayed snapshot and the live
+  /// stream would otherwise be lost on the broadcast [_syncs] stream
+  /// (it updates [_latestSync] but the subscriber never sees it).
+  Stream<List<DownloadInfo>> get syncSnapshots {
+    final controller = StreamController<List<DownloadInfo>>();
+    StreamSubscription<List<DownloadInfo>>? sub;
+    controller.onListen = () {
+      if (_latestSync != null) {
+        controller.add(_latestSync!);
+      }
+      sub = _syncs.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+    };
+    controller.onCancel = () => sub?.cancel();
+    return controller.stream;
   }
 
   Future<Map<String, Object?>> request(

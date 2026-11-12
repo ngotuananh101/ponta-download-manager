@@ -329,6 +329,53 @@ void main() {
       expect(syncs.single.map((d) => d.id), ['dl-1']);
     });
 
+    test('an event emitted while the sync snapshot is pending arrives '
+        'after the sync', () async {
+      // A slow listDownloads keeps the sync snapshot pending after
+      // hello-ok, so an engine event fired in that window would
+      // overtake the snapshot without the fix.
+      final slowEngine = _SlowListEngine();
+      slowEngine.infos['dl-1'] = DownloadInfo(
+        id: 'dl-1',
+        url: 'http://127.0.0.1:9/f.bin',
+        fileName: 'f.bin',
+        status: DownloadStatus.queued,
+        totalBytes: 1000,
+      );
+      final slowConnections = StreamController<IpcChannel>();
+      final slowServer = IpcServer(
+        engine: slowEngine,
+        connections: slowConnections.stream,
+        token: 'test-token',
+      );
+      addTearDown(slowServer.close);
+      addTearDown(slowConnections.close);
+      final (serverSide, clientSide) = createChannelPair();
+      addTearDown(serverSide.close);
+      addTearDown(clientSide.close);
+      slowConnections.add(serverSide);
+      final client = await IpcClient.connect(
+        channelFactory: () async => clientSide,
+        token: 'test-token',
+      );
+      addTearDown(client.close);
+      final order = <String>[];
+      final syncSub = client.syncSnapshots.listen((_) => order.add('sync'));
+      addTearDown(syncSub.cancel);
+      final eventSub = client.events.listen((_) => order.add('event'));
+      addTearDown(eventSub.cancel);
+      slowEngine.emit(
+        DownloadEvent.progress(
+          downloadId: 'dl-1',
+          downloadedBytes: 500,
+          totalBytes: 1000,
+          bytesPerSecond: 0,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(order, ['sync', 'event']);
+    });
+
     test('an unknown method fails with unknown-method', () async {
       final client = await connectClient();
       await expectLater(
@@ -423,8 +470,10 @@ void main() {
       final sub = client.syncSnapshots.listen(syncs.add);
       addTearDown(sub.cancel);
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(syncs, hasLength(1));
-      expect(syncs.single.map((d) => d.id), ['dl-1']);
+      // The replay may still be the pre-reconnect snapshot; the fresh
+      // one follows it, so the last snapshot is the one that matters.
+      expect(syncs, isNotEmpty);
+      expect(syncs.last.map((d) => d.id), ['dl-1']);
     });
   });
 
@@ -460,4 +509,14 @@ void main() {
       expect(decoded.errorMessage, isNull);
     });
   });
+}
+
+/// A [FakeEngine] whose listDownloads answers slowly, so the sync
+/// snapshot is still pending after hello-ok.
+class _SlowListEngine extends FakeEngine {
+  @override
+  Future<List<DownloadInfo>> listDownloads() async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    return super.listDownloads();
+  }
 }
