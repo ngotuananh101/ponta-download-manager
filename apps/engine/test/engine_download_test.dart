@@ -368,11 +368,148 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
     });
 
-    test('resumes a paused download after a restart', () async {
-      final data = bytesOf(8192);
+    test('pauseDownload on a completed download is a no-op', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.pauseDownload(info.id);
+      // The status write is synchronous inside pauseDownload, so a
+      // short settle is enough to catch any async side effect too.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.completed);
+      expect(File(p.join(tempDir.path, 'f.bin')).existsSync(), isTrue);
+    });
+
+    test('resumeDownload on a completed download is a no-op', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await engine.resumeDownload(info.id);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.completed);
+      expect(File(p.join(tempDir.path, 'f.bin')).existsSync(), isTrue);
+    });
+
+    test('pauseDownload on a failed download is a no-op', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data, failFirst: 100);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.pauseDownload(info.id);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.failed);
+    });
+
+    test('resumeDownload on a failed download is a no-op', () async {
+      final data = bytesOf(2048);
+      await startServer(data: data, failFirst: 100);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.resumeDownload(info.id);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.failed);
+    });
+
+    test('resumeDownload on a downloading download does not reset it to queued',
+        () async {
+      // 10 MiB at 64 KiB / 20 ms takes ~3.2 s, so the download is
+      // still running after the checkpoint writer (1 s interval)
+      // first records it as downloading.
+      final data = bytesOf(10 * 1024 * 1024);
       await startServer(
         data: data,
         chunkDelay: const Duration(milliseconds: 20),
+        chunkSize: 65536,
+      );
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      // Wait until the checkpoint writer has recorded the download as
+      // downloading: the stored record lags the live task, so a resume
+      // issued earlier would see a queued record either way.
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      await engine.resumeDownload(info.id);
+      // Read back immediately: the status write inside resumeDownload
+      // is synchronous, so any reset to queued is visible now, before
+      // the writer's next tick can flip it back to downloading.
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.downloading);
+    });
+
+    test('resumes a paused download after a restart', () async {
+      // Slow enough that the download is still running when the
+      // checkpoint writer (1 s interval) first reports progress:
+      // pausing a download that already finished is a no-op, so a
+      // fast file would never reach the paused state this test needs.
+      final data = bytesOf(10 * 1024 * 1024);
+      await startServer(
+        data: data,
+        chunkDelay: const Duration(milliseconds: 50),
+        chunkSize: 65536,
       );
       final first = openEngine(maxConnections: 2);
       final info = await first.createDownload(
@@ -391,6 +528,11 @@ void main() {
       await first.dispose();
       final second = openEngine(maxConnections: 2);
       addTearDown(second.dispose);
+      // A paused download stays paused across a restart by design, so
+      // resume it explicitly: the old test only passed because pausing
+      // a finished download rewrote it to paused and recovery then
+      // completed it from the file already on disk.
+      await second.resumeDownload(info.id);
       await waitForInfo(
         second,
         info.id,
@@ -1712,6 +1854,39 @@ exit 0
         expect(done.filePath, p.join(tempDir.path, 'live.mp4'));
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
+
+    test('resumeDownload on a completed playlist download does not restart it',
+        () async {
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final produced = File(p.join(tempDir.path, 'live.mp4'));
+      final modifiedBefore = produced.lastModifiedSync();
+      await engine.resumeDownload(info.id);
+      // A restart would re-run the fake yt-dlp and touch the file
+      // again; 500ms is far more than the fake script needs.
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.completed);
+      expect(produced.lastModifiedSync(), modifiedBefore);
+    });
 
     test('deleteDownload with deleteFile removes the produced file',
         () async {

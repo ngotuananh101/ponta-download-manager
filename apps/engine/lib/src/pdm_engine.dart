@@ -449,7 +449,15 @@ class PdmEngine implements DownloadEngine {
   @override
   Future<void> pauseDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
-    if (record != null && _isStreamingPlaylist(record.url)) {
+    // Only a queued or downloading download can be paused. Pausing a
+    // terminal download (completed/failed/cancelled) or an already
+    // paused one is a no-op: the record must keep its real status.
+    if (record == null ||
+        (record.status != DownloadStatus.queued &&
+            record.status != DownloadStatus.downloading)) {
+      return;
+    }
+    if (_isStreamingPlaylist(record.url)) {
       await _ytDlp?.pause(downloadId);
       _updateStatus(downloadId, DownloadStatus.paused);
       return;
@@ -461,7 +469,13 @@ class PdmEngine implements DownloadEngine {
   @override
   Future<void> resumeDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
-    if (record != null && _isStreamingPlaylist(record.url)) {
+    // Only a paused download can be resumed. Resuming a terminal
+    // download must not re-queue it (or restart a finished playlist),
+    // and resuming a running one must not reset it to queued.
+    if (record == null || record.status != DownloadStatus.paused) {
+      return;
+    }
+    if (_isStreamingPlaylist(record.url)) {
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
         throw const DownloadError(
