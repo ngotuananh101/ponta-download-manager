@@ -88,6 +88,16 @@ final saveFileProvider =
   (ref) => (fileName) => FilePicker.platform.saveFile(fileName: fileName),
 );
 
+/// Picks a file to read from with the system file dialog. A separate
+/// provider so tests can answer the picker instead of opening a real
+/// dialog.
+final pickFileProvider = Provider<Future<String?> Function()>(
+  (ref) => () async {
+    final result = await FilePicker.platform.pickFiles();
+    return result?.files.single.path;
+  },
+);
+
 /// Opens a downloaded file or shows it in the file manager. A
 /// separate provider so tests can record launches instead of opening
 /// real files.

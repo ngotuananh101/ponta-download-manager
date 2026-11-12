@@ -11,6 +11,7 @@ import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/data/services/download_export.dart';
+import 'package:pdm/features/downloads/data/services/url_list.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/delete_download_dialog.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
@@ -291,6 +292,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
               itemBuilder: (context) => [
                 _menuItem('pause-all', 'Pause all'),
                 _menuItem('resume-all', 'Resume all'),
+                const PopupMenuDivider(),
+                _menuItem('paste-clipboard', 'Paste urls from clipboard'),
+                _menuItem('paste-file', 'Paste urls from file'),
               ],
               // An explicit child (not the icon form): the icon form
               // builds an IconButton whose 48px minimum survives both
@@ -431,6 +435,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         await _pauseActive(items);
       case 'resume-all':
         await _resumePaused(items);
+      case 'paste-clipboard':
+        await _pasteUrlsFromClipboard();
+      case 'paste-file':
+        await _pasteUrlsFromFile();
     }
   }
 
@@ -1669,6 +1677,64 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       paused: paused,
     );
     retry.fold(_showFailure, (_) {});
+  }
+
+  /// Adds many downloads at once, one per URL. A remembered
+  /// file-conflict choice applies; otherwise a conflicting destination
+  /// is renamed automatically — bulk paste never asks per file.
+  Future<void> _addDownloads(List<String> urls) async {
+    if (urls.isEmpty) {
+      _showMessage('No valid URLs found');
+      return;
+    }
+    final actions = ref.read(downloadsActionsProvider);
+    final policy = ref.read(fileConflictSettingsProvider).load() ??
+        FileConflictPolicy.rename;
+    var added = 0;
+    var failed = 0;
+    for (final url in urls) {
+      final result = await actions.addDownload(url, conflictPolicy: policy);
+      result.fold((_) => failed++, (_) => added++);
+    }
+    if (!mounted) return;
+    _showMessage(
+      failed > 0
+          ? 'Added $added download(s), $failed failed'
+          : 'Added $added download(s)',
+    );
+  }
+
+  /// Pastes URLs from the clipboard, one per line.
+  Future<void> _pasteUrlsFromClipboard() async {
+    String? text;
+    try {
+      text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    } catch (_) {
+      text = null;
+    }
+    await _addDownloads(parseUrlList(text ?? ''));
+  }
+
+  /// Pastes URLs from a file picked with the system file dialog.
+  Future<void> _pasteUrlsFromFile() async {
+    final path = await ref.read(pickFileProvider)();
+    if (path == null || !mounted) return;
+    String text;
+    try {
+      text = File(path).readAsStringSync();
+    } catch (e) {
+      _showMessage('Could not read the file: $e');
+      return;
+    }
+    await _addDownloads(parseUrlList(text));
+  }
+
+  void _showMessage(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 
   void _showFailure(Failure failure) {

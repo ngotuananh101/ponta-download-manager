@@ -39,6 +39,7 @@ Widget app({
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
   Future<String?> Function(String fileName)? saveFile,
+  Future<String?> Function()? pickFile,
 }) {
   return ProviderScope(
     overrides: [
@@ -55,6 +56,8 @@ Widget app({
         directoryPickerProvider.overrideWithValue(directoryPicker),
       if (saveFile != null)
         saveFileProvider.overrideWithValue(saveFile),
+      if (pickFile != null)
+        pickFileProvider.overrideWithValue(pickFile),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -74,6 +77,7 @@ Future<void> pumpApp(
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
   Future<String?> Function(String fileName)? saveFile,
+  Future<String?> Function()? pickFile,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -88,6 +92,7 @@ Future<void> pumpApp(
       fileOpener: fileOpener,
       directoryPicker: directoryPicker,
       saveFile: saveFile,
+      pickFile: pickFile,
     ),
   );
   await tester.pumpAndSettle();
@@ -1813,13 +1818,144 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pause all'), findsOneWidget);
     expect(find.text('Resume all'), findsOneWidget);
+    expect(find.text('Paste urls from clipboard'), findsOneWidget);
+    expect(find.text('Paste urls from file'), findsOneWidget);
     final menuText = tester.widget<Text>(find.text('Pause all'));
     expect(menuText.style?.fontSize, 12);
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 2);
+    expect(items.length, 4);
     expect(items.every((item) => item.height == 32), isTrue);
+    // Pause/Resume | paste actions.
+    final divider = find.byType(PopupMenuDivider);
+    expect(divider, findsOneWidget);
+    expect(
+      tester.getCenter(divider).dy,
+      greaterThan(tester.getCenter(find.text('Resume all')).dy),
+    );
+    expect(
+      tester.getCenter(divider).dy,
+      lessThan(tester.getCenter(find.text('Paste urls from clipboard')).dy),
+    );
+  });
+
+  testWidgets(
+      'Paste urls from clipboard adds every URL and reports the count',
+      (tester) async {
+    mockClipboard(
+      tester,
+      'https://example.com/a.bin\n'
+      'not a url\n'
+      'https://example.com/b.bin\n',
+    );
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((_) async => const Right(_download));
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: p.join(tempDir.path, 'settings.json'),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste urls from clipboard'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addDownload(
+        'https://example.com/a.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    verify(
+      () => actions.addDownload(
+        'https://example.com/b.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    expect(find.text('Added 2 download(s)'), findsOneWidget);
+  });
+
+  testWidgets('Paste urls from clipboard with no URLs adds nothing',
+      (tester) async {
+    mockClipboard(tester, 'just some text\nno urls here');
+    final actions = MockDownloadsActions();
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: p.join(tempDir.path, 'settings.json'),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste urls from clipboard'));
+    await tester.pumpAndSettle();
+    verifyNever(() => actions.addDownload(any()));
+    expect(find.text('No valid URLs found'), findsOneWidget);
+  });
+
+  testWidgets('Paste urls from file adds the URLs from the picked file',
+      (tester) async {
+    final tempDir = Directory.systemTemp.createTempSync();
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final urlsFile = File(p.join(tempDir.path, 'urls.txt'))
+      ..writeAsStringSync(
+        'https://example.com/a.bin\n'
+        'https://example.com/b.bin\n',
+      );
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.addDownload(
+        any(),
+        conflictPolicy: any(named: 'conflictPolicy'),
+      ),
+    ).thenAnswer((_) async => const Right(_download));
+    await pumpApp(
+      tester,
+      actions: actions,
+      settingsPath: p.join(tempDir.path, 'settings.json'),
+      pickFile: () async => urlsFile.path,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste urls from file'));
+    await tester.pumpAndSettle();
+    verify(
+      () => actions.addDownload(
+        'https://example.com/a.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    verify(
+      () => actions.addDownload(
+        'https://example.com/b.bin',
+        conflictPolicy: FileConflictPolicy.rename,
+      ),
+    ).called(1);
+    expect(find.text('Added 2 download(s)'), findsOneWidget);
+  });
+
+  testWidgets('Paste urls from file with a cancelled picker does nothing',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    await pumpApp(
+      tester,
+      actions: actions,
+      pickFile: () async => null,
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste urls from file'));
+    await tester.pumpAndSettle();
+    verifyNever(() => actions.addDownload(any()));
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('the row menu uses xs text in compact rows',
