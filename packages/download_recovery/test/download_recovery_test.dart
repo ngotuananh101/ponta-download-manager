@@ -233,13 +233,85 @@ void main() {
         );
       ''');
       db.execute(
-        "INSERT INTO downloads (id, url, destination_path, partial_path,"
-        " file_name, directory, status, created_at, updated_at)"
+        'INSERT INTO downloads (id, url, destination_path, partial_path,'
+        ' file_name, directory, status, created_at, updated_at)'
         " VALUES ('dl-1', 'http://127.0.0.1:9/f.bin', '/tmp/f.bin',"
         " '/tmp/f.bin.partial', 'f.bin', '/tmp', 'paused', 1000, 1000)",
       );
       db.userVersion = 1;
       db.dispose();
+      final store = DownloadStore.open(dbPath);
+      addTearDown(store.close);
+      final read = store.getDownload('dl-1')!;
+      expect(read.url, 'http://127.0.0.1:9/f.bin');
+      expect(read.mirrors, isEmpty);
+      expect(read.tags, isEmpty);
+      store.upsertDownload(
+        read.copyWith(
+          mirrors: ['http://127.0.0.1:9/m.bin'],
+          tags: ['iso'],
+        ),
+      );
+      final reread = store.getDownload('dl-1')!;
+      expect(reread.mirrors, ['http://127.0.0.1:9/m.bin']);
+      expect(reread.tags, ['iso']);
+    });
+
+    test('a half-migrated v1 database opens and finishes migrating', () {
+      final dir = Directory.systemTemp.createTempSync('pdm-migrate-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final dbPath = p.join(dir.path, 'pdm.db');
+      // Build a v1 database by hand, then apply only the first ALTER:
+      // the state a crash between the two ALTERs would leave behind,
+      // with user_version still 1.
+      final db = sqlite3.open(dbPath);
+      db.execute('''
+        CREATE TABLE downloads (
+          id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          final_url TEXT,
+          destination_path TEXT NOT NULL,
+          partial_path TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          directory TEXT NOT NULL,
+          total_bytes INTEGER NOT NULL DEFAULT -1,
+          downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+          etag TEXT,
+          last_modified TEXT,
+          supports_range INTEGER,
+          status TEXT NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0,
+          max_connections INTEGER NOT NULL DEFAULT 4,
+          error_code TEXT,
+          error_message TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      ''');
+      db.execute('''
+        CREATE TABLE segments (
+          download_id TEXT NOT NULL,
+          segment_index INTEGER NOT NULL,
+          start_byte INTEGER NOT NULL,
+          end_byte INTEGER,
+          written_bytes INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (download_id, segment_index),
+          FOREIGN KEY (download_id) REFERENCES downloads(id)
+            ON DELETE CASCADE
+        );
+      ''');
+      db.execute(
+        'INSERT INTO downloads (id, url, destination_path, partial_path,'
+        ' file_name, directory, status, created_at, updated_at)'
+        " VALUES ('dl-1', 'http://127.0.0.1:9/f.bin', '/tmp/f.bin',"
+        " '/tmp/f.bin.partial', 'f.bin', '/tmp', 'paused', 1000, 1000)",
+      );
+      db.execute('ALTER TABLE downloads ADD COLUMN mirrors TEXT;');
+      db.userVersion = 1;
+      db.dispose();
+      // Must not throw a duplicate column name error.
       final store = DownloadStore.open(dbPath);
       addTearDown(store.close);
       final read = store.getDownload('dl-1')!;

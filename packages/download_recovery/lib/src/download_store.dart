@@ -72,12 +72,35 @@ class DownloadStore {
     // old code, without the columns) needs the ALTER: a fresh
     // database just created the tables WITH them.
     if (version == 1) {
-      // Mirrors and tags, stored as JSON text.
-      _db.execute('ALTER TABLE downloads ADD COLUMN mirrors TEXT;');
-      _db.execute('ALTER TABLE downloads ADD COLUMN tags TEXT;');
+      _migrateV1ToV2();
     }
     // Both paths end at the same schema.
     _db.userVersion = 2;
+  }
+
+  /// Adds the v2 columns (mirrors and tags, stored as JSON text).
+  /// Only the columns that are missing are added, and both ALTERs
+  /// run in one transaction, so a half-finished earlier migration —
+  /// one ALTER applied, the other not, version still 1 — completes
+  /// instead of dying on a duplicate column name.
+  void _migrateV1ToV2() {
+    final columns = _db
+        .select('PRAGMA table_info(downloads);')
+        .map((row) => row['name'] as String)
+        .toSet();
+    _db.execute('BEGIN;');
+    try {
+      if (!columns.contains('mirrors')) {
+        _db.execute('ALTER TABLE downloads ADD COLUMN mirrors TEXT;');
+      }
+      if (!columns.contains('tags')) {
+        _db.execute('ALTER TABLE downloads ADD COLUMN tags TEXT;');
+      }
+      _db.execute('COMMIT;');
+    } catch (e) {
+      _db.execute('ROLLBACK;');
+      rethrow;
+    }
   }
 
   void upsertDownload(DownloadRecord record) {
