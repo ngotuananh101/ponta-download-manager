@@ -1,7 +1,7 @@
 # Extension downloads: send browser cookies + referrer to the engine
 
 Date: 2026-11-13
-Status: In progress
+Status: DONE
 
 ## Problem
 
@@ -177,3 +177,30 @@ Data path today (verified in code 2026-11-13):
 - Intercept a real login-walled download in the browser (a file that
   401s without a session) and confirm it completes in PDM; confirm a
   public link still works unchanged.
+
+## Completion
+
+All parts done and pushed to main, 2026-11-13:
+
+- P1 `4eca688` — request fields on `CreateDownloadRequest`.
+- P2 `1748b52` — headers on probe / validateRange / openStream.
+- P3 `97b6731` — task + scheduler carry the headers.
+- P4 `30a9bf9` — engine in-memory id → headers map for retry/failover.
+- P5 `5422b64` — IPC `download.create` carries the fields.
+- P6 `7b5d372` — native host forwards them.
+- P7 `bf2590d` — extension reads cookies, passes referrer.
+- P8 — README + this plan marked DONE.
+
+Two plan corrections found during verification: failover builds a fresh
+enqueue from the stored record (it does NOT re-enqueue from the
+`DownloadJob`), so P4 consults the headers map there too; `changeUrl`
+does not re-enqueue at all, so it needs no map change — the origin guard
+makes a later retry safe.
+
+Gates at close-out: desktop `flutter test`, `dart test` in every touched
+package + host, extension `node --test`, root `dart analyze`,
+`flutter analyze` — all green.
+
+Manual check still owed (Tuấn Anh): intercept a real login-walled
+download in the browser and confirm it completes; confirm a public link
+still works unchanged.

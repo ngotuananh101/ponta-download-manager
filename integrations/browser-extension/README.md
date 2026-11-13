@@ -37,7 +37,7 @@ the download in the running engine over IPC.
 
 ## Known limitations
 
-- No cookies, request headers, or referrer are sent to the engine.
+- Cookies and the referrer are sent with every download the extension hands over — the cookies the browser would send for that URL, plus the page the download came from — so login-walled links work. They live in memory only: after an app restart they are gone, and a login-walled download must be re-added from the browser. Other request headers are still not sent.
 - The file name comes from the URL (or the link target); a server
   `Content-Disposition` filename does not rename the file, because
   the destination is fixed before the engine probes the URL.
