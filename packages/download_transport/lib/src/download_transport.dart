@@ -8,7 +8,8 @@ import 'package:download_transport/src/resource_info.dart';
 abstract interface class DownloadTransport {
   /// Probes the resource: HEAD where useful, GET/Range fallback when
   /// HEAD is unsupported (405/501). Follows redirects.
-  Future<ResourceInfo> probe(Uri url);
+  /// Extra [headers] (e.g. Cookie, Referer) are sent on every request.
+  Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers});
 
   /// Validates that the server answers the requested byte range with
   /// 206 and a matching Content-Range (§5.3).
@@ -16,6 +17,7 @@ abstract interface class DownloadTransport {
     Uri url, {
     required int start,
     required int end,
+    Map<String, String>? headers,
   });
 
   /// Opens a byte stream for the URL, or for [start]-[end] when a range
@@ -26,6 +28,7 @@ abstract interface class DownloadTransport {
     int? start,
     int? end,
     String? ifRange,
+    Map<String, String>? headers,
   });
 
   /// Releases the underlying HTTP client. The transport must not be

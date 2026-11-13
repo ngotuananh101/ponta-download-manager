@@ -41,7 +41,7 @@ class _FakeTransport implements DownloadTransport {
   final openedRanges = <({int start, int? end, String? ifRange})>[];
 
   @override
-  Future<ResourceInfo> probe(Uri url) async {
+  Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers}) async {
     return ResourceInfo(
       finalUrl: url,
       statusCode: 200,
@@ -60,6 +60,7 @@ class _FakeTransport implements DownloadTransport {
     Uri url, {
     required int start,
     required int end,
+    Map<String, String>? headers,
   }) async {
     return RangeValidation.valid(totalBytes: data.length);
   }
@@ -70,6 +71,7 @@ class _FakeTransport implements DownloadTransport {
     int? start,
     int? end,
     String? ifRange,
+    Map<String, String>? headers,
   }) async* {
     openedRanges.add((start: start ?? 0, end: end, ifRange: ifRange));
     final from = start ?? 0;

@@ -33,7 +33,7 @@ class _FakeTransport implements DownloadTransport {
   final chunkSize = 256;
 
   @override
-  Future<ResourceInfo> probe(Uri url) async {
+  Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers}) async {
     return ResourceInfo(
       finalUrl: url,
       statusCode: 200,
@@ -52,6 +52,7 @@ class _FakeTransport implements DownloadTransport {
     Uri url, {
     required int start,
     required int end,
+    Map<String, String>? headers,
   }) async {
     return RangeValidation.valid(totalBytes: data.length);
   }
@@ -62,6 +63,7 @@ class _FakeTransport implements DownloadTransport {
     int? start,
     int? end,
     String? ifRange,
+    Map<String, String>? headers,
   }) async* {
     final from = start ?? 0;
     final to = end ?? data.length - 1;

@@ -13,11 +13,15 @@ void main() {
   final body = List<int>.generate(1024, (i) => i % 256);
 
   String? lastAcceptEncoding;
+  String? lastCookie;
+  String? lastReferer;
 
   setUpAll(() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = Uri.parse('http://127.0.0.1:${server.port}');
     server.listen((request) async {
+      lastCookie = request.headers.value('cookie');
+      lastReferer = request.headers.value('referer');
       final path = request.uri.path;
       final response = request.response;
       try {
@@ -216,6 +220,25 @@ void main() {
         throwsA(isA<DownloadError>().having((e) => e.code, 'code', 'http-404')),
       );
     });
+
+    test('sends Cookie and Referer headers when given', () async {
+      final info = await transport.probe(
+        base.resolve('/file'),
+        headers: const {
+          'cookie': 'session=abc; theme=dark',
+          'referer': 'https://example.com/page',
+        },
+      );
+      expect(info.contentLength, 1024);
+      expect(lastCookie, 'session=abc; theme=dark');
+      expect(lastReferer, 'https://example.com/page');
+    });
+
+    test('sends no Cookie or Referer headers when none are given', () async {
+      await transport.probe(base.resolve('/file'));
+      expect(lastCookie, isNull);
+      expect(lastReferer, isNull);
+    });
   });
 
   group('validateRange', () {
@@ -237,6 +260,21 @@ void main() {
       );
       expect(result.valid, isFalse);
       expect(result.reason, isNotEmpty);
+    });
+
+    test('sends Cookie and Referer headers when given', () async {
+      final result = await transport.validateRange(
+        base.resolve('/file'),
+        start: 0,
+        end: 99,
+        headers: const {
+          'cookie': 'session=abc',
+          'referer': 'https://example.com/page',
+        },
+      );
+      expect(result.valid, isTrue);
+      expect(lastCookie, 'session=abc');
+      expect(lastReferer, 'https://example.com/page');
     });
   });
 
@@ -268,6 +306,23 @@ void main() {
           .openStream(base.resolve('/file'), start: 100, end: 199)
           .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
       expect(bytes, body.sublist(100, 200));
+    });
+
+    test('sends Cookie and Referer headers on a segment stream', () async {
+      final bytes = await transport
+          .openStream(
+            base.resolve('/file'),
+            start: 100,
+            end: 199,
+            headers: const {
+              'cookie': 'session=abc',
+              'referer': 'https://example.com/page',
+            },
+          )
+          .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+      expect(bytes, body.sublist(100, 200));
+      expect(lastCookie, 'session=abc');
+      expect(lastReferer, 'https://example.com/page');
     });
 
     test('throws DownloadError on 404', () async {

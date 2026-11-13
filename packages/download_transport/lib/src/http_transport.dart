@@ -28,14 +28,15 @@ class HttpTransport implements DownloadTransport {
   final Duration requestTimeout;
 
   @override
-  Future<ResourceInfo> probe(Uri url) async {
+  Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers}) async {
     try {
-      final response = await _request('HEAD', url).timeout(requestTimeout);
+      final response =
+          await _request('HEAD', url, headers: headers).timeout(requestTimeout);
       if (response.statusCode == HttpStatus.methodNotAllowed ||
           response.statusCode == HttpStatus.notImplemented) {
         await response.drain<void>();
         _log.fine('HEAD not allowed for $url; falling back to range GET');
-        return await _probeWithRange(url);
+        return await _probeWithRange(url, headers: headers);
       }
       if (response.statusCode >= HttpStatus.badRequest) {
         await response.drain<void>();
@@ -67,12 +68,13 @@ class HttpTransport implements DownloadTransport {
     Uri url, {
     required int start,
     required int end,
+    Map<String, String>? headers,
   }) async {
     try {
       final response = await _request(
         'GET',
         url,
-        headers: {'range': 'bytes=$start-$end'},
+        headers: {...?headers, 'range': 'bytes=$start-$end'},
       ).timeout(requestTimeout);
       try {
         if (response.statusCode == HttpStatus.ok) {
@@ -129,15 +131,17 @@ class HttpTransport implements DownloadTransport {
     int? start,
     int? end,
     String? ifRange,
+    Map<String, String>? headers,
   }) async* {
-    final headers = <String, String>{};
+    final requestHeaders = <String, String>{...?headers};
     if (start != null) {
-      headers['range'] = end != null ? 'bytes=$start-$end' : 'bytes=$start-';
+      requestHeaders['range'] =
+          end != null ? 'bytes=$start-$end' : 'bytes=$start-';
     }
     if (ifRange != null) {
-      headers['if-range'] = ifRange;
+      requestHeaders['if-range'] = ifRange;
     }
-    final response = await _openResponse(url, headers);
+    final response = await _openResponse(url, requestHeaders);
     if (response.statusCode == HttpStatus.partialContent) {
       _validateContentRange(response, start: start, end: end);
       yield* _withNetworkErrors(response);
@@ -239,12 +243,15 @@ class HttpTransport implements DownloadTransport {
     return request.close();
   }
 
-  Future<ResourceInfo> _probeWithRange(Uri url) async {
+  Future<ResourceInfo> _probeWithRange(
+    Uri url, {
+    Map<String, String>? headers,
+  }) async {
     try {
       final response = await _request(
         'GET',
         url,
-        headers: {'range': 'bytes=0-0'},
+        headers: {...?headers, 'range': 'bytes=0-0'},
       ).timeout(requestTimeout);
       try {
         if (response.statusCode == HttpStatus.partialContent) {

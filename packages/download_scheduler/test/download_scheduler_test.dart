@@ -37,7 +37,7 @@ class _FakeTransport implements DownloadTransport {
   var maxOpenStreams = 0;
 
   @override
-  Future<ResourceInfo> probe(Uri url) async {
+  Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers}) async {
     await onProbe?.call(url);
     if (failPaths.contains(url.path)) {
       throw DownloadError('network', 'probe failed for ${url.path}');
@@ -60,6 +60,7 @@ class _FakeTransport implements DownloadTransport {
     Uri url, {
     required int start,
     required int end,
+    Map<String, String>? headers,
   }) async {
     return RangeValidation.valid(totalBytes: data.length);
   }
@@ -70,6 +71,7 @@ class _FakeTransport implements DownloadTransport {
     int? start,
     int? end,
     String? ifRange,
+    Map<String, String>? headers,
   }) async* {
     startedUrls.add(url.toString());
     ifRanges.add(ifRange);
