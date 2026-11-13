@@ -8,6 +8,14 @@
   header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #ddd; }
   header h1 { font-size: 14px; margin: 0; }
   .toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
+  #probe { border-bottom: 1px solid #ddd; padding: 8px 12px; }
+  #probe-status { margin: 0; color: #777; font-size: 12px; }
+  #probe-title { margin: 0 0 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #probe-formats { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+  #probe-formats li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee; }
+  #probe-formats li:last-child { border-bottom: none; }
+  #probe-formats .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #probe-formats button { flex-shrink: 0; }
   #list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
   #list li { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #eee; }
   #list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -21,8 +29,14 @@
   <h1>Ponta Download Manager</h1>
   <label class="toggle"><input type="checkbox" id="intercept"> Intercept downloads</label>
 </header>
+<section id="probe">
+  <p id="probe-status" hidden></p>
+  <h2 id="probe-title" hidden></h2>
+  <ul id="probe-formats" hidden></ul>
+</section>
 <ul id="list"></ul>
 <p id="empty" hidden>No video or audio found on this page.</p>
+<script src="popup_probe.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>
