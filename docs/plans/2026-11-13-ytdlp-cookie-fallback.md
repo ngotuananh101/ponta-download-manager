@@ -1,6 +1,6 @@
 # yt-dlp cookie fallback — probe + download retry without cookies
 
-Status: IN PROGRESS
+Status: DONE
 Date: 2026-11-13
 
 ## Context
@@ -110,3 +110,41 @@ Tests (fake `ProcessStarter`, two fake processes in order):
 - `dart analyze` at repo root, `flutter analyze`.
 - Manual (Tuấn Anh): restart the app, open the popup on the same
   video → formats list appears; pick a format → download completes.
+
+## Completion
+
+Done 2026-11-13. All three parts implemented with TDD, committed and
+pushed; final gates re-run by Muse itself.
+
+- P1 probe fallback: `25d7fe8` "feat(external): retry yt-dlp probe
+  without cookies when the cookie run fails". download_external
+  43/43 at the time.
+- P2 no-cache-failures: `60464e4` "fix(engine): do not cache failed
+  yt-dlp probes". Engine 112/112.
+- P3 download fallback: `83e8813` "feat(external): retry yt-dlp
+  download without cookies when the cookie run fails at format
+  selection". download_external 47/47.
+- Lint fix found during the final gate: `b5d5d3f`
+  "style(external): build the Netscape cookie content with
+  interpolation" (one `prefer_interpolation_to_compose_strings` info
+  from the earlier Netscape-header fix, byte-identical output).
+
+Final gates (re-run by Muse itself 2026-11-13):
+download_external 47/47, engine 112/112, desktop 275/275,
+extension JS 73/73, root `dart analyze` clean, `flutter analyze`
+clean, `git status` clean, HEAD `b5d5d3f`.
+
+Notes:
+- The first GREEN run of P3 failed 3 tests: wrapping `_run` in a retry
+  loop meant falling off the end no longer ends execution, so the
+  final `_fail` needed an explicit `return;` or the loop re-spawned a
+  second attempt and `_fail` threw "Cannot add new events after
+  calling close". A fake ProcessStarter must return a FRESH fake
+  Process per spawn once a retry exists (reusing one breaks with
+  "Stream has already been listened to").
+- Manual check owed (Tuan Anh): restart the app (`flutter run`) —
+  no host rebuild, no extension reload — then open the popup on the
+  same video; the format list should appear. Pick a format; the
+  download should complete. His specific cookie values were never
+  inspected; the fallback is the mechanism-level fix: cookies can no
+  longer make a public video fail.
