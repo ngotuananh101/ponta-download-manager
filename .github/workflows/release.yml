@@ -111,7 +111,10 @@ jobs:
         shell: pwsh
         run: |
           python packaging/windows/generate_wix_files.py
-          wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs -d ProductVersion="${{ steps.version.outputs.msi_version }}" -d SourceDir="$PWD\apps\desktop\build\windows\x64\runner\Release" -o "dist\pdm-${{ steps.version.outputs.version }}-windows-x64.msi"
+          # WiX v7 gates builds behind the OSMF EULA (error WIX7015);
+          # -acceptEula wix7 is the documented non-interactive CI
+          # acceptance (no fee below $10,000/year revenue).
+          wix build packaging/windows/pdm.wxs packaging/windows/Files.wxs -d ProductVersion="${{ steps.version.outputs.msi_version }}" -d SourceDir="$PWD\apps\desktop\build\windows\x64\runner\Release" -o "dist\pdm-${{ steps.version.outputs.version }}-windows-x64.msi" -acceptEula wix7
 
       - name: Build portable ZIP
         shell: pwsh
@@ -195,21 +198,23 @@ jobs:
           cp apps/desktop/assets/images/icon.png AppDir/com.ponta.pdm.png
           printf '#!/bin/sh\nexec "$(dirname "$0")/usr/bin/pdm" "$@"\n' > AppDir/AppRun
           chmod +x AppDir/AppRun
-          # linuxdeploy + gtk plugin + appimagetool are AppImages
-          # themselves; extract them so no FUSE is needed on the runner.
-          curl -L -o linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          curl -L -o linuxdeploy-plugin-gtk-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
-          curl -L -o appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk-x86_64.AppImage appimagetool-x86_64.AppImage
+          # linuxdeploy + appimagetool are AppImages themselves; extract
+          # them so no FUSE is needed on the runner. The gtk plugin is
+          # NOT published as an AppImage any more (the continuous asset
+          # 404s) — upstream ships it as a shell script instead, pinned
+          # to a commit so the build is reproducible.
+          curl -fL -o linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fL -o linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/3b67a1d1c1b0c8268f57f2bce40fe2d33d409cea/linuxdeploy-plugin-gtk.sh
+          curl -fL -o appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
           ./linuxdeploy-x86_64.AppImage --appimage-extract
           mv squashfs-root linuxdeploy-root
-          ./linuxdeploy-plugin-gtk-x86_64.AppImage --appimage-extract
-          mv squashfs-root linuxdeploy-plugin-gtk-root
           ./appimagetool-x86_64.AppImage --appimage-extract
           mv squashfs-root appimagetool-root
-          export PATH="$PWD/linuxdeploy-plugin-gtk-root/usr/bin:$PWD/appimagetool-root/usr/bin:$PATH"
-          ./linuxdeploy-root/AppRun --appdir AppDir --plugin gtk --output appimage
-          rm -f linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk-x86_64.AppImage appimagetool-x86_64.AppImage
+          export PATH="$PWD/appimagetool-root/usr/bin:$PATH"
+          export DEPLOY_GTK_VERSION=3
+          ./linuxdeploy-root/AppRun --appdir AppDir --plugin ./linuxdeploy-plugin-gtk.sh --output appimage
+          rm -f linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh appimagetool-x86_64.AppImage
           mkdir -p dist
           ls -la ./*.AppImage
           mv ./*.AppImage "dist/pdm-$V-linux-x64.AppImage"

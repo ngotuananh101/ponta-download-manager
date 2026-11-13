@@ -177,6 +177,25 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
     on `ln: failed to create symbolic link 'AppDir/usr/bin/pdm'`.
     Fix: fetch BEFORE the build in both jobs; the AppImage step
     also does `mkdir -p AppDir/usr/bin` before the ln.
+
+- 2026-11-13 ~08:23 (fourth run): two more failures.
+  * Windows MSI: `wix.exe : error WIX7015: You must accept the Open
+    Source Maintenance Fee (OSMF) EULA to use WiX Toolset v7`.
+    Unpinned `dotnet tool install --global wix` now pulls WiX v7
+    (7.0.0 Apr 2026, 7.0.1 Oct 2026), which gates builds behind the
+    OSMF EULA. Fix: `wix build ... -acceptEula wix7` — the documented
+    non-interactive CI acceptance; OSMF v1.1 charges no fee below
+    $10,000/year revenue. (`generate_wix_files.py` itself worked:
+    18 files, 15 directories.)
+  * Linux AppImage: `./linuxdeploy-plugin-gtk-x86_64.AppImage:
+    line 1: Not: command not found` (exit 127). The gtk plugin is
+    no longer published as an AppImage — the `continuous` asset
+    404s, and plain `curl -L` silently saved the 404 page. Fix:
+    download the upstream shell script instead, pinned to commit
+    `3b67a1d` (verified: resolves to the real 704-line plugin),
+    pass `--plugin ./linuxdeploy-plugin-gtk.sh`, set
+    `DEPLOY_GTK_VERSION=3`, and use `curl -fL` on all three
+    downloads so an HTTP error fails the step immediately.
   * Verified on this run: the Windows fetch branch works on a real
     runner (ffmpeg.exe 105 MB + yt-dlp.exe 23 MB into
     `apps/desktop/bundle/bin/`, unzip present in Git Bash); the
