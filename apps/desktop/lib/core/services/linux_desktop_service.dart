@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
@@ -8,6 +9,13 @@ import 'package:path/path.dart' as p;
 /// hicolor icon into the user's XDG data directory so GNOME Shell
 /// (Wayland/X11) can resolve the app_id to the application name and
 /// icon on the top bar, dash/dock, app switcher — and the tray.
+///
+/// Only release builds touch the user's data directory: a debug build
+/// (`flutter run`) would register an entry pointing at
+/// `build/linux/x64/debug/bundle/pdm` — a dev binary in the
+/// applications list, and one whose path breaks as soon as the build
+/// directory is cleaned. `flutter test` runs in debug mode too, so it
+/// never writes either.
 ///
 /// Ported from dev-stack's LinuxDesktopService, adapted to PDM.
 class LinuxDesktopService {
@@ -89,11 +97,16 @@ StartupWMClass=$appId
   /// Ensures that the application has a valid .desktop file and
   /// hicolor icon installed in the user's XDG data directory
   /// (~/.local/share).
+  ///
+  /// No-op outside release builds (see the class doc); [isReleaseBuild]
+  /// is a test seam for the same check.
   static Future<String?> ensureDesktopIntegration({
     String? customExecPath,
     Directory? customXdgDataHome,
+    bool? isReleaseBuild,
   }) async {
     if (!Platform.isLinux) return null;
+    if (!(isReleaseBuild ?? kReleaseMode)) return null;
 
     try {
       final dataHome = customXdgDataHome ?? _resolveXdgDataHome();

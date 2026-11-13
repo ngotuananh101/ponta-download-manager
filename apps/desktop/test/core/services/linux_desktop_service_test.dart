@@ -18,6 +18,7 @@ void main() {
 
       await LinuxDesktopService.ensureDesktopIntegration(
         customXdgDataHome: tempDir,
+        isReleaseBuild: true,
       );
 
       final bundled = await File('assets/images/icon.png').readAsBytes();
@@ -28,8 +29,34 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       await LinuxDesktopService.ensureDesktopIntegration(
         customXdgDataHome: tempDir,
+        isReleaseBuild: true,
       );
       expect(await installed.lastModified(), mtime);
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('writes nothing in a debug or test build', () async {
+    // `flutter test` and `flutter run` are both debug builds, so the
+    // real default (kReleaseMode) is exercised here: a dev run must
+    // not register a .desktop entry pointing into build/.
+    final tempDir = await Directory.systemTemp.createTemp('pdm-icon-');
+    try {
+      await LinuxDesktopService.ensureDesktopIntegration(
+        customXdgDataHome: tempDir,
+      );
+
+      expect(
+        Directory('${tempDir.path}/applications').existsSync(),
+        isFalse,
+        reason: 'no .desktop entry may be written outside release builds',
+      );
+      expect(
+        Directory('${tempDir.path}/icons').existsSync(),
+        isFalse,
+        reason: 'no icon may be installed outside release builds',
+      );
     } finally {
       await tempDir.delete(recursive: true);
     }
