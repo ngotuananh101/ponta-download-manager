@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {collectMedia, mediaType, fileNameFromMediaUrl} = require('../content.js');
+const {collectMedia, mediaType, fileNameFromMediaUrl, scanAndSend} =
+  require('../content.js');
 
 function el(tag, attrs, children = []) {
   return {
@@ -143,4 +144,50 @@ test('collectMedia attaches the page url as referrer', () => {
   const items = collectMedia(doc);
   assert.equal(items.length, 1);
   assert.equal(items[0].referrer, 'https://example.com/page/');
+});
+
+test('scanAndSend does nothing when the extension context is invalidated', () => {
+  let calls = 0;
+  globalThis.chrome = {
+    runtime: {
+      sendMessage: () => {
+        calls += 1;
+        throw new Error('Extension context invalidated.');
+      },
+    },
+  };
+  globalThis.document = fakeDoc([
+    el('video', {src: 'https://cdn.example.com/clip.mp4'}),
+  ]);
+  try {
+    assert.doesNotThrow(() => scanAndSend());
+    assert.equal(calls, 0);
+  } finally {
+    delete globalThis.chrome;
+    delete globalThis.document;
+  }
+});
+
+test('scanAndSend reports media when the context is valid', () => {
+  let sent = null;
+  globalThis.chrome = {
+    runtime: {
+      id: 'test-extension-id',
+      sendMessage: (message) => {
+        sent = message;
+      },
+    },
+  };
+  globalThis.document = fakeDoc([
+    el('video', {src: 'https://cdn.example.com/clip.mp4'}),
+  ]);
+  try {
+    scanAndSend();
+    assert.equal(sent.type, 'media.found');
+    assert.equal(sent.items.length, 1);
+    assert.equal(sent.items[0].url, 'https://cdn.example.com/clip.mp4');
+  } finally {
+    delete globalThis.chrome;
+    delete globalThis.document;
+  }
 });

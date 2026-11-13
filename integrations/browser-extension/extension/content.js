@@ -103,13 +103,23 @@ function collectMedia(doc) {
 }
 
 function scanAndSend() {
-  if (typeof chrome === 'undefined' || !chrome.runtime) {
+  // After the extension is reloaded, the content script in an
+  // already-open page is orphaned: chrome.runtime still exists but
+  // chrome.runtime.id is undefined, and sendMessage throws
+  // 'Extension context invalidated.' Bail out silently — a page
+  // refresh re-injects a fresh script. The try/catch covers the race
+  // where invalidation lands between the check and the call.
+  if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
     return;
   }
-  chrome.runtime.sendMessage({
-    type: 'media.found',
-    items: collectMedia(document),
-  });
+  try {
+    chrome.runtime.sendMessage({
+      type: 'media.found',
+      items: collectMedia(document),
+    });
+  } catch {
+    // Orphaned content script; nothing to report to.
+  }
 }
 
 // In the real extension, scan once at load and re-scan (debounced)
@@ -135,5 +145,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {collectMedia, isMediaUrl, mediaType, fileNameFromMediaUrl};
+  module.exports = {
+  collectMedia,
+  isMediaUrl,
+  mediaType,
+  fileNameFromMediaUrl,
+  scanAndSend,
+};
 }
