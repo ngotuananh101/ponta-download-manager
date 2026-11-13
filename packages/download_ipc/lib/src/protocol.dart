@@ -68,6 +68,72 @@ DownloadSegment downloadSegmentFromJson(Map<String, Object?> json) {
   );
 }
 
+/// Encodes one [YtDlpFormat] as JSON for `ytdlp.probe`.
+Map<String, Object?> ytDlpFormatToJson(YtDlpFormat format) {
+  return {
+    'formatId': format.formatId,
+    'ext': format.ext,
+    'resolution': format.resolution,
+    'width': format.width,
+    'height': format.height,
+    'filesize': format.filesize,
+    'filesizeApprox': format.filesizeApprox,
+    'vcodec': format.vcodec,
+    'acodec': format.acodec,
+    'fps': format.fps,
+    'note': format.note,
+  };
+}
+
+YtDlpFormat ytDlpFormatFromJson(Map<String, Object?> json) {
+  return YtDlpFormat(
+    formatId: json['formatId'] as String,
+    ext: json['ext'] as String,
+    resolution: json['resolution'] as String?,
+    width: (json['width'] as num?)?.toInt(),
+    height: (json['height'] as num?)?.toInt(),
+    filesize: (json['filesize'] as num?)?.toInt(),
+    filesizeApprox: (json['filesizeApprox'] as num?)?.toInt(),
+    vcodec: json['vcodec'] as String,
+    acodec: json['acodec'] as String,
+    fps: (json['fps'] as num?)?.toDouble(),
+    note: json['note'] as String?,
+  );
+}
+
+/// Encodes a [YtDlpProbeResult] as JSON for `ytdlp.probe`. The engine
+/// already caps the format list at the best 30, so the line stays far
+/// under the 1 MiB channel cap; this only maps, it never re-trims.
+Map<String, Object?> ytDlpProbeResultToJson(YtDlpProbeResult result) {
+  return {
+    'supported': result.supported,
+    'title': result.title,
+    'thumbnail': result.thumbnail,
+    'durationSeconds': result.durationSeconds,
+    'formats': result.formats.map(ytDlpFormatToJson).toList(),
+    'errorCode': result.errorCode,
+    'errorMessage': result.errorMessage,
+  };
+}
+
+YtDlpProbeResult ytDlpProbeResultFromJson(Map<String, Object?> json) {
+  final formats = json['formats'] as List?;
+  return YtDlpProbeResult(
+    supported: json['supported'] as bool? ?? false,
+    title: json['title'] as String?,
+    thumbnail: json['thumbnail'] as String?,
+    durationSeconds: (json['durationSeconds'] as num?)?.toInt(),
+    formats:
+        formats
+            ?.whereType<Map<String, Object?>>()
+            .map(ytDlpFormatFromJson)
+            .toList() ??
+        const [],
+    errorCode: json['errorCode'] as String?,
+    errorMessage: json['errorMessage'] as String?,
+  );
+}
+
 /// Encodes a [DownloadEvent] as an IPC event message
 /// `{"type":"event","v":1,"event":<name>,"data":{...}}`.
 Map<String, Object?> downloadEventToMessage(DownloadEvent event) {

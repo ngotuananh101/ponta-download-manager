@@ -145,13 +145,40 @@ class FakeEngine implements DownloadEngine {
   @override
   Future<ProbeResult> probeUrl(String url) async =>
       ProbeResult(url: url, fileName: 'f.bin', totalBytes: 1000);
+  /// The probe result returned by [probeYtDlp], or null to build a
+  /// default supported result.
+  YtDlpProbeResult? probeResult;
+
+  /// Delay before [probeYtDlp] answers, for timeout tests.
+  Duration probeDelay = Duration.zero;
+
+  /// Every probeYtDlp call, in order.
+  final probeCalls = <({String url, String? cookie, String? referrer})>[];
+
   @override
   Future<YtDlpProbeResult> probeYtDlp(
     String url, {
     String? cookie,
     String? referrer,
-  }) {
-    throw UnimplementedError();
+  }) async {
+    probeCalls.add((url: url, cookie: cookie, referrer: referrer));
+    if (probeDelay > Duration.zero) {
+      await Future<void>.delayed(probeDelay);
+    }
+    return probeResult ??
+        const YtDlpProbeResult(
+          supported: true,
+          title: 'Test video',
+          formats: [
+            YtDlpFormat(
+              formatId: '18',
+              ext: 'mp4',
+              resolution: '640x360',
+              vcodec: 'avc1',
+              acodec: 'mp4a',
+            ),
+          ],
+        );
   }
 
   void _setStatus(String id, DownloadStatus status) {

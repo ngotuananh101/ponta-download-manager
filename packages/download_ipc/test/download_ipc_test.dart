@@ -196,7 +196,10 @@ void main() {
       await connections.close();
     });
 
-    Future<IpcClient> connectClient({String token = 'test-token'}) async {
+    Future<IpcClient> connectClient({
+      String token = 'test-token',
+      Duration requestTimeout = IpcClient.defaultRequestTimeout,
+    }) async {
       final (serverSide, clientSide) = createChannelPair();
       addTearDown(serverSide.close);
       addTearDown(clientSide.close);
@@ -204,6 +207,7 @@ void main() {
       final client = await IpcClient.connect(
         channelFactory: () async => clientSide,
         token: token,
+        requestTimeout: requestTimeout,
       );
       addTearDown(client.close);
       return client;
@@ -459,6 +463,159 @@ void main() {
     });
 
 
+    test('probe round-trips through the server and client', () async {
+      final client = await connectClient();
+      engine.probeResult = const YtDlpProbeResult(
+        supported: true,
+        title: 'Test video',
+        thumbnail: 'https://example.com/thumb.jpg',
+        durationSeconds: 123,
+        formats: [
+          YtDlpFormat(
+            formatId: '18',
+            ext: 'mp4',
+            resolution: '640x360',
+            width: 640,
+            height: 360,
+            filesize: 1000,
+            vcodec: 'avc1',
+            acodec: 'mp4a',
+            fps: 30.0,
+            note: '360p',
+          ),
+          YtDlpFormat(
+            formatId: '140',
+            ext: 'm4a',
+            vcodec: 'none',
+            acodec: 'mp4a',
+          ),
+        ],
+      );
+      final result = await client.probeYtDlp(
+        url: 'https://example.com/watch?v=abc',
+        cookie: 'session=abc',
+        referrer: 'https://example.com/page',
+      );
+      expect(result.supported, isTrue);
+      expect(result.title, 'Test video');
+      expect(result.thumbnail, 'https://example.com/thumb.jpg');
+      expect(result.durationSeconds, 123);
+      expect(result.formats, hasLength(2));
+      expect(result.formats[0].formatId, '18');
+      expect(result.formats[0].resolution, '640x360');
+      expect(result.formats[0].width, 640);
+      expect(result.formats[0].filesize, 1000);
+      expect(result.formats[0].fps, 30.0);
+      expect(result.formats[0].note, '360p');
+      expect(result.formats[1].formatId, '140');
+      expect(result.formats[1].vcodec, 'none');
+      expect(engine.probeCalls, hasLength(1));
+      expect(engine.probeCalls.single.url, 'https://example.com/watch?v=abc');
+      expect(engine.probeCalls.single.cookie, 'session=abc');
+      expect(engine.probeCalls.single.referrer, 'https://example.com/page');
+    });
+
+    test('probe without a url fails with invalid-params', () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('ytdlp.probe', {'cookie': 'session=abc'}),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+    test('probe with a non-string cookie fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('ytdlp.probe', {
+          'url': 'https://example.com/watch?v=abc',
+          'cookie': 42,
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+    test('probe with a non-string referrer fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('ytdlp.probe', {
+          'url': 'https://example.com/watch?v=abc',
+          'referrer': 42,
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+    test('create carries ytDlpFormat to the engine', () async {
+      final client = await connectClient();
+      await client.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/watch?v=abc',
+          destination: '/tmp/video.mp4',
+          ytDlpFormat: '137+bestaudio',
+        ),
+      );
+      expect(engine.createdRequests, hasLength(1));
+      expect(engine.createdRequests.single.ytDlpFormat, '137+bestaudio');
+    });
+
+    test('create with a non-string ytDlpFormat fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('download.create', {
+          'url': 'https://example.com/watch?v=abc',
+          'destination': '/tmp/video.mp4',
+          'ytDlpFormat': 137,
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+    test('probe uses a longer timeout than the default request timeout',
+        () async {
+      expect(IpcClient.probeTimeout, const Duration(seconds: 60));
+      expect(
+        IpcClient.probeTimeout,
+        greaterThan(IpcClient.defaultRequestTimeout),
+      );
+      // A client connected with a 50 ms default timeout still waits
+      // out a slow probe: probeYtDlp overrides the per-request timeout.
+      engine.probeDelay = const Duration(milliseconds: 300);
+      final client = await connectClient(
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      final result = await client.probeYtDlp(
+        url: 'https://example.com/watch?v=abc',
+      );
+      expect(result.supported, isTrue);
+    });
+
     test('create with an unknown conflict policy fails with invalid-params',
         () async {
       final client = await connectClient();
@@ -564,6 +721,57 @@ void main() {
       });
       expect(decoded.errorCode, isNull);
       expect(decoded.errorMessage, isNull);
+    });
+  });
+
+  group('yt-dlp probe protocol', () {
+    test('round-trips a supported probe result', () {
+      const result = YtDlpProbeResult(
+        supported: true,
+        title: 'Test video',
+        thumbnail: 'https://example.com/thumb.jpg',
+        durationSeconds: 123,
+        formats: [
+          YtDlpFormat(
+            formatId: '18',
+            ext: 'mp4',
+            resolution: '640x360',
+            width: 640,
+            height: 360,
+            filesize: 1000,
+            filesizeApprox: 1100,
+            vcodec: 'avc1',
+            acodec: 'mp4a',
+            fps: 30.0,
+            note: '360p',
+          ),
+        ],
+      );
+      final decoded = ytDlpProbeResultFromJson(ytDlpProbeResultToJson(result));
+      expect(decoded.supported, isTrue);
+      expect(decoded.title, 'Test video');
+      expect(decoded.thumbnail, 'https://example.com/thumb.jpg');
+      expect(decoded.durationSeconds, 123);
+      expect(decoded.formats, hasLength(1));
+      expect(decoded.formats.single.formatId, '18');
+      expect(decoded.formats.single.resolution, '640x360');
+      expect(decoded.formats.single.filesize, 1000);
+      expect(decoded.formats.single.filesizeApprox, 1100);
+      expect(decoded.formats.single.fps, 30.0);
+      expect(decoded.formats.single.note, '360p');
+    });
+
+    test('decodes a result without the optional fields', () {
+      final decoded = ytDlpProbeResultFromJson({
+        'supported': false,
+        'errorCode': 'yt-dlp-unsupported',
+        'errorMessage': 'Unsupported URL',
+      });
+      expect(decoded.supported, isFalse);
+      expect(decoded.title, isNull);
+      expect(decoded.formats, isEmpty);
+      expect(decoded.errorCode, 'yt-dlp-unsupported');
+      expect(decoded.errorMessage, 'Unsupported URL');
     });
   });
 }

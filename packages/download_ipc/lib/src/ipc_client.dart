@@ -13,12 +13,20 @@ import 'protocol.dart';
 /// [reconnect] re-runs the handshake on a fresh channel from the
 /// same factory; the server answers with a fresh sync snapshot.
 class IpcClient {
+  /// The default timeout for a request, used when no per-request
+  /// timeout is given.
+  static const Duration defaultRequestTimeout = Duration(seconds: 10);
+
+  /// The timeout for a yt-dlp probe: a probe runs yt-dlp and waits
+  /// for its JSON, so it gets much longer than the default.
+  static const Duration probeTimeout = Duration(seconds: 60);
+
   IpcClient._(this._requestTimeout);
 
   static Future<IpcClient> connect({
     required Future<IpcChannel> Function() channelFactory,
     required String token,
-    Duration requestTimeout = const Duration(seconds: 10),
+    Duration requestTimeout = defaultRequestTimeout,
     Duration helloTimeout = const Duration(seconds: 5),
   }) async {
     final client = IpcClient._(requestTimeout)
@@ -76,6 +84,7 @@ class IpcClient {
   Future<Map<String, Object?>> request(
     String method, [
     Map<String, Object?> params = const {},
+    Duration? timeout,
   ]) async {
     if (_closed) {
       throw StateError('IpcClient is closed');
@@ -90,7 +99,7 @@ class IpcClient {
     final id = 'req-${++_counter}';
     final completer = Completer<Map<String, Object?>>();
     late final Timer timer;
-    timer = Timer(_requestTimeout, () {
+    timer = Timer(timeout ?? _requestTimeout, () {
       if (_pending.remove(id) != null && !completer.isCompleted) {
         completer.completeError(
           DownloadError(
@@ -130,8 +139,25 @@ class IpcClient {
         'conflictPolicy': request.conflictPolicy!.name,
       if (request.cookie != null) 'cookie': request.cookie,
       if (request.referrer != null) 'referrer': request.referrer,
+      if (request.ytDlpFormat != null) 'ytDlpFormat': request.ytDlpFormat,
     });
     return downloadInfoFromJson(result);
+  }
+
+  /// Probes a URL with yt-dlp through the engine. A probe runs yt-dlp
+  /// and waits for its JSON, so it uses [probeTimeout] instead of the
+  /// default request timeout.
+  Future<YtDlpProbeResult> probeYtDlp({
+    required String url,
+    String? cookie,
+    String? referrer,
+  }) async {
+    final result = await request('ytdlp.probe', {
+      'url': url,
+      'cookie': ?cookie,
+      'referrer': ?referrer,
+    }, probeTimeout);
+    return ytDlpProbeResultFromJson(result);
   }
 
   Future<void> pauseDownload(String downloadId) async {

@@ -318,6 +318,13 @@ class _ClientConnection {
             'referrer must be a string',
           );
         }
+        final ytDlpFormat = params['ytDlpFormat'];
+        if (ytDlpFormat != null && ytDlpFormat is! String) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'ytDlpFormat must be a string',
+          );
+        }
         final info = await engine.createDownload(
           CreateDownloadRequest(
             url: url,
@@ -327,9 +334,38 @@ class _ClientConnection {
             conflictPolicy: policy,
             cookie: cookie as String?,
             referrer: referrer as String?,
+            ytDlpFormat: ytDlpFormat as String?,
           ),
         );
         return downloadInfoToJson(info);
+      case 'ytdlp.probe':
+        final url = params['url'];
+        if (url is! String || url.isEmpty) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'ytdlp.probe needs a non-empty url',
+          );
+        }
+        final cookie = params['cookie'];
+        if (cookie != null && cookie is! String) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'cookie must be a string',
+          );
+        }
+        final referrer = params['referrer'];
+        if (referrer != null && referrer is! String) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'referrer must be a string',
+          );
+        }
+        final probe = await engine.probeYtDlp(
+          url,
+          cookie: cookie as String?,
+          referrer: referrer as String?,
+        );
+        return ytDlpProbeResultToJson(probe);
       case 'download.pause':
         await engine.pauseDownload(_downloadId(params));
         return const {'ok': true};
