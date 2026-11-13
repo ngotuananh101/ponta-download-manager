@@ -306,3 +306,11 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
     yt-dlp.exe (23 MB) in 7 s. pytest `tools/` covers the mirror
     order, the fallback to the next mirror and the checksum-mismatch
     rejection.
+
+- 2026-11-13 ~12:28 (eighth run, `43370825437`): fully green — test,
+  build-linux and build-windows all succeeded, all 7 artifacts
+  uploaded. `Fetch external tools` took 8 s on Linux and 5 s on
+  Windows, both through `ghfast.top`, with the pinned digests
+  matching. Extracted from the downloaded portable tarball, the
+  bundled ffmpeg reports 7.0.2-static and yt-dlp 2026.10.26, so the
+  binaries the release ships are the verified ones.
