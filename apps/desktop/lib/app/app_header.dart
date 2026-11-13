@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pdm/core/services/window_api.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
+import 'package:window_manager/window_manager.dart';
 
 const double kAppHeaderHeight = 36;
 const double kWindowCaptionButtonWidth = 46;

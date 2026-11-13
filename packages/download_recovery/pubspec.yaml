@@ -20,4 +20,4 @@ dev_dependencies:
   download_transport:
     path: ../download_transport
   flutter_lints: ^6.0.0
-  test: ^1.31.1
+  test: ^1.32.0

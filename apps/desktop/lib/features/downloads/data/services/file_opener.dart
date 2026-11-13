@@ -10,11 +10,9 @@ import 'package:path/path.dart' as p;
 /// success, so its exit code is ignored (a failed spawn still throws).
 class FileOpener {
   const FileOpener({
-    Future<ProcessResult> Function(String executable, List<String> arguments)?
-    run,
-    String? operatingSystem,
-  }) : _run = run,
-       _operatingSystem = operatingSystem;
+    this._run,
+    this._operatingSystem,
+  });
 
   final Future<ProcessResult> Function(String, List<String>)? _run;
   final String? _operatingSystem;

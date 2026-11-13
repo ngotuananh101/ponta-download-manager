@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Tailwind-like design tokens. One place to change font sizes, spacing,
 /// radii and button dimensions; the rest of the app reads these instead

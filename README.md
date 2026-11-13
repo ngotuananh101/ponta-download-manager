@@ -26,7 +26,7 @@ subcommand for headless use; there is no engine daemon.
 
 ## Prerequisites
 
-Flutter SDK 3.35+ / Dart SDK 3.10+ (verified: Flutter 3.47.9, Dart 3.13.7).
+Flutter SDK 3.47+ / Dart SDK 3.13+ (verified: Flutter 3.50.0, Dart 3.14.0).
 Linux desktop toolchain for `flutter run -d linux` / `flutter build linux`.
 Bundled tools: run `tools/fetch_external_tools.sh` once before building —
 ffmpeg + yt-dlp are fetched into `apps/desktop/bundle/bin/` and are not

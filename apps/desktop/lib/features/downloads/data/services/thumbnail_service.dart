@@ -45,12 +45,10 @@ typedef ProcessRunner = Future<ProcessResult> Function(
 /// extraction — returns null and the panel falls back to its icon.
 class ThumbnailService {
   ThumbnailService({
-    String? ffmpegPath,
-    String? cacheDir,
+    this._ffmpegPath,
+    this._cacheDir,
     ProcessRunner? runProcess,
-  })  : _ffmpegPath = ffmpegPath,
-        _cacheDir = cacheDir,
-        _runProcess = runProcess ?? _defaultRunProcess;
+  })  : _runProcess = runProcess ?? _defaultRunProcess;
 
   final String? _ffmpegPath;
   final String? _cacheDir;

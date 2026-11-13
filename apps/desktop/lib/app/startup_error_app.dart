@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 
 /// Shown when the app fails to start (engine, IPC server, or window
