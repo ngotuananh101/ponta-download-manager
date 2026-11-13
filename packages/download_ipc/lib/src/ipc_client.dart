@@ -128,6 +128,8 @@ class IpcClient {
       if (request.priority != null) 'priority': request.priority,
       if (request.conflictPolicy != null)
         'conflictPolicy': request.conflictPolicy!.name,
+      if (request.cookie != null) 'cookie': request.cookie,
+      if (request.referrer != null) 'referrer': request.referrer,
     });
     return downloadInfoFromJson(result);
   }

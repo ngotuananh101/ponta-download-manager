@@ -402,6 +402,63 @@ void main() {
       expect(engine.createdPolicies, [FileConflictPolicy.rename]);
     });
 
+    test('create with cookie and referrer round-trips them', () async {
+      final client = await connectClient();
+      await client.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:9/f.bin',
+          destination: '/tmp/f.bin',
+          cookie: 'session=abc',
+          referrer: 'http://127.0.0.1:9/page',
+        ),
+      );
+      expect(engine.createdRequests, hasLength(1));
+      expect(engine.createdRequests.single.cookie, 'session=abc');
+      expect(
+        engine.createdRequests.single.referrer,
+        'http://127.0.0.1:9/page',
+      );
+    });
+
+    test('create with a non-string cookie fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('download.create', {
+          'url': 'http://127.0.0.1:9/f.bin',
+          'destination': '/tmp/f.bin',
+          'cookie': 42,
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+    test('create with a non-string referrer fails with invalid-params',
+        () async {
+      final client = await connectClient();
+      await expectLater(
+        client.request('download.create', {
+          'url': 'http://127.0.0.1:9/f.bin',
+          'destination': '/tmp/f.bin',
+          'referrer': 42,
+        }),
+        throwsA(
+          isA<DownloadError>().having(
+            (e) => e.code,
+            'code',
+            'invalid-params',
+          ),
+        ),
+      );
+    });
+
+
     test('create with an unknown conflict policy fails with invalid-params',
         () async {
       final client = await connectClient();

@@ -21,6 +21,9 @@ class FakeEngine implements DownloadEngine {
 
   /// The conflict policy of every createDownload call, in order.
   final createdPolicies = <FileConflictPolicy?>[];
+
+  /// Every createDownload request, in order.
+  final createdRequests = <CreateDownloadRequest>[];
   var _counter = 0;
 
   /// Events the test pushes into the engine's stream.
@@ -33,6 +36,7 @@ class FakeEngine implements DownloadEngine {
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
     calls.add('create:${request.url}');
     createdPolicies.add(request.conflictPolicy);
+    createdRequests.add(request);
     final id = 'dl-${++_counter}';
     final info = DownloadInfo(
       id: id,

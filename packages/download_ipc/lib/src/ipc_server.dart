@@ -304,6 +304,20 @@ class _ClientConnection {
               ? FileConflictPolicy.overwrite
               : FileConflictPolicy.rename;
         }
+        final cookie = params['cookie'];
+        if (cookie != null && cookie is! String) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'cookie must be a string',
+          );
+        }
+        final referrer = params['referrer'];
+        if (referrer != null && referrer is! String) {
+          throw DownloadError(
+            IpcErrorCode.invalidParams,
+            'referrer must be a string',
+          );
+        }
         final info = await engine.createDownload(
           CreateDownloadRequest(
             url: url,
@@ -311,6 +325,8 @@ class _ClientConnection {
             maxConnections: maxConnections as int?,
             priority: priority as int?,
             conflictPolicy: policy,
+            cookie: cookie as String?,
+            referrer: referrer as String?,
           ),
         );
         return downloadInfoToJson(info);
