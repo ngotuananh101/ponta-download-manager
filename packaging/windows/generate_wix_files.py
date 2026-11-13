@@ -55,7 +55,14 @@ def dir_id(rel_dir):
 def collect(source_dir):
     """Return (directories, files): directories is a sorted list of
     relative subdirectory paths ('' excluded), files is a sorted list
-    of (relative path, parent relative dir) tuples."""
+    of (relative path, parent relative dir) tuples.
+
+    Paths are always posix-style ('data/flutter_assets'). The parent
+    is derived by splitting on '/', never with pathlib: on Windows
+    Path() is a WindowsPath, so Path('data/flutter_assets').parent
+    returns 'data\\flutter_assets', which then becomes a second
+    directory named after the whole joined path and collides with the
+    real nested one (WiX WIX0091 duplicate Directory id)."""
     directories = set()
     files = []
     for path in sorted(source_dir.rglob("*")):
@@ -64,10 +71,9 @@ def collect(source_dir):
             directories.add(rel)
         elif path.is_file():
             rel = path.relative_to(source_dir).as_posix()
-            parent = str(Path(rel).parent) if "/" in rel else ""
-            if parent == ".":
-                parent = ""
-            directories.add(parent) if parent else None
+            parent = rel.rpartition("/")[0]
+            if parent:
+                directories.add(parent)
             files.append((rel, parent))
     directories.discard("")
     return sorted(directories), files

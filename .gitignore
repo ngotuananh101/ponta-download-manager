@@ -21,3 +21,7 @@ apps/desktop/bundle/
 # Release packaging (generated, not committed)
 packaging/windows/Files.wxs
 dist/
+
+# Python (tools/ and packaging/ tests)
+__pycache__/
+.pytest_cache/

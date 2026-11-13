@@ -200,3 +200,43 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
     runner (ffmpeg.exe 105 MB + yt-dlp.exe 23 MB into
     `apps/desktop/bundle/bin/`, unzip present in Git Bash); the
     Windows CMakeLists bundle/bin rule exists (lines 84-87).
+
+- 2026-11-13 ~09:00 (fifth run, build jobs): `-acceptEula wix7`
+  worked, both remaining failures were new.
+  * Linux AppImage: `-- Running input plugin:
+    ./linuxdeploy-plugin-gtk.sh -- ERROR: Could not find plugin:
+    ./linuxdeploy-plugin-gtk.sh`. linuxdeploy does not accept a path
+    for `--plugin`: it scans $PATH plus the CWD for entries matching
+    `^linuxdeploy-plugin-([^\s\.-]+)`, registers them by *name*, and
+    then looks the argument up in that map. A path can never match
+    the map key. Fix: `--plugin gtk` (the file is already in the CWD,
+    which linuxdeploy searches). Reproduced both forms locally against
+    linuxdeploy continuous + the pinned script: path fails with the
+    exact CI message, `gtk` runs all five plugin stages and produces
+    a working 108 MB AppImage.
+    Follow-on: once the plugin actually runs it needs
+    `dpkg-architecture` (multiarch libdir) and `file`, neither of
+    which `libgtk-3-dev` pulls in and neither of which is in the base
+    image. Without them the step dies on "dpkg-architecture not found"
+    (gtk) or "file command is missing but required" (appimage). Fix:
+    add `dpkg-dev file` to the build-linux apt line.
+  * Windows MSI: five `error WIX0091: Duplicate Directory with
+    identifier 'dir_data_...'`, e.g. `dir_data_flutter_assets`
+    referenced from line 40. Root cause in
+    `generate_wix_files.py:collect()`: `rel` is always posix, but the
+    parent was computed with `str(Path(rel).parent)`. On the Windows
+    runner `Path` is `WindowsPath`, so that returns
+    `data\flutter_assets`. The backslash string went into the
+    directory set, where `build_tree` splits on `/` and finds one node
+    literally named `data\flutter_assets`; `make_id` maps `\` to `_`,
+    producing `dir_data_flutter_assets` — the same id as the real
+    nested `data/flutter_assets`. Fix: `rel.rpartition("/")[0]`, no
+    pathlib flavour involved. Emulating `PureWindowsPath` reproduced
+    exactly the five CI ids. New `tools/test_wix_files.py` pins this
+    (fails 3/5 on the old code, passes on the new).
+  * Verified end to end: the workflow's `Build AppImage` script run
+    verbatim in ubuntu:24.04 with only the packaged deps produces
+    `dist/pdm-0.1.0-linux-x64.AppImage`, and the extracted AppImage
+    contains the gtk apprun hook, compiled GLib schemas, typelibs,
+    the desktop file and the icon. `wix build` on the regenerated
+    Files.wxs reports zero WIX0091.
