@@ -85,6 +85,7 @@ function collectMedia(doc) {
       url,
       fileName: fileNameFromMediaUrl(url),
       type: resolvedType,
+      referrer: doc.baseURI,
     });
   };
   for (const media of doc.querySelectorAll('video, audio')) {

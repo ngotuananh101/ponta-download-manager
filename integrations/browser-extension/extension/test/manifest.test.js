@@ -28,3 +28,10 @@ test('the Firefox floor covers chrome.storage.session (Firefox 112+)', () => {
   const [major] = min.split('.').map(Number);
   assert.ok(major >= 112, `strict_min_version is ${min}`);
 });
+
+test('the manifest requests the cookies permission', () => {
+  assert.ok(
+    manifest.permissions.includes('cookies'),
+    `permissions are ${manifest.permissions.join(', ')}`,
+  );
+});

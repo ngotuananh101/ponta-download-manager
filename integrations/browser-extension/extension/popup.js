@@ -26,6 +26,7 @@
           type: 'media.download',
           url: item.url,
           fileName: item.fileName,
+          referrer: item.referrer,
         });
       });
       row.append(badge, name, button);

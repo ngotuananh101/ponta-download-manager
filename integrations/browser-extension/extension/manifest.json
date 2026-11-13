@@ -9,7 +9,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads", "storage", "tabs"],
+  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads", "storage", "tabs", "cookies"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",

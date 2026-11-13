@@ -50,6 +50,8 @@ function fakeChrome() {
     tabUpdated: [],
   };
   const ports = [];
+  const cookies = [];
+  const cookieRequests = [];
   const notifications = [];
   const cancelled = [];
   const erased = [];
@@ -68,6 +70,12 @@ function fakeChrome() {
         const port = fakePort(name);
         ports.push(port);
         return port;
+      },
+    },
+    cookies: {
+      getAll: (details, cb) => {
+        cookieRequests.push(details.url);
+        cb([...cookies]);
       },
     },
     tabs: {
@@ -155,6 +163,8 @@ function fakeChrome() {
     chromeApi,
     listeners,
     ports,
+    cookies,
+    cookieRequests,
     notifications,
     cancelled,
     erased,
@@ -237,6 +247,39 @@ test('a link click posts a download.create message', () => {
   assert.equal(message.url, 'http://example.com/a/b.zip');
   assert.equal(message.fileName, 'b.zip');
   assert.equal(typeof message.id, 'string');
+});
+
+test('a link click sends the cookies for the url and the page as referrer', () => {
+  const {chromeApi, listeners, ports, cookies, cookieRequests} = fakeChrome();
+  cookies.push({name: 'session', value: 'abc'}, {name: 'pref', value: 'x'});
+  installed(chromeApi, listeners);
+  listeners.clicked[0]({
+    linkUrl: 'http://example.com/a/b.zip',
+    pageUrl: 'http://example.com/page',
+  });
+  assert.equal(ports.length, 1);
+  assert.deepEqual(cookieRequests, ['http://example.com/a/b.zip']);
+  const message = ports[0].posted[0];
+  assert.equal(message.cookie, 'session=abc; pref=x');
+  assert.equal(message.referrer, 'http://example.com/page');
+});
+
+test('an empty cookie list omits the cookie field', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  listeners.clicked[0]({linkUrl: 'http://example.com/a/b.zip'});
+  assert.equal(ports.length, 1);
+  assert.equal('cookie' in ports[0].posted[0], false);
+});
+
+test('a download still posts when the cookies API is absent', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  delete chromeApi.cookies;
+  installed(chromeApi, listeners);
+  listeners.clicked[0]({linkUrl: 'http://example.com/a/b.zip'});
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].type, 'download.create');
+  assert.equal('cookie' in ports[0].posted[0], false);
 });
 
 test('a success reply shows a notification and disconnects', () => {
@@ -326,6 +369,27 @@ test('a browser download is intercepted: cancel + erase + post to PDM', () => {
   assert.equal(message.type, 'download.create');
   assert.equal(message.url, 'https://example.com/files/setup.exe');
   assert.equal(message.fileName, 'setup.exe');
+});
+
+test('an intercepted download sends the item referrer', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitDownloadCreated(listeners, {
+    id: 11,
+    url: 'https://example.com/files/setup.exe',
+    filename: 'setup.exe',
+    state: 'in_progress',
+    referrer: 'https://example.com/page',
+  });
+  emitDeterminingFilename(listeners, {
+    id: 11,
+    url: 'https://example.com/files/setup.exe',
+    filename: 'setup.exe',
+    state: 'in_progress',
+    referrer: 'https://example.com/page',
+  });
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].referrer, 'https://example.com/page');
 });
 
 test('a blob download is not intercepted', () => {
@@ -501,6 +565,19 @@ test('media.download posts a download.create to PDM', () => {
   assert.equal(ports[0].posted[0].url, 'https://cdn.example.com/clip.mp4');
   assert.equal(ports[0].posted[0].fileName, 'clip.mp4');
   assert.deepEqual(reply.response(), {ok: true});
+});
+
+test('media.download forwards the referrer', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  emitMessage(listeners, {
+    type: 'media.download',
+    url: 'https://cdn.example.com/clip.mp4',
+    fileName: 'clip.mp4',
+    referrer: 'https://example.com/watch',
+  });
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].referrer, 'https://example.com/watch');
 });
 
 test('closing a tab clears its stored media', () => {

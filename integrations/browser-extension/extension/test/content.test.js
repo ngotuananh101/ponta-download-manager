@@ -135,3 +135,12 @@ test('collectMedia ignores images and non-media elements', () => {
   ]);
   assert.deepEqual(collectMedia(doc), []);
 });
+
+test('collectMedia attaches the page url as referrer', () => {
+  const doc = fakeDoc([
+    el('video', {src: 'https://cdn.example.com/clip.mp4'}),
+  ]);
+  const items = collectMedia(doc);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].referrer, 'https://example.com/page/');
+});

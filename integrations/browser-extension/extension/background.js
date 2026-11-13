@@ -127,8 +127,11 @@ function showError(chromeApi, message) {
 }
 
 // Sends one download to PDM through the native host. Shared by the
-// context menu and the download interceptor.
-function sendDownload(chromeApi, url, fileName) {
+// context menu and the download interceptor. `referrer` is the page
+// the download came from, when known. The cookies the browser would
+// send for the URL go along too, so login-walled downloads work;
+// public links are unaffected. Both are omitted when absent.
+function sendDownload(chromeApi, url, fileName, referrer) {
   const id = randomId();
   let port;
   try {
@@ -169,7 +172,28 @@ function sendDownload(chromeApi, url, fileName) {
   };
   port.onMessage.addListener(onMessage);
   port.onDisconnect.addListener(onDisconnect);
-  port.postMessage({type: 'download.create', id, url, fileName});
+  const post = (cookie) => {
+    const message = {type: 'download.create', id, url, fileName};
+    if (cookie) {
+      message.cookie = cookie;
+    }
+    if (referrer) {
+      message.referrer = referrer;
+    }
+    port.postMessage(message);
+  };
+  const cookiesApi = chromeApi.cookies && chromeApi.cookies.getAll;
+  if (typeof cookiesApi !== 'function') {
+    post();
+    return;
+  }
+  cookiesApi.call(chromeApi.cookies, {url}, (cookies) => {
+    let cookie;
+    if (Array.isArray(cookies) && cookies.length > 0) {
+      cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    }
+    post(cookie);
+  });
 }
 
 // Intercepts one browser download: stops the browser's own download
@@ -189,7 +213,7 @@ function interceptDownload(chromeApi, item) {
   if (chromeApi.downloads.erase) {
     chromeApi.downloads.erase({id: item.id}, () => {});
   }
-  sendDownload(chromeApi, item.url, fileName);
+  sendDownload(chromeApi, item.url, fileName, item.referrer);
   return true;
 }
 
@@ -289,7 +313,12 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
     }
     case 'media.download': {
       if (typeof message.url === 'string') {
-        sendDownload(chromeApi, message.url, message.fileName);
+        sendDownload(
+          chromeApi,
+          message.url,
+          message.fileName,
+          message.referrer,
+        );
       }
       sendResponse({ok: true});
       return false;
@@ -342,7 +371,7 @@ function setupExtension(chromeApi) {
     if (!url) {
       return;
     }
-    sendDownload(chromeApi, url, fileNameFromUrl(url));
+    sendDownload(chromeApi, url, fileNameFromUrl(url), info.pageUrl);
   });
 
   if (chromeApi.downloads && chromeApi.downloads.onCreated) {
