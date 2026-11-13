@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:download_api/download_api.dart';
 import 'package:flutter/services.dart';
@@ -894,6 +895,48 @@ void main() {
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     expect(find.text('Set priority'), findsNothing);
+  });
+
+  testWidgets('Submenu entries open on tap, not on hover, and show a chevron',
+      (tester) async {
+    await pumpApp(
+      tester,
+      downloads: const [_queuedDownload],
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    // Hovering a submenu row does not open it.
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Set priority')));
+    await tester.pumpAndSettle();
+    expect(find.text('High'), findsNothing);
+    // Both submenu rows carry a trailing chevron.
+    for (final label in ['Set priority', 'Add tag']) {
+      final row = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(MenuItemButton),
+      );
+      expect(
+        find.descendant(of: row, matching: find.byIcon(Icons.chevron_right)),
+        findsOneWidget,
+      );
+    }
+    // A tap opens it; a second tap closes it.
+    await tester.tap(find.text('Set priority'));
+    await tester.pumpAndSettle();
+    expect(find.text('High'), findsOneWidget);
+    await tester.tap(find.text('Set priority'));
+    await tester.pumpAndSettle();
+    expect(find.text('High'), findsNothing);
+    // The Add tag submenu behaves the same way.
+    await mouse.moveTo(tester.getCenter(find.text('Add tag')));
+    await tester.pumpAndSettle();
+    expect(find.text('New tag...'), findsNothing);
+    await tester.tap(find.text('Add tag'));
+    await tester.pumpAndSettle();
+    expect(find.text('New tag...'), findsOneWidget);
   });
 
   testWidgets('Add tag submenu lists known tags with checks',
@@ -2048,6 +2091,34 @@ void main() {
       'https://example.com/a.bin\nhttps://example.com/b.bin\n',
     );
     expect(find.text('Exported 2 download(s)'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Export/Import submenu opens on tap, not on hover, and shows a chevron',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Export/Import')));
+    await tester.pumpAndSettle();
+    expect(find.text('Export all downloads'), findsNothing);
+    final row = find.ancestor(
+      of: find.text('Export/Import'),
+      matching: find.byType(MenuItemButton),
+    );
+    expect(
+      find.descendant(of: row, matching: find.byIcon(Icons.chevron_right)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    expect(find.text('Export all downloads'), findsOneWidget);
+    await tester.tap(find.text('Export/Import'));
+    await tester.pumpAndSettle();
+    expect(find.text('Export all downloads'), findsNothing);
   });
 
   testWidgets('Import downloads adds the URLs from the picked file',

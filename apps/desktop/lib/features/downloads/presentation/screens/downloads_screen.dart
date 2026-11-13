@@ -52,6 +52,18 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   final _selected = <String>{};
   bool _dragOver = false;
 
+  // Submenu controllers: the level-2 menus (Set priority, Add tag,
+  // Export/Import) open only on tap, so each owns a MenuController
+  // held in state instead of SubmenuButton's hover-driven one.
+  final _priorityMenuController = MenuController();
+  final _tagMenuController = MenuController();
+  final _exportImportMenuController = MenuController();
+
+  // Whether the submenu was open when the current tap started, set
+  // on pointer-down (see _submenuEntry). One flag is enough: each tap
+  // sets it fresh before its own onPressed reads it.
+  bool _submenuWasOpenAtPointerDown = false;
+
   /// Whether the details panel for the selected download is open.
   bool _detailsOpen = false;
 
@@ -955,24 +967,60 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return sorted;
   }
 
-  // The Add tag submenu: a PopupMenuItem wrapping a SubmenuButton,
-  // like Set priority. Each known tag toggles on tap; 'New tag...'
-  // opens the text dialog.
-  PopupMenuItem<String> _tagSubmenu(Download item, List<String> knownTags) {
+  // One level-2 menu entry: a PopupMenuItem wrapping a MenuAnchor
+  // whose button toggles the submenu on tap only (never on hover)
+  // and shows a trailing chevron marking it as a submenu.
+  PopupMenuItem<String> _submenuEntry({
+    required String label,
+    required MenuController controller,
+    required List<Widget> menuChildren,
+  }) {
     return PopupMenuItem<String>(
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-      child: SubmenuButton(
-        style: SubmenuButton.styleFrom(
-          minimumSize: const Size(0, 32),
-          padding: EdgeInsets.zero,
-        ),
-        menuChildren: [
-          for (final tag in knownTags) _tagItem(item, tag),
-          _newTagItem(item),
-        ],
-        child: Text('Add tag', style: AppTextSize.xs.textStyle()),
+      child: MenuAnchor(
+        controller: controller,
+        menuChildren: menuChildren,
+        builder: (context, menuController, child) {
+          return Listener(
+            onPointerDown: (_) {
+              _submenuWasOpenAtPointerDown = menuController.isOpen;
+            },
+            child: MenuItemButton(
+              style: MenuItemButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: EdgeInsets.zero,
+              ),
+              trailingIcon: const Icon(Icons.chevron_right, size: 18),
+              onPressed: () {
+                // A tap that started on an open submenu already closed
+                // it on pointer-down (the panel's TapRegion closes on
+                // outside taps); toggling here would reopen it.
+                if (_submenuWasOpenAtPointerDown) return;
+                if (menuController.isOpen) {
+                  menuController.close();
+                } else {
+                  menuController.open();
+                }
+              },
+              child: Text(label, style: AppTextSize.xs.textStyle()),
+            ),
+          );
+        },
       ),
+    );
+  }
+
+  // The Add tag submenu. Each known tag toggles on tap; 'New tag...'
+  // opens the text dialog.
+  PopupMenuItem<String> _tagSubmenu(Download item, List<String> knownTags) {
+    return _submenuEntry(
+      label: 'Add tag',
+      controller: _tagMenuController,
+      menuChildren: [
+        for (final tag in knownTags) _tagItem(item, tag),
+        _newTagItem(item),
+      ],
     );
   }
 
@@ -1040,27 +1088,19 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     }, (_) {});
   }
 
-  // The Export/Import submenu in the toolbar menu, same shape as
-  // the Set priority submenu: a PopupMenuItem wrapping a
-  // SubmenuButton whose items pop the parent menu, then run.
+  // The Export/Import submenu in the toolbar menu. Its items pop
+  // the parent menu, then run.
   PopupMenuItem<String> _exportImportSubmenu() {
-    return PopupMenuItem<String>(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-      child: SubmenuButton(
-        style: SubmenuButton.styleFrom(
-          minimumSize: const Size(0, 32),
-          padding: EdgeInsets.zero,
-        ),
-        menuChildren: [
-          _exportImportItem('Export all downloads', _exportAllDownloads),
-          _exportImportItem('Import downloads', _importDownloads),
-          const PopupMenuDivider(),
-          _exportImportItem('Export settings', _exportSettings),
-          _exportImportItem('Import settings', _importSettings),
-        ],
-        child: Text('Export/Import', style: AppTextSize.xs.textStyle()),
-      ),
+    return _submenuEntry(
+      label: 'Export/Import',
+      controller: _exportImportMenuController,
+      menuChildren: [
+        _exportImportItem('Export all downloads', _exportAllDownloads),
+        _exportImportItem('Import downloads', _importDownloads),
+        const PopupMenuDivider(),
+        _exportImportItem('Export settings', _exportSettings),
+        _exportImportItem('Import settings', _importSettings),
+      ],
     );
   }
 
@@ -1083,25 +1123,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  // The Set priority submenu: a PopupMenuItem wrapping a
-  // SubmenuButton, so the High / Normal / Low choices open as a
-  // nested menu like in IDM.
+  // The Set priority submenu: the High / Normal / Low choices open
+  // as a nested menu like in IDM.
   PopupMenuItem<String> _prioritySubmenu(Download item) {
-    return PopupMenuItem<String>(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-      child: SubmenuButton(
-        style: SubmenuButton.styleFrom(
-          minimumSize: const Size(0, 32),
-          padding: EdgeInsets.zero,
-        ),
-        menuChildren: [
-          _priorityItem(item, 1, 'High', 'priority_high'),
-          _priorityItem(item, 0, 'Normal', 'priority_normal'),
-          _priorityItem(item, -1, 'Low', 'priority_low'),
-        ],
-        child: Text('Set priority', style: AppTextSize.xs.textStyle()),
-      ),
+    return _submenuEntry(
+      label: 'Set priority',
+      controller: _priorityMenuController,
+      menuChildren: [
+        _priorityItem(item, 1, 'High', 'priority_high'),
+        _priorityItem(item, 0, 'Normal', 'priority_normal'),
+        _priorityItem(item, -1, 'Low', 'priority_low'),
+      ],
     );
   }
 
