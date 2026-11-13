@@ -1,7 +1,7 @@
 # yt-dlp probe from the extension popup
 
 Date: 2026-11-13
-Status: In progress
+Status: DONE
 Baseline: HEAD `c1befa9` (survey read at `d8d7045`; the submenu fix in between
 touched only the desktop screen + widget test, no impact here)
 
@@ -226,4 +226,38 @@ analyze` + `flutter analyze` clean.
 
 ## Completion
 
-(To be filled when P1–P8 are done, with commit hashes + gates.)
+Done 2026-11-13. All parts P1–P8 committed and pushed to `main`.
+
+- Plan `33f75af`
+- P1 `8f1f1e7` — download_api 13/13
+- P2 `a96eeab` — download_external 38/38
+- P3 `deac0d0` — engine 111/111
+- P4 `58277d0` — download_ipc 41/41
+- P5 `d6ef21d` — host 47/47
+- P6 `caaddb7` — background tests 40/40
+- P7 `a20288a` — extension JS 68/68
+- Popup dark-theme restyle `71810bc` (separate request from Tuấn Anh while
+  P5 was running; the popup now matches the app theme: #121212, #73CEFC,
+  xs 12px) — extension JS 71/71
+- Final gates re-run by Muse 2026-11-13: desktop 275/275, engine 111/111,
+  `flutter analyze` clean, root `dart analyze` clean, extension JS 71/71.
+
+Deviations from the plan (accepted): P1 `@JsonSerializable(explicitToJson:
+true)` on the `YtDlpProbeResult` factory (+ analyzer ignore, a false
+positive); P2 `unavailable` code at the source + cookie-file creation
+failure proceeds without cookies; P3 probe cache keyed by a record `(url,
+hasCookies)` + `_isYtDlpDownload` predicate (`_isStreamingPlaylist(url) ||
+id.startsWith('yt-')`); P4 `request()` timeout param + public
+`defaultRequestTimeout`/`probeTimeout` consts, 2 extra protocol tests; P5
+probe also validates the http(s) scheme, probe does not retry on
+`connection-closed`; P6 error codes `no-active-tab` /
+`native-host-missing` / `connection-closed` / `probe-failed`,
+`pendingProbes` dedupe; P7 popup resolves the tab URL itself for
+`ytdlp.download` (url + referrer), `internal` error shows the start-app
+hint, format labels prefer height (`1080p`) with video-only/audio-only
+markers.
+
+Manual checks owed (Tuấn Anh): open a YouTube page → popup probe lists
+formats → pick one → download completes with audio+video; a login-walled
+page probes as supported with cookies; an unsupported site shows
+not-supported; a public link still works unchanged.

@@ -31,13 +31,18 @@ the download in the running engine over IPC.
 - The popup lists the video/audio the content script found on the
   active tab (including `.m3u8`/`.mpd` streams); each row has a
   Download button.
+- Opening the popup also probes the active tab with yt-dlp: if the
+  site is supported, the popup lists the video's formats (resolution,
+  size, video-only/audio-only markers) and the chosen one downloads
+  through yt-dlp. The probe runs only when the popup opens, never on
+  page load.
 - The desktop app is auto-launched when needed: the native host
   starts it and waits up to 15 s for the IPC endpoint. Only when it
   cannot be started does the extension report "Engine is not running".
 
 ## Known limitations
 
-- Cookies and the referrer are sent with every download the extension hands over — the cookies the browser would send for that URL, plus the page the download came from — so login-walled links work. They live in memory only: after an app restart they are gone, and a login-walled download must be re-added from the browser. Other request headers are still not sent.
+- Cookies and the referrer are sent with every download the extension hands over — the cookies the browser would send for that URL, plus the page the download came from — so login-walled links work. They live in memory only: after an app restart they are gone, and a login-walled download must be re-added from the browser. Cookies and the referrer are also passed to yt-dlp for the probe and the download (via a temporary Netscape-format file that is deleted right after use), so login-walled pages probe as supported. The chosen format id is in-memory only too: after a restart, a resumed yt-dlp download falls back to yt-dlp's default format. Other request headers are still not sent.
 - The file name comes from the URL (or the link target); a server
   `Content-Disposition` filename does not rename the file, because
   the destination is fixed before the engine probes the URL.
