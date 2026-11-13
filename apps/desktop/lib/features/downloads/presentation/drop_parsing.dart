@@ -1,4 +1,5 @@
-import 'package:desktop_drop/desktop_drop.dart';
+import 'package:path/path.dart' as p;
+import 'package:pdm/core/services/drop_target_channel.dart';
 
 /// What a drop carried, after parsing.
 class DropParseResult {
@@ -20,14 +21,12 @@ class DropParseResult {
 
 /// Parses dropped content into URLs and file flags.
 ///
-/// A drag can carry the same URL in several representations
-/// (`text/uri-list`, `text/plain`, `text/html`), so the result is
-/// deduped. Only http(s) URLs are accepted; `text/html` is skipped
-/// because the uri-list / plain representations already carry the URL.
-DropParseResult parseDroppedContent({
-  required List<DropStringItem> strings,
-  required List<String> fileNames,
-}) {
+/// A link can arrive as a URI in [payload.uris], as plain text in
+/// [payload.text], and a drag can carry the same link in several
+/// representations — so the result is deduped. Only http(s) URLs are
+/// accepted. Dropped files are classified rather than added: PDM
+/// downloads from URLs, not from the local files a drag might carry.
+DropParseResult parseDroppedContent(DropPayload payload) {
   final urls = <String>[];
   final seen = <String>{};
 
@@ -40,29 +39,19 @@ DropParseResult parseDroppedContent({
     if (seen.add(url)) urls.add(url);
   }
 
-  // Prefer the uri-list: it is the canonical representation of dragged
-  // links. Fall back to plain text lines that parse as URLs.
-  for (final item in strings) {
-    if (item.mimeType == 'text/uri-list') {
-      for (final line in item.value.split('\n')) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-        addUrl(trimmed);
-      }
-    }
+  for (final uri in payload.uris) {
+    addUrl(uri);
   }
-  for (final item in strings) {
-    if (item.mimeType == 'text/plain') {
-      for (final line in item.value.split('\n')) {
-        addUrl(line);
-      }
-    }
+  for (final line in (payload.text ?? '').split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+    addUrl(trimmed);
   }
 
   var hasTorrent = false;
   var hasOtherFile = false;
-  for (final name in fileNames) {
-    if (name.toLowerCase().endsWith('.torrent')) {
+  for (final path in payload.files) {
+    if (p.basename(path).toLowerCase().endsWith('.torrent')) {
       hasTorrent = true;
     } else {
       hasOtherFile = true;

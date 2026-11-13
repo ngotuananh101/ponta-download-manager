@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include "drop_target.h"
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -26,6 +27,10 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  // Window-wide drag-and-drop: OLE walks up from the window under the
+  // cursor, so registering the top-level window covers the Flutter child.
+  drop_target_attach(flutter_controller_->engine()->messenger(), GetHandle());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();

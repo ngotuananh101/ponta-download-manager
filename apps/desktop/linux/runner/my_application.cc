@@ -9,6 +9,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "drop_target.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -181,6 +182,9 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  // After the plugins: the drop target shares the view's messenger with
+  // them, and the Dart side subscribes once the first frame is up.
+  drop_target_attach(view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

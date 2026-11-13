@@ -51,7 +51,7 @@ final class WindowServiceProvider
   WindowService create() => WindowService();
 }
 
-String _$windowServiceHash() => r'de7457d301b8e6925dd3a348413db7798a5ed628';
+String _$windowServiceHash() => r'a932c12bb4d3400fb4be579053113483a61ac520';
 
 /// Owns the window lifecycle and the system tray: closing the
 /// window hides it to the tray (downloads keep running in this
@@ -64,7 +64,7 @@ abstract class _$WindowService extends $AsyncNotifier<void> {
   FutureOr<void> build();
   @$mustCallSuper
   @override
-  void runBuild() {
+  WhenComplete runBuild() {
     final ref = this.ref as $Ref<AsyncValue<void>, void>;
     final element =
         ref.element
@@ -74,6 +74,6 @@ abstract class _$WindowService extends $AsyncNotifier<void> {
               Object?,
               Object?
             >;
-    element.handleCreate(ref, build);
+    return element.handleCreate(ref, build);
   }
 }

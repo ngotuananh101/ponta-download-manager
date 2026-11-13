@@ -48,7 +48,7 @@ Widget app({
   String? settingsPath,
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
-  Future<String?> Function(String fileName)? saveFile,
+  SaveTextFile? saveFile,
   Future<String?> Function()? pickFile,
   Future<void> Function()? quitApp,
 }) {
@@ -88,7 +88,7 @@ Future<void> pumpApp(
   String? settingsPath,
   FileOpener? fileOpener,
   Future<String?> Function()? directoryPicker,
-  Future<String?> Function(String fileName)? saveFile,
+  SaveTextFile? saveFile,
   Future<String?> Function()? pickFile,
   Future<void> Function()? quitApp,
   Size size = const Size(950, 650),
@@ -1398,7 +1398,10 @@ void main() {
     await pumpApp(
       tester,
       downloads: const [first, second],
-      saveFile: (_) async => target,
+      saveFile: (_, contents) async {
+        File(target).writeAsStringSync(contents);
+        return true;
+      },
     );
     // Select both rows by tapping their file names.
     await tester.tap(find.text('a.bin').first);
@@ -1439,7 +1442,10 @@ void main() {
     await pumpApp(
       tester,
       downloads: const [first, second],
-      saveFile: (_) async => target,
+      saveFile: (_, contents) async {
+        File(target).writeAsStringSync(contents);
+        return true;
+      },
     );
     // The list shows newest first, so the first Actions button in
     // the tree is the b.bin row's; target the a.bin row instead.
@@ -1464,7 +1470,7 @@ void main() {
 
   testWidgets('Export does nothing when the save dialog is cancelled',
       (tester) async {
-    await pumpApp(tester, saveFile: (_) async => null);
+    await pumpApp(tester, saveFile: (_, _) async => false);
     await tester.tap(find.byTooltip('Actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Export selected downloads'));
@@ -2026,7 +2032,10 @@ void main() {
     await pumpApp(
       tester,
       downloads: const [a, b],
-      saveFile: (_) async => outFile.path,
+      saveFile: (_, contents) async {
+        outFile.writeAsStringSync(contents);
+        return true;
+      },
     );
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
@@ -2098,7 +2107,10 @@ void main() {
     await pumpApp(
       tester,
       settingsPath: settingsPath,
-      saveFile: (_) async => outFile.path,
+      saveFile: (_, contents) async {
+        outFile.writeAsStringSync(contents);
+        return true;
+      },
     );
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();

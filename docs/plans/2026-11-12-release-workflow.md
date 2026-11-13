@@ -240,3 +240,33 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
     contains the gtk apprun hook, compiled GLib schemas, typelibs,
     the desktop file and the icon. `wix build` on the regenerated
     Files.wxs reports zero WIX0091.
+
+- 2026-11-13 ~10:30 (sixth run, build-linux): `--plugin gtk`, the WiX
+  ids and Windows were all fine; Linux died inside the gtk plugin.
+  * Linux AppImage: `cp: cannot stat 'gdk-pixbuf-2.0/2.10.0'` right
+    after the plugin's "Installing GDK PixBufs" stage.
+    `get_pkgconf_variable gdk_pixbuf_binarydir gdk-pixbuf-2.0` returns
+    `/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0`, and
+    `copy_lib_tree` does `pushd` into it before copying. On Ubuntu
+    26.04 (`ubuntu-latest` now resolves there) no package in the
+    workflow's apt set creates that directory: `libgdk-pixbuf-2.0-0`
+    ships only the query tool, `libgdk-pixbuf2.0-bin` only man pages
+    and the csource/pixdata tools. The one package that puts a loader
+    in `2.10.0/loaders` is `librsvg2-common`, and it arrives as a
+    *Recommends* of the pixbuf runtime, which the runner's apt has
+    disabled. Reproduced the exact failure in an ubuntu:26.04
+    container with `--no-install-recommends` (exit 1 at the same
+    line) and the success with `librsvg2-common` added (exit 0,
+    pixbuf cache written). Fix: add `librsvg2-common` to the
+    build-linux apt line; the app also needs it at runtime for the
+    SVG icons.
+  * Not a CI issue, done while this run was in flight: whole-workspace
+    dependency bump (`flutter pub get` no longer prints the 41
+    outdated packages) and, because `file_picker` 13 cannot share
+    `cross_file ^0.4.0` with `desktop_drop` 0.9, the drop zone moved
+    into the runners — `linux/runner/drop_target.cc` (GTK
+    `gtk_drag_dest_*`) and `windows/runner/drop_target.cpp` (OLE
+    `IDropTarget`), both driving the `pdm/drop_target` method channel
+    from `apps/desktop/lib/core/services/drop_target_channel.dart`.
+    Windows builds must be confirmed in CI: the runner code cannot be
+    compiled on this Fedora machine.

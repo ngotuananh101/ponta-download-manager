@@ -247,7 +247,7 @@ class DownloadStore {
         .toList();
   }
 
-  void close() => _db.dispose();
+  void close() => _db.close();
 
   static List<String> _stringList(String? json) {
     if (json == null || json.isEmpty) return const [];

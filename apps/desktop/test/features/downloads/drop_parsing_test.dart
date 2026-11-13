@@ -1,19 +1,15 @@
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdm/core/services/drop_target_channel.dart';
 import 'package:pdm/features/downloads/presentation/drop_parsing.dart';
 
 void main() {
   group('parseDroppedContent', () {
     test('uri-list: one URL per line, comments and blanks skipped', () {
       final result = parseDroppedContent(
-        strings: [
-          const DropStringItem(
-            mimeType: 'text/uri-list',
-            value:
-                '# comment\nhttps://example.com/a.zip\n\nhttps://example.com/b.zip\n',
-          ),
-        ],
-        fileNames: const [],
+        const DropPayload(
+          uris: ['https://example.com/a.zip', 'https://example.com/b.zip'],
+          text: '# comment\nhttps://example.com/a.zip\n\n',
+        ),
       );
       expect(result.urls, [
         'https://example.com/a.zip',
@@ -25,66 +21,42 @@ void main() {
 
     test('plain text URL is accepted', () {
       final result = parseDroppedContent(
-        strings: [
-          const DropStringItem(
-            mimeType: 'text/plain',
-            value: 'https://example.com/a.zip',
-          ),
-        ],
-        fileNames: const [],
+        const DropPayload(text: 'https://example.com/a.zip'),
       );
       expect(result.urls, ['https://example.com/a.zip']);
     });
 
     test('plain text that is not a URL is ignored', () {
       final result = parseDroppedContent(
-        strings: [
-          const DropStringItem(mimeType: 'text/plain', value: 'hello world'),
-        ],
-        fileNames: const [],
+        const DropPayload(text: 'hello world'),
       );
       expect(result.urls, isEmpty);
     });
 
-    test('html is skipped and the same URL is deduped', () {
+    test('the same URL in several representations is deduped', () {
       final result = parseDroppedContent(
-        strings: [
-          const DropStringItem(
-            mimeType: 'text/uri-list',
-            value: 'https://example.com/a.zip\n',
-          ),
-          const DropStringItem(
-            mimeType: 'text/html',
-            value: '<a href="https://example.com/a.zip">a</a>',
-          ),
-          const DropStringItem(
-            mimeType: 'text/plain',
-            value: 'https://example.com/a.zip',
-          ),
-        ],
-        fileNames: const [],
+        const DropPayload(
+          uris: ['https://example.com/a.zip'],
+          text: 'https://example.com/a.zip',
+        ),
       );
       expect(result.urls, ['https://example.com/a.zip']);
     });
 
-    test('non-http(s) and file:// URIs are skipped', () {
+    test('non-http(s) URIs are skipped', () {
       final result = parseDroppedContent(
-        strings: [
-          const DropStringItem(
-            mimeType: 'text/uri-list',
-            value: 'file:///home/user/a.zip\nftp://example.com/b.zip\n',
-          ),
-        ],
-        fileNames: const [],
+        const DropPayload(
+          uris: ['file:///home/user/a.zip', 'ftp://example.com/b.zip'],
+        ),
       );
       expect(result.urls, isEmpty);
     });
 
-    test('a .torrent file is flagged, other files are flagged separately',
-        () {
+    test('a .torrent file is flagged, other files are flagged separately', () {
       final result = parseDroppedContent(
-        strings: const [],
-        fileNames: const ['ubuntu.torrent', 'notes.txt'],
+        const DropPayload(
+          files: ['/home/user/ubuntu.torrent', '/home/user/notes.txt'],
+        ),
       );
       expect(result.urls, isEmpty);
       expect(result.hasTorrent, isTrue);
@@ -93,8 +65,7 @@ void main() {
 
     test('torrent detection is case-insensitive', () {
       final result = parseDroppedContent(
-        strings: const [],
-        fileNames: const ['Ubuntu.TORRENT'],
+        const DropPayload(files: ['/home/user/Ubuntu.TORRENT']),
       );
       expect(result.hasTorrent, isTrue);
       expect(result.hasOtherFile, isFalse);

@@ -239,7 +239,7 @@ void main() {
         " '/tmp/f.bin.partial', 'f.bin', '/tmp', 'paused', 1000, 1000)",
       );
       db.userVersion = 1;
-      db.dispose();
+      db.close();
       final store = DownloadStore.open(dbPath);
       addTearDown(store.close);
       final read = store.getDownload('dl-1')!;
@@ -310,7 +310,7 @@ void main() {
       );
       db.execute('ALTER TABLE downloads ADD COLUMN mirrors TEXT;');
       db.userVersion = 1;
-      db.dispose();
+      db.close();
       // Must not throw a duplicate column name error.
       final store = DownloadStore.open(dbPath);
       addTearDown(store.close);

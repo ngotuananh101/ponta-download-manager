@@ -43,8 +43,7 @@ Future<NewDownloadDecision?> showNewDownloadDialog({
       probe: probe,
       defaultDirectory: defaultDirectory,
       recentDirectories: recentDirectories,
-      pickDirectory:
-          pickDirectory ?? () => FilePicker.platform.getDirectoryPath(),
+      pickDirectory: pickDirectory ?? () => FilePicker.getDirectoryPath(),
       freeSpace: freeSpace ?? const DiskSpaceService().freeBytes,
     ),
   );

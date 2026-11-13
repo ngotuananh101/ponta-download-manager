@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +11,7 @@ import 'package:pdm/app/about_dialog.dart';
 import 'package:pdm/app/app_header.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/core/services/drop_target_channel.dart';
 import 'package:pdm/core/services/window_service.dart';
 import 'package:pdm/features/downloads/data/services/download_export.dart';
 import 'package:pdm/features/downloads/data/services/url_list.dart';
@@ -62,8 +63,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   /// Whether snail mode is currently ON.
   bool _snailMode = false;
 
+  /// Unsubscribes from the native drop target; null when not subscribed.
+  VoidCallback? _stopListeningForDrops;
+
+  @override
+  void initState() {
+    super.initState();
+    if (ref.read(dropTargetEnabledProvider)) {
+      _stopListeningForDrops = DropTargetChannel.listen(_onDropEvent);
+    }
+  }
+
   @override
   void dispose() {
+    _stopListeningForDrops?.call();
+    _stopListeningForDrops = null;
     _searchController.dispose();
     super.dispose();
   }
@@ -598,25 +612,20 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         content,
         if (_dragOver)
           Positioned.fill(
-            child: Container(
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.08),
-              child: const Center(child: Text('Drop to add download')),
+            child: IgnorePointer(
+              child: Container(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.08),
+                child: const Center(child: Text('Drop to add download')),
+              ),
             ),
           ),
       ],
     );
-    // The native library behind DropTarget is only bundled in a built
-    // app; in a widget test it is absent, so the target is skipped
-    // there (see dropTargetEnabledProvider).
-    if (!ref.watch(dropTargetEnabledProvider)) return stack;
-    return DropTarget(
-      onEnter: (_) => setState(() => _dragOver = true),
-      onLeave: () => setState(() => _dragOver = false),
-      onDrop: _onDrop,
-      child: stack,
-    );
+    // The drop target is native and window-wide (see
+    // dropTargetEnabledProvider); this tree only paints the highlight.
+    return stack;
   }
 
   /// The FDM table on top, the drop zone filling the rest below it.
@@ -1201,21 +1210,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       final downloads = ref.read(downloadsProvider).value ?? [];
       final selected =
           downloads.where((d) => ids.contains(d.id)).toList();
-      final path = await ref.read(saveFileProvider)('downloads.txt');
+      final saved = await ref
+          .read(saveFileProvider)('downloads.txt', exportUrls(selected));
       if (!mounted) return;
-      if (path == null) return;
-      // A sync write: the exported list is tiny, and an async write
-      // would stall in a widget test's fake-async zone.
-      try {
-        File(path).writeAsStringSync(exportUrls(selected));
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not export the downloads: $e')),
-          );
-        }
-        return;
-      }
+      if (!saved) return;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1432,15 +1430,26 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  Future<void> _onDrop(DropDetails details) async {
-    setState(() => _dragOver = false);
-    final result = parseDroppedContent(
-      strings: details.items.whereType<DropStringItem>().toList(),
-      fileNames: details.items
-          .whereType<DropFileItem>()
-          .map((f) => f.name)
-          .toList(),
-    );
+  /// Turns a native drop event into the highlight and the added
+  /// downloads.
+  ///
+  /// The runner sends these on the platform thread; the handler only
+  /// updates state and starts the work.
+  void _onDropEvent(DropEvent event) {
+    switch (event) {
+      case DropEnteredEvent():
+      case DropMovedEvent():
+        if (!_dragOver) setState(() => _dragOver = true);
+      case DropExitedEvent():
+        if (_dragOver) setState(() => _dragOver = false);
+      case DropDroppedEvent(:final payload):
+        if (_dragOver) setState(() => _dragOver = false);
+        unawaited(_onDrop(payload));
+    }
+  }
+
+  Future<void> _onDrop(DropPayload payload) async {
+    final result = parseDroppedContent(payload);
     if (result.hasTorrent && mounted) {
       ScaffoldMessenger.of(
         context,
@@ -1787,9 +1796,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   /// Exports every download's URL, one per line, to a picked file.
   Future<void> _exportAllDownloads() async {
     final downloads = ref.read(downloadsProvider).value ?? const [];
-    final path = await ref.read(saveFileProvider)('downloads.txt');
-    if (path == null || !mounted) return;
-    File(path).writeAsStringSync(exportUrls(downloads));
+    final saved = await ref
+        .read(saveFileProvider)('downloads.txt', exportUrls(downloads));
+    if (!saved || !mounted) return;
     _showMessage('Exported ${downloads.length} download(s)');
   }
 
@@ -1809,10 +1818,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   /// Exports the current settings as JSON to a picked file.
   Future<void> _exportSettings() async {
-    final path = await ref.read(saveFileProvider)('settings.json');
-    if (path == null || !mounted) return;
     final settings = ref.read(fileConflictSettingsProvider);
-    File(path).writeAsStringSync(settings.exportJson());
+    final saved = await ref
+        .read(saveFileProvider)('settings.json', settings.exportJson());
+    if (!saved || !mounted) return;
     _showMessage('Settings exported');
   }
 

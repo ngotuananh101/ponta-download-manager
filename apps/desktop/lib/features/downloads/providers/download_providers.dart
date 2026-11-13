@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:download_api/download_api.dart';
 import 'package:file_picker/file_picker.dart';
@@ -65,36 +67,51 @@ final downloadsActionsProvider = Provider<DownloadsActions>((ref) {
 
 /// Whether the native drag-and-drop target is available.
 ///
-/// The desktop_drop plugin loads a native library
-/// (`libdesktop_drop_plugin.so`) that is only bundled in a built app.
-/// A widget test runs in a plain Dart VM without it, and building a
-/// [DropTarget] there throws. The screen only builds the target when
-/// this is true; tests override it to false so the screen renders
-/// without the native target.
+/// The target lives in the platform runners (`linux/runner/drop_target.cc`,
+/// `windows/runner/drop_target.cpp`), not in a plugin, and a widget
+/// test has no runner behind the `pdm/drop_target` channel. Tests
+/// override this to false so the screen renders without subscribing.
 final dropTargetEnabledProvider = Provider<bool>((ref) => true);
 
 /// Picks a directory with the system folder dialog. A separate
 /// provider so tests can answer the picker instead of opening a
 /// real dialog.
 final directoryPickerProvider = Provider<Future<String?> Function()>(
-  (ref) => () => FilePicker.platform.getDirectoryPath(),
+  (ref) => () => FilePicker.getDirectoryPath(),
 );
 
-/// Picks a file to save to with the system save dialog. A separate
-/// provider so tests can answer the dialog instead of opening a
-/// real one.
-final saveFileProvider =
-    Provider<Future<String?> Function(String fileName)>(
-  (ref) => (fileName) => FilePicker.platform.saveFile(fileName: fileName),
+/// Asks the user where to save a text file and writes it there.
+///
+/// Returns false when the dialog was cancelled. A separate provider so
+/// tests can answer the dialog without opening a real one.
+///
+/// file_picker 13's `saveFile` takes the bytes and writes the file
+/// itself; it no longer hands back a path for the caller to write to.
+typedef SaveTextFile = Future<bool> Function(
+  String fileName,
+  String contents,
+);
+
+final saveFileProvider = Provider<SaveTextFile>(
+  (ref) => (fileName, contents) async {
+    final uri = await FilePicker.saveFile(
+      fileName: fileName,
+      bytes: Uint8List.fromList(utf8.encode(contents)),
+      mimeType: fileName.endsWith('.json')
+          ? 'application/json'
+          : 'text/plain',
+    );
+    return uri != null;
+  },
 );
 
 /// Picks a file to read from with the system file dialog. A separate
-/// provider so tests can answer the picker instead of opening a real
-/// dialog.
+/// provider so tests can answer the picker instead of opening a
+/// real dialog.
 final pickFileProvider = Provider<Future<String?> Function()>(
   (ref) => () async {
-    final result = await FilePicker.platform.pickFiles();
-    return result?.files.single.path;
+    final file = await FilePicker.pickFile();
+    return file?.path;
   },
 );
 
