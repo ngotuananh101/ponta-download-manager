@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:download_api/download_api.dart';
 import 'package:path/path.dart' as p;
 
+import 'yt_dlp_cookies.dart';
 import 'yt_dlp_progress.dart';
 
 /// Starts a process. Injectable so tests can use a fake yt-dlp.
@@ -28,6 +29,11 @@ class _RunningDownload {
   Process? process;
   String? finalPath;
   String lastErrorLine = '';
+
+  /// Temp cookies file for this run, deleted when the run reaches a
+  /// terminal state (or on shutdown). Null when no cookie was given
+  /// or the file could not be created.
+  TempCookieFile? cookieFile;
   bool paused = false;
   bool cancelled = false;
 
@@ -78,6 +84,9 @@ class YtDlpDownloader {
     required String downloadId,
     required String url,
     required String outputTemplate,
+    String? format,
+    String? cookie,
+    String? referrer,
   }) {
     if (_running.containsKey(downloadId)) {
       throw StateError('Download $downloadId is already running');
@@ -90,11 +99,31 @@ class YtDlpDownloader {
       outputDir: p.dirname(outputTemplate),
     );
     _running[downloadId] = running;
-    unawaited(_run(running, url));
+    unawaited(
+      _run(running, url, format: format, cookie: cookie, referrer: referrer),
+    );
     return controller.stream;
   }
 
-  Future<void> _run(_RunningDownload running, String url) async {
+  Future<void> _run(
+    _RunningDownload running,
+    String url, {
+    String? format,
+    String? cookie,
+    String? referrer,
+  }) async {
+    if (cookie != null && cookie.trim().isNotEmpty) {
+      // Best effort: a run without cookies still proceeds when the
+      // temp file cannot be created.
+      try {
+        running.cookieFile = TempCookieFile.create(
+          cookieHeader: cookie,
+          url: Uri.parse(url),
+        );
+      } catch (_) {
+        running.cookieFile = null;
+      }
+    }
     final args = [
       '--ffmpeg-location',
       ffmpegDir,
@@ -107,6 +136,15 @@ class YtDlpDownloader {
       '--progress',
       '-o',
       running.outputTemplate,
+      if (format != null && format.isNotEmpty) ...['-f', format],
+      if (running.cookieFile != null) ...[
+        '--cookies',
+        running.cookieFile!.file.path,
+      ],
+      if (referrer != null && referrer.trim().isNotEmpty) ...[
+        '--referer',
+        referrer,
+      ],
       url,
     ];
     Process process;
@@ -135,7 +173,11 @@ class YtDlpDownloader {
     final stderrSub = stderrLines.listen(
       (line) {
         if (line.trim().isNotEmpty) {
-          running.lastErrorLine = line.trim();
+          // Error lines reach the UI; never surface cookie material.
+          running.lastErrorLine = scrubCookieMaterial(
+            line.trim(),
+            running.cookieFile?.file.path,
+          );
         }
       },
       onDone: stderrDone.complete,
@@ -144,6 +186,7 @@ class YtDlpDownloader {
     if (running.shuttingDown) {
       // Engine shutdown: close the stream without an event. The
       // record stays non-terminal so recovery resumes it.
+      running.cookieFile?.delete();
       _running.remove(running.downloadId);
       unawaited(running.controller.close());
       running.done.complete();
@@ -204,6 +247,199 @@ class YtDlpDownloader {
         ? running.lastErrorLine
         : 'yt-dlp exited with code $exitCode';
     _fail(running, 'yt-dlp-failed', message);
+  }
+
+
+  /// Probes [url] with `yt-dlp -J --no-playlist` and returns the video
+  /// metadata and formats, or a `supported: false` result when no
+  /// extractor matches or the probe fails. Never throws for a yt-dlp
+  /// failure; those are reported in the result. The temp cookies file
+  /// (when [cookie] is given) is deleted before this returns.
+  Future<YtDlpProbeResult> probe({
+    required String url,
+    String? cookie,
+    String? referrer,
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    TempCookieFile? cookieFile;
+    if (cookie != null && cookie.trim().isNotEmpty) {
+      try {
+        cookieFile = TempCookieFile.create(
+          cookieHeader: cookie,
+          url: Uri.parse(url),
+        );
+      } catch (_) {
+        // Best effort: probe without cookies when the temp file
+        // cannot be created.
+        cookieFile = null;
+      }
+    }
+    try {
+      final args = <String>[
+        '-J',
+        '--no-playlist',
+        if (cookieFile != null) ...[
+          '--cookies',
+          cookieFile.file.path,
+        ],
+        if (referrer != null && referrer.trim().isNotEmpty) ...[
+          '--referer',
+          referrer,
+        ],
+        url,
+      ];
+      Process process;
+      try {
+        process = await _processStarter(ytDlpPath, args);
+      } catch (e) {
+        return YtDlpProbeResult(
+          supported: false,
+          errorCode: 'yt-dlp-probe-failed',
+          errorMessage: 'Could not start yt-dlp: $e',
+        );
+      }
+      final stdoutBuffer = StringBuffer();
+      final stderrLines = <String>[];
+      final stdoutDone = Completer<void>();
+      final stderrDone = Completer<void>();
+      final stdoutSub = process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+            (line) => stdoutBuffer.writeln(line),
+            onDone: stdoutDone.complete,
+          );
+      final stderrSub = process.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+            (line) {
+              if (line.trim().isNotEmpty) {
+                stderrLines.add(line.trim());
+              }
+            },
+            onDone: stderrDone.complete,
+          );
+      int exitCode;
+      try {
+        exitCode = await process.exitCode.timeout(timeout);
+      } on TimeoutException {
+        process.kill();
+        await stdoutSub.cancel();
+        await stderrSub.cancel();
+        return const YtDlpProbeResult(
+          supported: false,
+          errorCode: 'yt-dlp-timeout',
+          errorMessage: 'yt-dlp probe timed out',
+        );
+      }
+      await stdoutDone.future;
+      await stderrDone.future;
+      await stdoutSub.cancel();
+      await stderrSub.cancel();
+      // Error lines reach the UI; never surface cookie material.
+      final lastError = stderrLines.isEmpty
+          ? 'yt-dlp exited with code $exitCode'
+          : scrubCookieMaterial(stderrLines.last, cookieFile?.file.path);
+      if (exitCode == 0) {
+        final result = _probeResultFromJson(stdoutBuffer.toString());
+        if (result != null) {
+          return result;
+        }
+        return const YtDlpProbeResult(
+          supported: false,
+          errorCode: 'yt-dlp-probe-failed',
+          errorMessage: 'Could not parse yt-dlp output',
+        );
+      }
+      if (stderrLines.any((line) => line.contains('Unsupported URL'))) {
+        return YtDlpProbeResult(
+          supported: false,
+          errorCode: 'yt-dlp-unsupported',
+          errorMessage: lastError,
+        );
+      }
+      if (stderrLines.any(
+        (line) =>
+            line.contains('Video unavailable') ||
+            line.contains('Private video'),
+      )) {
+        return YtDlpProbeResult(
+          supported: false,
+          errorCode: 'unavailable',
+          errorMessage: lastError,
+        );
+      }
+      return YtDlpProbeResult(
+        supported: false,
+        errorCode: 'yt-dlp-probe-failed',
+        errorMessage: lastError,
+      );
+    } finally {
+      cookieFile?.delete();
+    }
+  }
+
+  /// Parses `yt-dlp -J` stdout into a probe result, or null when it
+  /// is not a JSON object with at least one format.
+  YtDlpProbeResult? _probeResultFromJson(String stdout) {
+    try {
+      final decoded = jsonDecode(stdout);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      final formats = <YtDlpFormat>[];
+      final rawFormats = decoded['formats'];
+      if (rawFormats is List) {
+        for (final raw in rawFormats) {
+          if (raw is Map<String, dynamic>) {
+            final format = _formatFromJson(raw);
+            if (format != null) {
+              formats.add(format);
+            }
+          }
+        }
+      }
+      if (formats.isEmpty) {
+        return null;
+      }
+      final duration = decoded['duration'];
+      return YtDlpProbeResult(
+        supported: true,
+        title: decoded['title'] as String?,
+        thumbnail: decoded['thumbnail'] as String?,
+        durationSeconds: duration is num ? duration.round() : null,
+        formats: formats,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Maps one yt-dlp `-J` format object to [YtDlpFormat], or null
+  /// when it has no format id. yt-dlp uses snake_case keys and
+  /// numeric fields may be int or double.
+  YtDlpFormat? _formatFromJson(Map<String, dynamic> json) {
+    final formatId = json['format_id'];
+    if (formatId is! String || formatId.isEmpty) {
+      return null;
+    }
+    int? asInt(dynamic value) => value is num ? value.toInt() : null;
+    double? asDouble(dynamic value) =>
+        value is num ? value.toDouble() : null;
+    return YtDlpFormat(
+      formatId: formatId,
+      ext: json['ext'] as String? ?? '',
+      resolution: json['resolution'] as String?,
+      width: asInt(json['width']),
+      height: asInt(json['height']),
+      filesize: asInt(json['filesize']),
+      filesizeApprox: asInt(json['filesize_approx']),
+      vcodec: json['vcodec'] as String? ?? 'none',
+      acodec: json['acodec'] as String? ?? 'none',
+      fps: asDouble(json['fps']),
+      note: json['format_note'] as String?,
+    );
   }
 
   void _onStdout(_RunningDownload running, String line) {
@@ -356,6 +592,7 @@ class YtDlpDownloader {
   }
 
   void _finish(_RunningDownload running, DownloadEvent event) {
+    running.cookieFile?.delete();
     _running.remove(running.downloadId);
     running.controller.add(event);
     unawaited(running.controller.close());

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_external/download_external.dart';
+import 'package:download_external/src/yt_dlp_cookies.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -56,6 +58,62 @@ mkdir -p "$(dirname "$stem")"
 touch "$stem-notes.txt"
 exit 0
 ''';
+
+
+/// A fake [Process] driven by the test: stdout/stderr lines are fed
+/// through [addStdout]/[addStderr], [exitCode] completes when
+/// [completeExit] is called, and [kill] is observable via [killed].
+/// Events added before the downloader attaches its listeners are
+/// buffered by the single-subscription controllers.
+class _FakeProcess implements Process {
+  _FakeProcess();
+
+  final _stdoutController = StreamController<List<int>>();
+  final _stderrController = StreamController<List<int>>();
+  final _exitCode = Completer<int>();
+  bool killed = false;
+
+  void addStdout(String line) {
+    _stdoutController.add(utf8.encode('$line\n'));
+  }
+
+  void addStderr(String line) {
+    _stderrController.add(utf8.encode('$line\n'));
+  }
+
+  void closeStreams() {
+    unawaited(_stdoutController.close());
+    unawaited(_stderrController.close());
+  }
+
+  void completeExit(int code) {
+    if (!_exitCode.isCompleted) {
+      _exitCode.complete(code);
+    }
+  }
+
+  @override
+  Stream<List<int>> get stdout => _stdoutController.stream;
+
+  @override
+  Stream<List<int>> get stderr => _stderrController.stream;
+
+  @override
+  IOSink get stdin => throw UnimplementedError();
+
+  @override
+  int get pid => 1234;
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed = true;
+    completeExit(143);
+    return true;
+  }
+}
 
 void main() {
   late Directory tmp;
@@ -345,5 +403,377 @@ void main() {
     expect(events.length, 1);
     final failed = events.single as DownloadFailed;
     expect(failed.code, 'yt-dlp-no-output');
+  });
+
+  group('probe', () {
+    late _FakeProcess fake;
+    late List<List<String>> calls;
+    late YtDlpDownloader downloader;
+
+    // Builds a canned `yt-dlp -J` JSON payload.
+    String probeJson() => jsonEncode({
+      'title': 'Test video',
+      'thumbnail': 'https://example.com/thumb.jpg',
+      'duration': 125,
+      'formats': [
+        {
+          'format_id': '137',
+          'ext': 'mp4',
+          'resolution': '1920x1080',
+          'width': 1920,
+          'height': 1080,
+          'filesize': 12345678,
+          'filesize_approx': null,
+          'vcodec': 'avc1.640028',
+          'acodec': 'none',
+          'fps': 30,
+          'format_note': '1080p',
+        },
+        {
+          'format_id': '140',
+          'ext': 'm4a',
+          'resolution': 'audio only',
+          'width': null,
+          'height': null,
+          'filesize': 123456,
+          'filesize_approx': null,
+          'vcodec': 'none',
+          'acodec': 'mp4a.40.2',
+          'fps': null,
+          'format_note': 'medium',
+        },
+      ],
+    });
+
+    setUp(() {
+      fake = _FakeProcess();
+      calls = <List<String>>[];
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          return fake;
+        },
+      );
+    });
+
+    test('probe returns metadata and formats for a supported URL',
+        () async {
+      fake.addStdout(probeJson());
+      fake.closeStreams();
+      fake.completeExit(0);
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+      );
+      expect(result.supported, isTrue);
+      expect(result.title, 'Test video');
+      expect(result.thumbnail, 'https://example.com/thumb.jpg');
+      expect(result.durationSeconds, 125);
+      expect(result.formats.length, 2);
+      final video = result.formats.first;
+      expect(video.formatId, '137');
+      expect(video.ext, 'mp4');
+      expect(video.resolution, '1920x1080');
+      expect(video.width, 1920);
+      expect(video.height, 1080);
+      expect(video.filesize, 12345678);
+      expect(video.vcodec, 'avc1.640028');
+      expect(video.acodec, 'none');
+      expect(video.fps, 30.0);
+      expect(video.note, '1080p');
+      final audio = result.formats.last;
+      expect(audio.formatId, '140');
+      expect(audio.vcodec, 'none');
+      expect(audio.acodec, 'mp4a.40.2');
+      final args = calls.single;
+      expect(args, contains('-J'));
+      expect(args, contains('--no-playlist'));
+      expect(args.last, 'https://www.youtube.com/watch?v=xyz');
+    });
+
+    test('probe maps an unsupported URL to supported false', () async {
+      fake.addStderr('ERROR: Unsupported URL: https://example.com/page');
+      fake.closeStreams();
+      fake.completeExit(1);
+      final result = await downloader.probe(url: 'https://example.com/page');
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-unsupported');
+      expect(result.errorMessage, contains('Unsupported URL'));
+    });
+
+    test('probe maps a private video to unavailable', () async {
+      fake.addStderr(
+        'ERROR: [youtube] abc123: Private video. Sign in if you have been granted access to this video',
+      );
+      fake.closeStreams();
+      fake.completeExit(1);
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=abc123',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'unavailable');
+    });
+
+    test('probe maps other failures to yt-dlp-probe-failed', () async {
+      fake.addStderr('WARNING: some warning');
+      fake.addStderr('ERROR: unable to download video data');
+      fake.closeStreams();
+      fake.completeExit(1);
+      final result = await downloader.probe(
+        url: 'https://example.com/video',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-probe-failed');
+      expect(result.errorMessage, contains('unable to download video data'));
+    });
+
+    test('probe times out and kills the process', () async {
+      // The fake never exits on its own; kill() completes exitCode.
+      final result = await downloader.probe(
+        url: 'https://example.com/video',
+        timeout: const Duration(milliseconds: 50),
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-timeout');
+      expect(fake.killed, isTrue);
+    });
+
+    test('probe without cookies passes no --cookies flag', () async {
+      fake.addStdout(probeJson());
+      fake.closeStreams();
+      fake.completeExit(0);
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+      );
+      expect(result.supported, isTrue);
+      expect(calls.single, isNot(contains('--cookies')));
+      expect(calls.single, isNot(contains('--referer')));
+    });
+
+    test('probe writes cookies to a temp Netscape file and deletes it',
+        () async {
+      String? cookiePath;
+      String? cookieContent;
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          final index = args.indexOf('--cookies');
+          if (index != -1) {
+            cookiePath = args[index + 1];
+            cookieContent = File(cookiePath!).readAsStringSync();
+          }
+          fake.addStdout(probeJson());
+          fake.closeStreams();
+          fake.completeExit(0);
+          return fake;
+        },
+      );
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+        cookie: 'session=abc123; theme=dark',
+        referrer: 'https://www.youtube.com/watch?v=xyz',
+      );
+      expect(result.supported, isTrue);
+      expect(cookiePath, isNotNull);
+      expect(
+        cookieContent,
+        '.www.youtube.com\tTRUE\t/\tTRUE\t0\tsession\tabc123\n'
+        '.www.youtube.com\tTRUE\t/\tTRUE\t0\ttheme\tdark\n',
+      );
+      expect(File(cookiePath!).existsSync(), isFalse);
+      expect(Directory(p.dirname(cookiePath!)).existsSync(), isFalse);
+      final args = calls.single;
+      expect(args, contains('--cookies'));
+      expect(args, contains('--referer'));
+      expect(args, contains('https://www.youtube.com/watch?v=xyz'));
+    });
+
+    test('probe scrubs the cookies path from error messages', () async {
+      String? cookiePath;
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          final index = args.indexOf('--cookies');
+          if (index != -1) {
+            cookiePath = args[index + 1];
+            fake.addStderr('ERROR: could not read $cookiePath');
+          }
+          fake.closeStreams();
+          fake.completeExit(1);
+          return fake;
+        },
+      );
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+        cookie: 'session=abc123',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-probe-failed');
+      expect(result.errorMessage, isNot(contains(cookiePath!)));
+      expect(result.errorMessage, contains('<cookies-file>'));
+    });
+  });
+
+  group('start with format and cookies', () {
+    test('start passes -f, --cookies and --referer to yt-dlp', () async {
+      final fake = _FakeProcess();
+      final calls = <List<String>>[];
+      final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+      final finalPath = p.join(outDir.path, 'live.mp4');
+      File(finalPath).writeAsStringSync('x');
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          fake.addStdout(
+            '[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30',
+          );
+          fake.addStdout(finalPath);
+          fake.closeStreams();
+          fake.completeExit(0);
+          return fake;
+        },
+      );
+      final events = await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+            format: '137+140',
+            cookie: 'session=abc123',
+            referrer: 'https://www.youtube.com/watch?v=xyz',
+          )
+          .toList();
+      expect(events.last, isA<DownloadCompleted>());
+      final args = calls.single;
+      expect(args, contains('-f'));
+      expect(args[args.indexOf('-f') + 1], '137+140');
+      expect(args, contains('--cookies'));
+      expect(args, contains('--referer'));
+      expect(args.last, 'https://www.youtube.com/watch?v=xyz');
+    });
+
+    test('start deletes the cookie file when the download completes',
+        () async {
+      final fake = _FakeProcess();
+      String? cookiePath;
+      final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+      final finalPath = p.join(outDir.path, 'live.mp4');
+      File(finalPath).writeAsStringSync('x');
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          final index = args.indexOf('--cookies');
+          if (index != -1) cookiePath = args[index + 1];
+          fake.addStdout(finalPath);
+          fake.closeStreams();
+          fake.completeExit(0);
+          return fake;
+        },
+      );
+      await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+            cookie: 'session=abc123',
+          )
+          .toList();
+      expect(cookiePath, isNotNull);
+      expect(File(cookiePath!).existsSync(), isFalse);
+      expect(Directory(p.dirname(cookiePath!)).existsSync(), isFalse);
+    });
+
+    test('start deletes the cookie file when the download is paused',
+        () async {
+      final fake = _FakeProcess();
+      String? cookiePath;
+      final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          final index = args.indexOf('--cookies');
+          if (index != -1) cookiePath = args[index + 1];
+          fake.addStdout(
+            '[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30',
+          );
+          return fake;
+        },
+      );
+      final events = <DownloadEvent>[];
+      final done = Completer<void>();
+      downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+            cookie: 'session=abc123',
+          )
+          .listen(events.add, onDone: done.complete);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await downloader.pause('dl-1');
+      await done.future.timeout(const Duration(seconds: 10));
+      final last = events.last;
+      expect(last, isA<DownloadStateChanged>());
+      expect((last as DownloadStateChanged).status, DownloadStatus.paused);
+      expect(cookiePath, isNotNull);
+      expect(File(cookiePath!).existsSync(), isFalse);
+      expect(Directory(p.dirname(cookiePath!)).existsSync(), isFalse);
+    });
+  });
+
+  test('buildNetscapeCookies writes one line per cookie', () {
+    final content = buildNetscapeCookies(
+      cookieHeader: 'session=abc123; theme=dark',
+      url: Uri.parse('https://www.youtube.com/watch?v=xyz'),
+    );
+    expect(
+      content,
+      '.www.youtube.com\tTRUE\t/\tTRUE\t0\tsession\tabc123\n'
+      '.www.youtube.com\tTRUE\t/\tTRUE\t0\ttheme\tdark\n',
+    );
+  });
+
+  test('buildNetscapeCookies marks http cookies as not secure', () {
+    final content = buildNetscapeCookies(
+      cookieHeader: 'a=b',
+      url: Uri.parse('http://example.com/video'),
+    );
+    expect(content, '.example.com\tTRUE\t/\tFALSE\t0\ta\tb\n');
+  });
+
+  test('buildNetscapeCookies keeps equals signs in values', () {
+    final content = buildNetscapeCookies(
+      cookieHeader: 'token=abc=def',
+      url: Uri.parse('https://example.com/'),
+    );
+    expect(content, '.example.com\tTRUE\t/\tTRUE\t0\ttoken\tabc=def\n');
+  });
+
+  test('scrubCookieMaterial replaces the cookies path and redacts Cookie headers',
+      () {
+    expect(
+      scrubCookieMaterial(
+        'ERROR: could not read /tmp/pdm-cookies-abc/cookies.txt',
+        '/tmp/pdm-cookies-abc/cookies.txt',
+      ),
+      'ERROR: could not read <cookies-file>',
+    );
+    expect(
+      scrubCookieMaterial('request headers: Cookie: session=abc123', null),
+      'request headers: Cookie: <redacted>',
+    );
+    expect(
+      scrubCookieMaterial('ERROR: something else', null),
+      'ERROR: something else',
+    );
   });
 }
