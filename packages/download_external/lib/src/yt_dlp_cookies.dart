@@ -37,7 +37,8 @@ String buildNetscapeCookies({
   }
   // yt-dlp (MozillaCookieJar) rejects the file unless its first line
   // is the Netscape header.
-  return '# Netscape HTTP Cookie File\n' + lines.map((line) => '$line\n').join();
+  final body = lines.map((line) => '$line\n').join();
+  return '# Netscape HTTP Cookie File\n$body';
 }
 
 /// Strips tab/line-break characters that would corrupt a
