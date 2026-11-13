@@ -270,3 +270,39 @@ Portable; linux RPM / DEB / Appimage / Portable". Đề xuất (GitHub Actions,
     from `apps/desktop/lib/core/services/drop_target_channel.dart`.
     Windows builds must be confirmed in CI: the runner code cannot be
     compiled on this Fedora machine.
+
+- 2026-11-13 ~11:00 (seventh run): both build jobs were cancelled
+  while stuck in `Fetch external tools`.
+  * Evidence: build-windows fetched its two binaries (105 MB + 23 MB)
+    and was cancelled a minute later, so the fetch itself works from
+    GitHub-hosted runners. build-linux logged "Downloading
+    https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+    showed 0% for 1:56 and was cancelled by hand. Root cause: the
+    Linux ffmpeg did not come from GitHub, and johnvansickle.com stalls
+    from CI egress; nothing timed out, so the job hung instead of
+    failing.
+  * Fix in `tools/fetch_external_tools.sh`: both ffmpeg builds are
+    now the GitHub release assets `eugeneware/ffmpeg-static` republishes
+    at a pinned tag (`b6.1.1`): `ffmpeg-linux-x64.gz` (29 MB, the
+    johnvansickle 7.0.2 static build) and `ffmpeg-win32-x64.gz` (30 MB,
+    gyan.dev's 6.1.1 essentials build). Their sha256 digests are
+    pinned in the script, so both platforms follow one code path and
+    neither depends on a non-GitHub host.
+    github.com assets are fetched through public mirrors
+    (`ghfast.top`, then `gh-proxy.com`) with github.com itself as the
+    last candidate, so anonymous-download throttling cannot stall the
+    job. Every asset is verified: the ffmpeg digest is pinned in the
+    script, yt-dlp against the release's `SHA2-256SUMS` --
+    checksums themselves are fetched from GitHub directly first, so a
+    mirror is never the only source for the digest it is checked
+    against. A
+    mismatch moves on to the next candidate instead of installing.
+    `--connect-timeout 20 --max-time 1800
+    --speed-limit 10240 --speed-time 60` turn a stalled transfer (the
+    exact failure mode here) into a fast, retried failure.
+  * Verified locally in scratch trees: `linux` produced a working
+    ffmpeg (7.0.2, renders a test frame) and yt-dlp (2026.10.26) in
+    19 s; `windows` produced a PE32+ ffmpeg.exe (82 MB) and
+    yt-dlp.exe (23 MB) in 7 s. pytest `tools/` covers the mirror
+    order, the fallback to the next mirror and the checksum-mismatch
+    rejection.

@@ -5,13 +5,12 @@ Run: pytest tools/test_shell_scripts.py
 Each test copies the real script into a temp layout and runs it with
 fake tools on PATH, so no network and no real binaries are involved.
 """
-import io
-import lzma
+import gzip
+import hashlib
 import os
 import shutil
 import stat
 import subprocess
-import tarfile
 import textwrap
 from pathlib import Path
 
@@ -152,53 +151,49 @@ def test_fetch_skips_binaries_that_already_work(tmp_path):
     assert "yt-dlp already present, skipping" in result.stdout
     assert not curl_log.exists(), "the script tried to download"
 
-def test_fetch_downloads_binaries_on_clean_clone(tmp_path):
-    """Review 38: on a clean clone (no bundle/bin at all) the fetch
-    script must download both binaries and leave working ones behind.
-    A fake curl serves the fixtures, so no network is involved: a
-    .tar.xz holding a fake ffmpeg, and a fake yt-dlp script."""
+
+FAKE_FFMPEG = (
+    b"#!/bin/sh\n"
+    b'if [ "$1" = "-version" ]; then echo "ffmpeg version fake"; exit 0; fi\n'
+    b"exit 8\n"
+)
+FAKE_YTDLP = (
+    b"#!/bin/sh\n"
+    b'if [ "$1" = "--version" ]; then echo "2026.01.01"; exit 0; fi\n'
+    b"exit 1\n"
+)
+# The digests the script pins for its two ffmpeg assets. The tests
+# rewrite them to the fixture's digest: the pin is the whole point of
+# the asset check, but a fixture can never be the real 80 MB binary.
+PINNED_FFMPEG_SHA256 = (
+    "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa",
+    "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
+)
+
+
+def fetch_layout(tmp_path, curl_body, pinned_ffmpeg_sha256=None):
+    """Builds a temp repo layout with the script and a fake curl.
+
+    Returns (root, script, bin_dir, curl_log, fakebin). `curl_body` is
+    the body of the fake curl and sees `$out`, `$url` and the log path.
+    `pinned_ffmpeg_sha256` replaces every digest the script pins for
+    an ffmpeg asset, so a fixture can pass the check without the real
+    bytes; pass None to leave the real pins in place.
+    """
     root = tmp_path / "pdm"
     tools_dir = root / "tools"
     tools_dir.mkdir(parents=True)
-    shutil.copy(
-        REPO_ROOT / "tools" / "fetch_external_tools.sh",
-        tools_dir / "fetch_external_tools.sh",
-    )
-    bin_dir = root / "apps" / "desktop" / "bundle" / "bin"
-    assert not bin_dir.exists(), "clean clone must have no bundle/bin"
-
-    # Fixture 1: a .tar.xz holding a fake ffmpeg, like the real
-    # johnvansickle static build (binary nested one level deep).
-    fake_ffmpeg = (
-        b"#!/bin/sh\n"
-        b'if [ "$1" = "-version" ]; then echo "ffmpeg version fake"; exit 0; fi\n'
-        b"exit 8\n"
-    )
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:xz") as tf:
-        info = tarfile.TarInfo("ffmpeg-7.0.2-amd64-static/ffmpeg")
-        info.size = len(fake_ffmpeg)
-        info.mode = 0o755
-        tf.addfile(info, io.BytesIO(fake_ffmpeg))
-    ffmpeg_fixture = tmp_path / "ffmpeg.tar.xz"
-    ffmpeg_fixture.write_bytes(buf.getvalue())
-
-    # Fixture 2: a fake yt-dlp, served as the standalone binary.
-    ytdlp_fixture = tmp_path / "yt-dlp"
-    write_executable(
-        ytdlp_fixture,
-        """\
-        #!/bin/sh
-        if [ "$1" = "--version" ]; then echo "2026.01.01"; exit 0; fi
-        exit 1
-        """,
-    )
-
+    script = tools_dir / "fetch_external_tools.sh"
+    shutil.copy(REPO_ROOT / "tools" / "fetch_external_tools.sh", script)
+    if pinned_ffmpeg_sha256 is not None:
+        text = script.read_text()
+        for pin in PINNED_FFMPEG_SHA256:
+            assert pin in text, pin
+            text = text.replace(pin, pinned_ffmpeg_sha256)
+        script.write_text(text)
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
     curl_log = tmp_path / "curl.log"
-    # A fake curl that serves the fixtures into the -o target instead
-    # of hitting the network.
     write_executable(
         fakebin / "curl",
         f"""\
@@ -212,35 +207,113 @@ def test_fetch_downloads_binaries_on_clean_clone(tmp_path):
           url="$arg"
         done
         echo "$url" >> "{curl_log}"
-        case "$url" in
-          *johnvansickle*) cat "$FFMPEG_FIXTURE" > "$out" ;;
-          *yt-dlp*) cat "$YTDLP_FIXTURE" > "$out" ;;
-          *) exit 1 ;;
-        esac
+        {curl_body}
         """,
     )
+    return (
+        root,
+        script,
+        root / "apps" / "desktop" / "bundle" / "bin",
+        curl_log,
+        fakebin,
+    )
+
+
+def ffmpeg_gz_fixture(tmp_path):
+    """A gzip'd fake ffmpeg, like the pinned GitHub asset."""
+    path = tmp_path / "ffmpeg-linux-x64.gz"
+    path.write_bytes(gzip.compress(FAKE_FFMPEG))
+    return path
+
+
+def sha256_of(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def ytdlp_fixture(tmp_path):
+    path = tmp_path / "yt-dlp_linux"
+    path.write_bytes(FAKE_YTDLP)
+    return path
+
+
+def sums_fixture(tmp_path, asset, data):
+    path = tmp_path / "SHA2-256SUMS"
+    digest = hashlib.sha256(data).hexdigest()
+    path.write_text(f"{digest}  {asset}\n")
+    return path
+
+
+class FakeGitHub:
+    """Fake curl body that serves fixtures for the GitHub assets.
+
+    `fail_on` is a set of URL substrings whose downloads fail, so a
+    test can force the mirror fallbacks. `fail_direct` makes every
+    download straight from github.com fail, like a throttled runner.
+    """
+
+    def __init__(self, tmp_path, sums, ffmpeg_gz, ytdlp, fail_on=(),
+                 fail_direct=False):
+        self.sums = sums
+        self.ffmpeg_gz = ffmpeg_gz
+        self.ytdlp = ytdlp
+        self.fail_on = fail_on
+        self.fail_direct = fail_direct
+
+    def body(self):
+        # Unquoted patterns so `case` globs on them.
+        fail = " | ".join(f"*{s}*" for s in self.fail_on) or "''"
+        direct = (
+            '  https://github.com/*) rm -f "$out"; exit 22 ;;\n'
+            if self.fail_direct
+            else ""
+        )
+        return f"""\
+        case "$url" in
+          {fail}) rm -f "$out"; exit 22 ;;
+        esac
+        case "$url" in
+{direct}          *SHA2-256SUMS*) cat "{self.sums}" > "$out" ;;
+          *ffmpeg*.gz) cat "{self.ffmpeg_gz}" > "$out" ;;
+          *yt-dlp_linux|*yt-dlp.exe) cat "{self.ytdlp}" > "$out" ;;
+          *) rm -f "$out"; exit 22 ;;
+        esac
+        """
+
+
+def test_fetch_downloads_binaries_on_clean_clone(tmp_path):
+    """Review 38: on a clean clone (no bundle/bin at all) the fetch
+    script must download both binaries and leave working ones behind.
+    A fake curl serves the fixtures, so no network is involved."""
+    ffmpeg_gz = ffmpeg_gz_fixture(tmp_path)
+    ytdlp = ytdlp_fixture(tmp_path)
+    sums = sums_fixture(tmp_path, "yt-dlp_linux", FAKE_YTDLP)
+    fake = FakeGitHub(tmp_path, sums, ffmpeg_gz, ytdlp)
+    root, script, bin_dir, curl_log, fakebin = fetch_layout(
+        tmp_path, fake.body(), pinned_ffmpeg_sha256=sha256_of(ffmpeg_gz)
+    )
+    assert not bin_dir.exists(), "clean clone must have no bundle/bin"
+
     result = run_script(
-        tools_dir / "fetch_external_tools.sh",
+        script,
         cwd=root,
         args=["linux"],
-        env_extra={
-            "PATH": f"{fakebin}:{os.environ['PATH']}",
-            "FFMPEG_FIXTURE": str(ffmpeg_fixture),
-            "YTDLP_FIXTURE": str(ytdlp_fixture),
-        },
+        env_extra={"PATH": f"{fakebin}:{os.environ['PATH']}"},
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "already present, skipping" not in result.stdout
-    assert curl_log.is_file()
     urls = curl_log.read_text().splitlines()
-    assert len(urls) == 2, urls
-    assert any("johnvansickle" in u for u in urls)
-    assert any("yt-dlp" in u for u in urls)
+    # The checksum goes direct, the assets go through a mirror.
+    assert any(u.startswith("https://github.com/")
+               and "SHA2-256SUMS" in u for u in urls), urls
+    assert any(u.startswith("https://ghfast.top/https://github.com/")
+               and "ffmpeg-linux-x64.gz" in u for u in urls), urls
+    assert any(u.startswith("https://ghfast.top/https://github.com/")
+               and "yt-dlp_linux" in u for u in urls), urls
 
     ffmpeg = bin_dir / "ffmpeg"
-    ytdlp = bin_dir / "yt-dlp"
+    ytdlp_bin = bin_dir / "yt-dlp"
     assert ffmpeg.is_file() and os.access(ffmpeg, os.X_OK)
-    assert ytdlp.is_file() and os.access(ytdlp, os.X_OK)
+    assert ytdlp_bin.is_file() and os.access(ytdlp_bin, os.X_OK)
     assert (bin_dir / "ffmpeg.version").read_text().startswith(
         "ffmpeg version fake"
     )
@@ -251,8 +324,95 @@ def test_fetch_downloads_binaries_on_clean_clone(tmp_path):
     assert probe.returncode == 0
     assert "ffmpeg version fake" in probe.stdout
     probe = subprocess.run(
-        [str(ytdlp), "--version"], capture_output=True, text=True
+        [str(ytdlp_bin), "--version"], capture_output=True, text=True
     )
     assert probe.returncode == 0
     assert "2026.01.01" in probe.stdout
 
+
+def test_fetch_falls_back_to_the_next_mirror(tmp_path):
+    """A mirror that fails or stalls must not sink the job: the script
+    moves to the next mirror, then to github.com itself."""
+    ffmpeg_gz = ffmpeg_gz_fixture(tmp_path)
+    ytdlp = ytdlp_fixture(tmp_path)
+    sums = sums_fixture(tmp_path, "yt-dlp_linux", FAKE_YTDLP)
+    fake = FakeGitHub(
+        tmp_path, sums, ffmpeg_gz, ytdlp,
+        fail_on=("ghfast.top",), fail_direct=True,
+    )
+    root, script, bin_dir, curl_log, fakebin = fetch_layout(
+        tmp_path, fake.body(), pinned_ffmpeg_sha256=sha256_of(ffmpeg_gz)
+    )
+    result = run_script(
+        script,
+        cwd=root,
+        args=["linux"],
+        env_extra={"PATH": f"{fakebin}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    urls = curl_log.read_text().splitlines()
+    assert any("ghfast.top" in u for u in urls), urls
+    assert any(u.startswith("https://gh-proxy.com/") for u in urls), urls
+    # Checksums prefer a direct GitHub fetch and only fall back to a
+    # mirror when that fails.
+    assert any(u == "https://github.com/yt-dlp/yt-dlp/releases/latest/"
+                    "download/SHA2-256SUMS" for u in urls), urls
+    assert any(u.startswith("https://gh-proxy.com/https://github.com/")
+               and "SHA2-256SUMS" in u for u in urls), urls
+    assert (bin_dir / "ffmpeg").is_file()
+    assert (bin_dir / "yt-dlp").is_file()
+
+
+def test_fetch_rejects_an_asset_that_fails_its_checksum(tmp_path):
+    """A mirror is a third party: a truncated or rewritten asset must
+    not be installed. When every candidate serves bytes that miss the
+    expected digest the script fails instead of leaving a broken binary
+    behind."""
+    ytdlp = ytdlp_fixture(tmp_path)
+    sums = sums_fixture(tmp_path, "yt-dlp_linux", FAKE_YTDLP)
+    # Bytes that match neither the pinned ffmpeg digest nor the sums.
+    tampered = tmp_path / "tampered.gz"
+    tampered.write_bytes(gzip.compress(b"#!/bin/sh\nexit 0\n"))
+
+    root, script, bin_dir, _curl_log, fakebin = fetch_layout(
+        tmp_path, FakeGitHub(tmp_path, sums, tampered, ytdlp).body()
+    )
+    result = run_script(
+        script,
+        cwd=root,
+        args=["linux"],
+        env_extra={"PATH": f"{fakebin}:{os.environ['PATH']}"},
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "checksum mismatch" in result.stderr
+    assert not (bin_dir / "ffmpeg").exists()
+    assert not (bin_dir / "yt-dlp").exists()
+
+
+
+def test_fetch_windows_uses_the_pinned_ffmpeg_without_unzip(tmp_path):
+    """The Windows ffmpeg is the pinned gzip'd GitHub asset, not a
+    gyan.dev zip: that keeps both platforms on one mirror-and-digest
+    path, and drops the unzip dependency from Windows CI."""
+    sums = sums_fixture(tmp_path, "yt-dlp.exe", FAKE_YTDLP)
+    ffmpeg_exe = b"MZ fake ffmpeg.exe"
+    ffmpeg_gz = tmp_path / "ffmpeg-win32-x64.gz"
+    ffmpeg_gz.write_bytes(gzip.compress(ffmpeg_exe))
+    ytdlp = ytdlp_fixture(tmp_path)
+    fake = FakeGitHub(tmp_path, sums, ffmpeg_gz, ytdlp)
+    root, script, bin_dir, _curl_log, fakebin = fetch_layout(
+        tmp_path, fake.body(),
+        pinned_ffmpeg_sha256=sha256_of(ffmpeg_gz),
+    )
+    result = run_script(
+        script,
+        cwd=root,
+        args=["windows"],
+        # No unzip on PATH: the script must not need it.
+        env_extra={
+            "PATH": f"{fakebin}:/usr/bin:/bin",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (bin_dir / "ffmpeg.exe").read_bytes() == ffmpeg_exe
+    assert (bin_dir / "yt-dlp.exe").read_bytes() == FAKE_YTDLP
