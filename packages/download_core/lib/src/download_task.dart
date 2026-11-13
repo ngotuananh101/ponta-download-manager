@@ -42,7 +42,25 @@ class DownloadTask {
     this.resumeFrom = const [],
     this.limiter,
     this.priority = 0,
-  });
+    this.cookie,
+    this.referrer,
+  }) : _headers = _buildHeaders(cookie, referrer);
+
+  /// Builds the request headers once from the browser-supplied values.
+  /// The HTTP header is spelled `referer`; the Dart field stays
+  /// `referrer`.
+  static Map<String, String>? _buildHeaders(
+    String? cookie,
+    String? referrer,
+  ) {
+    if (cookie == null && referrer == null) {
+      return null;
+    }
+    return {
+      'cookie': ?cookie,
+      'referer': ?referrer,
+    };
+  }
 
   final DownloadTransport transport;
   final ChunkSink sink;
@@ -54,6 +72,16 @@ class DownloadTask {
   final List<SegmentProgress> resumeFrom;
   final BandwidthLimiter? limiter;
   final int priority;
+
+  /// Browser session cookie for this download, when the extension
+  /// supplied one. In-memory only: never persisted, never logged.
+  final String? cookie;
+
+  /// Page the download came from, when the extension supplied one.
+  /// In-memory only: never persisted, never logged.
+  final String? referrer;
+
+  final Map<String, String>? _headers;
 
   DownloadStatus get status => _status;
   int get downloadedBytes => _downloaded;
@@ -113,7 +141,7 @@ class DownloadTask {
   Future<DownloadInfo> run() async {
     _setStatus(DownloadStatus.queued);
     try {
-      final info = await transport.probe(url);
+      final info = await transport.probe(url, headers: _headers);
       _total = info.contentLength ?? -1;
       _fileName = info.fileName;
       _eTag = info.eTag;
@@ -122,7 +150,12 @@ class DownloadTask {
       if (info.supportsRange &&
           info.contentLength != null &&
           info.contentLength! > 0) {
-        final validation = await transport.validateRange(url, start: 0, end: 0);
+        final validation = await transport.validateRange(
+          url,
+          start: 0,
+          end: 0,
+          headers: _headers,
+        );
         segmented = validation.valid;
         if (segmented &&
             validation.totalBytes != null &&
@@ -414,6 +447,7 @@ class DownloadTask {
       start: start,
       end: segment.end,
       ifRange: _eTag,
+      headers: _headers,
     );
     final iterator = StreamIterator<List<int>>(stream);
     _iterators.add(iterator);

@@ -13,6 +13,8 @@ class DownloadJob {
     this.resumeFrom = const [],
     this.resumeExisting = false,
     this.overwrite = false,
+    this.cookie,
+    this.referrer,
   });
 
   final String id;
@@ -35,4 +37,12 @@ class DownloadJob {
   /// Replace the final file when the download finishes, instead of
   /// failing when it already exists.
   final bool overwrite;
+
+  /// Browser session cookie for this download, when the extension
+  /// supplied one. In-memory only: never persisted, never logged.
+  final String? cookie;
+
+  /// Page the download came from, when the extension supplied one.
+  /// In-memory only: never persisted, never logged.
+  final String? referrer;
 }

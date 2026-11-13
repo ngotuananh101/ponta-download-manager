@@ -33,12 +33,15 @@ class _FakeTransport implements DownloadTransport {
   Future<void> Function(Uri url)? onProbe;
   final startedUrls = <String>[];
   final ifRanges = <String?>[];
+  final probeHeaders = <Map<String, String>?>[];
+  final streamHeaders = <Map<String, String>?>[];
   var openStreams = 0;
   var maxOpenStreams = 0;
 
   @override
   Future<ResourceInfo> probe(Uri url, {Map<String, String>? headers}) async {
     await onProbe?.call(url);
+    probeHeaders.add(headers);
     if (failPaths.contains(url.path)) {
       throw DownloadError('network', 'probe failed for ${url.path}');
     }
@@ -75,6 +78,7 @@ class _FakeTransport implements DownloadTransport {
   }) async* {
     startedUrls.add(url.toString());
     ifRanges.add(ifRange);
+    streamHeaders.add(headers);
     openStreams++;
     if (openStreams > maxOpenStreams) {
       maxOpenStreams = openStreams;
@@ -178,6 +182,36 @@ Future<void> waitForStatus(
 
 void main() {
   group('DownloadScheduler', () {
+
+    test('the default factory builds a task carrying the job headers',
+        () async {
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final tempDir =
+          await Directory.systemTemp.createTemp('pdm-sched-headers-');
+      addTearDown(() => tempDir.delete(recursive: true));
+      final scheduler = DownloadScheduler(transport: transport);
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        directory: tempDir.path,
+        cookie: 'session=abc',
+        referrer: 'https://example.com/page',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(transport.probeHeaders, isNotEmpty);
+      expect(transport.probeHeaders.last?['cookie'], 'session=abc');
+      expect(
+        transport.probeHeaders.last?['referer'],
+        'https://example.com/page',
+      );
+      expect(transport.streamHeaders, isNotEmpty);
+      expect(transport.streamHeaders.last?['cookie'], 'session=abc');
+      expect(
+        transport.streamHeaders.last?['referer'],
+        'https://example.com/page',
+      );
+    });
     test('runs up to maxConcurrent downloads at once', () async {
       final transport = _FakeTransport(
         data: bytesOf(4096),

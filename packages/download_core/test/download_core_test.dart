@@ -43,6 +43,8 @@ void main() {
 
   final requestedRanges = <String>[];
   final ifRangeHeaders = <String?>[];
+  final cookieHeaders = <String?>[];
+  final refererHeaders = <String?>[];
   var flakyRemaining = 1;
   var getCount = 0;
   var dropRemaining = 1;
@@ -51,6 +53,8 @@ void main() {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = Uri.parse('http://127.0.0.1:${server.port}');
     server.listen((request) async {
+      cookieHeaders.add(request.headers.value('cookie'));
+      refererHeaders.add(request.headers.value('referer'));
       final path = request.uri.path;
       final response = request.response;
       try {
@@ -273,6 +277,8 @@ void main() {
   setUp(() {
     requestedRanges.clear();
     ifRangeHeaders.clear();
+    cookieHeaders.clear();
+    refererHeaders.clear();
     flakyRemaining = 1;
     dropRemaining = 1;
     getCount = 0;
@@ -284,6 +290,8 @@ void main() {
     int maxConnections = 4,
     int maxRetries = 3,
     Duration retryDelay = const Duration(milliseconds: 10),
+    String? cookie,
+    String? referrer,
   }) {
     return DownloadTask(
       transport: HttpTransport(),
@@ -293,6 +301,8 @@ void main() {
       maxConnections: maxConnections,
       maxRetries: maxRetries,
       retryDelay: retryDelay,
+      cookie: cookie,
+      referrer: referrer,
     );
   }
 
@@ -453,6 +463,36 @@ void main() {
       expect(info.status, DownloadStatus.completed);
       expect(sink.bytes, bigBody);
       expect(ifRangeHeaders, contains('"v1"'));
+    });
+
+    test('sends Cookie and Referer on the probe and on segment streams',
+        () async {
+      final sink = MemorySink();
+      final task = taskFor(
+        '/file',
+        sink: sink,
+        cookie: 'session=abc',
+        referrer: 'https://example.com/page',
+      );
+      final info = await task.run();
+      expect(info.status, DownloadStatus.completed);
+      expect(sink.bytes, body);
+      expect(cookieHeaders, isNotEmpty);
+      expect(cookieHeaders.every((h) => h == 'session=abc'), isTrue);
+      expect(refererHeaders, isNotEmpty);
+      expect(
+        refererHeaders.every((h) => h == 'https://example.com/page'),
+        isTrue,
+      );
+    });
+
+    test('sends no Cookie or Referer headers without them', () async {
+      final sink = MemorySink();
+      final task = taskFor('/file', sink: sink);
+      final info = await task.run();
+      expect(info.status, DownloadStatus.completed);
+      expect(cookieHeaders.every((h) => h == null), isTrue);
+      expect(refererHeaders.every((h) => h == null), isTrue);
     });
 
     test('cancel stops the download', () async {

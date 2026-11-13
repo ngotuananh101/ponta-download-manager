@@ -147,6 +147,8 @@ class DownloadScheduler {
     List<SegmentProgress> resumeFrom = const [],
     bool resumeExisting = false,
     bool overwrite = false,
+    String? cookie,
+    String? referrer,
     // Starts the job paused: it sits in the pending queue and _pump()
     // skips it until resume(id) un-pauses it. Used by startup recovery
     // for downloads the user had paused.
@@ -174,6 +176,8 @@ class DownloadScheduler {
       resumeFrom: resumeFrom,
       resumeExisting: resumeExisting,
       overwrite: overwrite,
+      cookie: cookie,
+      referrer: referrer,
     );
     _jobs[job.id] = job;
     _infos[job.id] = DownloadInfo(
@@ -269,6 +273,8 @@ class DownloadScheduler {
       resumeFrom: job.resumeFrom,
       resumeExisting: job.resumeExisting,
       overwrite: job.overwrite,
+      cookie: job.cookie,
+      referrer: job.referrer,
     );
   }
 
@@ -453,6 +459,8 @@ class DownloadScheduler {
       maxConnections: job.maxConnections,
       limiter: limiter,
       priority: job.priority,
+      cookie: job.cookie,
+      referrer: job.referrer,
     );
     return ScheduledTask(task, sink);
   }
