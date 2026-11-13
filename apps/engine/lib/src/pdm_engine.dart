@@ -36,6 +36,14 @@ String defaultDatabasePath() {
   return p.join(base, 'pdm', 'pdm.db');
 }
 
+/// Browser headers captured for one download at creation, with the
+/// origin they were captured for.
+typedef _RequestHeaders = ({
+  String? cookie,
+  String? referrer,
+  String origin,
+});
+
 /// The standalone download engine: the §16 DownloadEngine backed by
 /// the scheduler, the SQLite checkpoint store and the bandwidth
 /// limiter. Created with [PdmEngine.open]; shut down with [dispose].
@@ -119,6 +127,22 @@ class PdmEngine implements DownloadEngine {
   /// URL, 0..n-1 = the mirrors in record order). In-memory only: a
   /// restart always begins from the primary again.
   final _mirrorIndex = <String, int>{};
+
+  /// Browser headers captured for one download at creation, keyed by
+  /// download id. In-memory only: never written to the store, dropped
+  /// on cancel/delete/dispose, and gone after a restart by design.
+  final _requestHeaders = <String, _RequestHeaders>{};
+
+  /// Headers stored for [downloadId] when [url] has the same origin
+  /// they were captured for; null otherwise (unknown id, or another
+  /// origin). A retry or failover re-sends a session cookie only to
+  /// the origin it came from, never to a mirror or a changed URL.
+  _RequestHeaders? _headersFor(String downloadId, String url) {
+    final stored = _requestHeaders[downloadId];
+    if (stored == null) return null;
+    if (Uri.parse(url).origin != stored.origin) return null;
+    return stored;
+  }
 
   @override
   Stream<DownloadEvent> get events => _events.stream;
@@ -242,6 +266,7 @@ class PdmEngine implements DownloadEngine {
     // Same destination as the failed attempt: overwrite, or the
     // sink factory refuses it when a finished file is already
     // there (a retry of a completed download failing over).
+    final headers = _headersFor(downloadId, mirrorUrl);
     _scheduler.enqueue(
       id: downloadId,
       url: mirrorUrl,
@@ -250,6 +275,8 @@ class PdmEngine implements DownloadEngine {
       priority: record.priority,
       maxConnections: record.maxConnections,
       overwrite: true,
+      cookie: headers?.cookie,
+      referrer: headers?.referrer,
     );
     _store.upsertDownload(
       DownloadRecord(
@@ -453,7 +480,16 @@ class PdmEngine implements DownloadEngine {
           request.maxConnections ?? config.maxConnectionsPerDownload,
       overwrite: request.conflictPolicy == FileConflictPolicy.overwrite,
       paused: request.paused,
+      cookie: request.cookie,
+      referrer: request.referrer,
     );
+    if (request.cookie != null || request.referrer != null) {
+      _requestHeaders[id] = (
+        cookie: request.cookie,
+        referrer: request.referrer,
+        origin: Uri.parse(request.url).origin,
+      );
+    }
     final record = DownloadRecord(
       id: id,
       url: request.url,
@@ -517,6 +553,7 @@ class PdmEngine implements DownloadEngine {
 
   @override
   Future<void> cancelDownload(String downloadId) async {
+    _requestHeaders.remove(downloadId);
     final record = _store.getDownload(downloadId);
     if (record != null && _isStreamingPlaylist(record.url)) {
       await _ytDlp?.cancel(downloadId);
@@ -579,6 +616,7 @@ class PdmEngine implements DownloadEngine {
     // (`file-exists`) and the retry fails before its first request.
     // The old file stays until the new download renames over it, so
     // a failed retry keeps it.
+    final headers = _headersFor(downloadId, record.url);
     _scheduler.enqueue(
       id: downloadId,
       url: record.url,
@@ -587,6 +625,8 @@ class PdmEngine implements DownloadEngine {
       priority: record.priority,
       maxConnections: record.maxConnections,
       overwrite: true,
+      cookie: headers?.cookie,
+      referrer: headers?.referrer,
     );
     _store.upsertDownload(
       DownloadRecord(
@@ -609,6 +649,7 @@ class PdmEngine implements DownloadEngine {
     String downloadId, {
     bool deleteFile = false,
   }) async {
+    _requestHeaders.remove(downloadId);
     final record = _store.getDownload(downloadId);
     if (record == null) {
       return;
@@ -973,6 +1014,7 @@ class PdmEngine implements DownloadEngine {
     }
     await _schedulerSub?.cancel();
     await _scheduler.dispose();
+    _requestHeaders.clear();
     await _writer.dispose();
     await _events.close();
     for (final record in paused) {
@@ -1009,6 +1051,8 @@ class PdmEngine implements DownloadEngine {
         limiter: _limiter,
         priority: job.priority,
         resumeFrom: job.resumeFrom,
+        cookie: job.cookie,
+        referrer: job.referrer,
       );
       _writer.track(
         task,

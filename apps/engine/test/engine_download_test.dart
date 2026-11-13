@@ -48,6 +48,12 @@ class _TestServer {
   late HttpServer _server;
   var _requests = 0;
 
+  /// Cookie header values seen, one per request, in arrival order.
+  final cookiesSeen = <String?>[];
+
+  /// Referer header values seen, one per request, in arrival order.
+  final referersSeen = <String?>[];
+
   int get port => _server.port;
 
   /// How many requests this server has served (for proving which URL
@@ -63,6 +69,8 @@ class _TestServer {
 
   Future<void> _handle(HttpRequest request) async {
     _requests++;
+    cookiesSeen.add(request.headers.value('cookie'));
+    referersSeen.add(request.headers.value('referer'));
     final response = request.response;
     if (_requests <= failFirst) {
       response.statusCode = HttpStatus.notFound;
@@ -1401,6 +1409,124 @@ void main() {
         info.id,
         (d) => d.status == DownloadStatus.failed,
       );
+    });
+
+    test('a download created with cookie and referrer sends them',
+        () async {
+      final data = bytesOf(4096);
+      await startServer(data: data);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          cookie: 'session=abc',
+          referrer: 'http://127.0.0.1:${server.port}/page',
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(server.cookiesSeen, isNotEmpty);
+      expect(server.cookiesSeen.every((c) => c == 'session=abc'), isTrue);
+      expect(
+        server.referersSeen.every(
+          (r) => r == 'http://127.0.0.1:${server.port}/page',
+        ),
+        isTrue,
+      );
+    });
+
+    test('a manual retry in the same session re-sends the cookie',
+        () async {
+      await startServer(data: bytesOf(2048), failFirst: 100);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          cookie: 'session=abc',
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      final requestsBeforeRetry = server.requests;
+      expect(server.cookiesSeen, contains('session=abc'));
+      await engine.retryDownload(info.id);
+      await waitFor(() => server.requests > requestsBeforeRetry);
+      final retried = server.cookiesSeen.sublist(requestsBeforeRetry);
+      expect(retried, isNotEmpty);
+      expect(retried.every((c) => c == 'session=abc'), isTrue);
+    });
+
+    test('headers are gone after a reopen', () async {
+      final data = bytesOf(4096);
+      await startServer(data: data);
+      final first = openEngine(maxConnections: 1);
+      final info = await first.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          cookie: 'session=abc',
+        ),
+      );
+      await waitForInfo(
+        first,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await first.dispose();
+      final requestsBeforeReopen = server.requests;
+      final second = openEngine(maxConnections: 1);
+      addTearDown(second.dispose);
+      await second.retryDownload(info.id);
+      await waitFor(() => server.requests > requestsBeforeReopen);
+      final retried = server.cookiesSeen.sublist(requestsBeforeReopen);
+      expect(retried, isNotEmpty);
+      expect(retried.every((c) => c == null), isTrue);
+    });
+
+    test('failover to a mirror on another origin sends no cookie',
+        () async {
+      final primary = _TestServer(data: bytesOf(2048), failFirst: 100);
+      await primary.start();
+      addTearDown(primary.close);
+      final mirror = _TestServer(data: bytesOf(2048));
+      await mirror.start();
+      addTearDown(mirror.close);
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      // Created paused: the primary fails fast, so the mirror must
+      // be stored before the first attempt runs.
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${primary.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+          cookie: 'session=abc',
+          paused: true,
+        ),
+      );
+      await engine.addMirror(
+        info.id,
+        'http://127.0.0.1:${mirror.port}/f.bin',
+      );
+      await engine.resumeDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, 2048);
+      expect(primary.cookiesSeen, contains('session=abc'));
+      expect(mirror.cookiesSeen, isNotEmpty);
+      expect(mirror.cookiesSeen.every((c) => c == null), isTrue);
     });
 
     test('a failed download keeps its failure reason after a restart',
