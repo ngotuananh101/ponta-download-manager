@@ -374,6 +374,35 @@ test('media badges carry the media type class', () => {
   );
 });
 
+test('probe is not sent for a non-http tab', () => {
+  const doc = fakeDoc();
+  const chromeApi = fakeChrome();
+  chromeApi.tabs.query = (query, cb) => {
+    cb([{url: 'chrome://extensions'}]);
+  };
+  initPopup(doc, chromeApi);
+  assert.equal(
+    chromeApi.sent.some((m) => m.type === 'ytdlp.probe'),
+    false,
+  );
+  assert.equal(doc.byId['probe-status'].hidden, true);
+  assert.equal(doc.byId['probe-formats'].hidden, true);
+});
+
+test('probe is not sent when there is no active tab', () => {
+  const doc = fakeDoc();
+  const chromeApi = fakeChrome();
+  chromeApi.tabs.query = (query, cb) => {
+    cb([]);
+  };
+  initPopup(doc, chromeApi);
+  assert.equal(
+    chromeApi.sent.some((m) => m.type === 'ytdlp.probe'),
+    false,
+  );
+  assert.equal(doc.byId['probe-status'].hidden, true);
+});
+
 test('media list still renders', () => {
   const doc = fakeDoc();
   const chromeApi = fakeChrome();

@@ -57,7 +57,9 @@ function initPopup(doc, chromeApi) {
 
   // yt-dlp probe: resolve the active tab first — its URL is the video
   // URL the ytdlp.download message needs, and the page the video came
-  // from (the referrer) — then ask the background to probe it.
+  // from (the referrer) — then ask the background to probe it. A tab
+  // that is not http(s) (chrome://, about:, file:, ...) is never
+  // probed and shows no error: the probe section stays hidden.
   let tabUrl = null;
   const onProbeDownload = (choice) => {
     chromeApi.runtime.sendMessage({
@@ -68,7 +70,10 @@ function initPopup(doc, chromeApi) {
       referrer: tabUrl,
     });
   };
-  probeHelpers.renderProbe(doc, {state: 'loading'}, onProbeDownload);
+  function isHttpUrl(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url);
+  }
+
   const sendProbe = () => {
     chromeApi.runtime.sendMessage({type: 'ytdlp.probe'}, (reply) => {
       probeHelpers.renderProbe(
@@ -78,13 +83,20 @@ function initPopup(doc, chromeApi) {
       );
     });
   };
+
+  const startProbe = () => {
+    probeHelpers.renderProbe(doc, {state: 'loading'}, onProbeDownload);
+    sendProbe();
+  };
   if (chromeApi.tabs && chromeApi.tabs.query) {
     chromeApi.tabs.query({active: true, currentWindow: true}, (tabs) => {
       tabUrl = tabs && tabs[0] && tabs[0].url ? tabs[0].url : null;
-      sendProbe();
+      if (isHttpUrl(tabUrl)) {
+        startProbe();
+      }
     });
   } else {
-    sendProbe();
+    startProbe();
   }
 }
 
