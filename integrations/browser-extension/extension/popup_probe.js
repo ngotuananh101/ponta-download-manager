@@ -143,6 +143,7 @@ function renderProbe(doc, state, onDownload) {
   }
   listEl.innerHTML = '';
   if (state.state === 'loading') {
+    statusEl.className = '';
     statusEl.hidden = false;
     statusEl.textContent = 'Checking this page for downloads…';
     titleEl.hidden = true;
@@ -151,6 +152,7 @@ function renderProbe(doc, state, onDownload) {
   }
   if (state.state === 'formats') {
     const probe = state.probe;
+    statusEl.className = '';
     statusEl.hidden = true;
     titleEl.hidden = !probe.title;
     titleEl.textContent = probe.title || '';
@@ -173,6 +175,7 @@ function renderProbe(doc, state, onDownload) {
     }
     return;
   }
+  statusEl.className = state.state === 'error' ? 'error' : '';
   statusEl.hidden = false;
   statusEl.textContent = state.message;
   titleEl.hidden = true;

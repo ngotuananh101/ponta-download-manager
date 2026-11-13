@@ -19,7 +19,7 @@ function initPopup(doc, chromeApi) {
     for (const item of items) {
       const row = doc.createElement('li');
       const badge = doc.createElement('span');
-      badge.className = 'badge';
+      badge.className = 'badge ' + item.type;
       badge.textContent = item.type;
       const name = doc.createElement('span');
       name.className = 'name';

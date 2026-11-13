@@ -227,6 +227,18 @@ test('probeState maps replies to states', () => {
   );
 });
 
+test('error state marks the status line', () => {
+  const doc = fakeDoc();
+  renderProbe(doc, {state: 'error', message: 'boom'}, () => {});
+  assert.equal(doc.byId['probe-status'].className, 'error');
+});
+
+test('loading state has no error class', () => {
+  const doc = fakeDoc();
+  renderProbe(doc, {state: 'loading'}, () => {});
+  assert.equal(doc.byId['probe-status'].className, '');
+});
+
 test('renderProbe shows the loading state', () => {
   const doc = fakeDoc();
   let downloaded = null;
@@ -320,6 +332,46 @@ test("clicking a format's Download posts ytdlp.download with that formatId", () 
     fileName: 'My Video Part 12.mp4',
     referrer: TAB_URL,
   });
+});
+
+test('media badges carry the media type class', () => {
+  const doc = fakeDoc();
+  const chromeApi = fakeChrome();
+  chromeApi.runtime.sendMessage = (message, cb) => {
+    chromeApi.sent.push(message);
+    if (message.type === 'media.list') {
+      cb({
+        items: [
+          {
+            url: 'https://cdn.example.com/clip.mp4',
+            fileName: 'clip.mp4',
+            type: 'video',
+            referrer: TAB_URL,
+          },
+          {
+            url: 'https://cdn.example.com/song.mp3',
+            fileName: 'song.mp3',
+            type: 'audio',
+            referrer: TAB_URL,
+          },
+        ],
+      });
+    } else if (message.type === 'intercept.get') {
+      cb({enabled: true});
+    } else if (cb) {
+      cb({});
+    }
+  };
+  initPopup(doc, chromeApi);
+  assert.equal(doc.byId.list.children.length, 2);
+  assert.equal(
+    doc.byId.list.children[0].children[0].className,
+    'badge video',
+  );
+  assert.equal(
+    doc.byId.list.children[1].children[0].className,
+    'badge audio',
+  );
 });
 
 test('media list still renders', () => {
