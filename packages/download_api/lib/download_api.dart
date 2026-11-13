@@ -8,3 +8,4 @@ export 'src/models/file_conflict_policy.dart';
 export 'src/models/probe_result.dart';
 export 'src/models/update_check_result.dart';
 export 'src/models/integrity_result.dart';
+export 'src/models/yt_dlp_probe_result.dart';

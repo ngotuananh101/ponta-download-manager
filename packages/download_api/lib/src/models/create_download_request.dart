@@ -16,6 +16,7 @@ abstract class CreateDownloadRequest with _$CreateDownloadRequest {
     @Default(false) bool paused,
     String? cookie,
     String? referrer,
+    String? ytDlpFormat,
   }) = _CreateDownloadRequest;
 
   factory CreateDownloadRequest.fromJson(Map<String, dynamic> json) =>

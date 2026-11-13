@@ -20,6 +20,7 @@ _CreateDownloadRequest _$CreateDownloadRequestFromJson(
   paused: json['paused'] as bool? ?? false,
   cookie: json['cookie'] as String?,
   referrer: json['referrer'] as String?,
+  ytDlpFormat: json['ytDlpFormat'] as String?,
 );
 
 Map<String, dynamic> _$CreateDownloadRequestToJson(
@@ -33,6 +34,7 @@ Map<String, dynamic> _$CreateDownloadRequestToJson(
   'paused': instance.paused,
   'cookie': instance.cookie,
   'referrer': instance.referrer,
+  'ytDlpFormat': instance.ytDlpFormat,
 };
 
 const _$FileConflictPolicyEnumMap = {

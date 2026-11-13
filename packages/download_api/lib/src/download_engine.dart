@@ -5,6 +5,7 @@ import 'package:download_api/src/models/download_event.dart';
 import 'package:download_api/src/models/download_info.dart';
 import 'package:download_api/src/models/download_segment.dart';
 import 'package:download_api/src/models/integrity_result.dart';
+import 'package:download_api/src/models/yt_dlp_probe_result.dart';
 
 /// Application-level engine API (docs/architecture.md §16).
 /// The UI talks to this interface, never to internal segment workers.
@@ -15,6 +16,17 @@ abstract interface class DownloadEngine {
   /// reports (or the URL's last segment) and the total size, -1 when
   /// unknown. Throws [DownloadError] when the URL is unreachable.
   Future<ProbeResult> probeUrl(String url);
+
+  /// Probes a URL with yt-dlp: whether any extractor supports it,
+  /// the video metadata, and the available download formats.
+  /// [cookie] is the browser's `name=value;...` header value and
+  /// [referrer] the page URL; both are passed to yt-dlp in-memory
+  /// only. Throws [DownloadError] when the probe cannot run.
+  Future<YtDlpProbeResult> probeYtDlp(
+    String url, {
+    String? cookie,
+    String? referrer,
+  });
 
   Future<void> pauseDownload(String downloadId);
 

@@ -145,6 +145,14 @@ class FakeEngine implements DownloadEngine {
   @override
   Future<ProbeResult> probeUrl(String url) async =>
       ProbeResult(url: url, fileName: 'f.bin', totalBytes: 1000);
+  @override
+  Future<YtDlpProbeResult> probeYtDlp(
+    String url, {
+    String? cookie,
+    String? referrer,
+  }) {
+    throw UnimplementedError();
+  }
 
   void _setStatus(String id, DownloadStatus status) {
     final info = infos[id];

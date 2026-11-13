@@ -409,6 +409,15 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
+  Future<YtDlpProbeResult> probeYtDlp(
+    String url, {
+    String? cookie,
+    String? referrer,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
     _throwIfDisposed();
     final destination = request.destination;
