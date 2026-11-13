@@ -110,8 +110,21 @@ class FakeEngine implements DownloadEngine {
     String url, {
     String? cookie,
     String? referrer,
-  }) {
-    throw UnimplementedError();
+  }) async {
+    calls.add('probe:$url');
+    return const YtDlpProbeResult(
+      supported: true,
+      title: 'Test video',
+      formats: [
+        YtDlpFormat(
+          formatId: '18',
+          ext: 'mp4',
+          resolution: '640x360',
+          vcodec: 'avc1',
+          acodec: 'mp4a',
+        ),
+      ],
+    );
   }
 }
 
@@ -177,5 +190,66 @@ void main() {
     expect(replies.single['id'], 'r1');
     expect(replies.single['ok'], isTrue);
     expect(replies.single['downloadId'], 'dl-1');
+  });
+
+  test('one framed ytdlp.probe reaches a real engine over IPC', () async {
+    final engine = FakeEngine();
+    final connections = StreamController<IpcChannel>();
+    final server = IpcServer(
+      engine: engine,
+      connections: connections.stream,
+      token: 'test-token',
+    );
+    addTearDown(server.close);
+    addTearDown(connections.close);
+
+    Future<IpcClient> clientFactory() async {
+      final (serverSide, clientSide) = channelPair();
+      addTearDown(serverSide.close);
+      addTearDown(clientSide.close);
+      connections.add(serverSide);
+      return IpcClient.connect(
+        channelFactory: () async => clientSide,
+        token: 'test-token',
+      );
+    }
+
+    final host = NativeHost(
+      clientFactory: clientFactory,
+      downloadDirectory: '/tmp/dl',
+    );
+    final input = StreamController<List<int>>();
+    final output = StreamController<List<int>>();
+    final replies = <Map<String, Object?>>[];
+    final replySub = NativeMessageCodec.decode(
+      output.stream,
+    ).listen(replies.add);
+    final run = host.run(input.stream, output.sink);
+    input.add(
+      NativeMessageCodec.encode({
+        'type': 'ytdlp.probe',
+        'id': 'r1',
+        'url': 'https://example.com/watch?v=1',
+        'cookie': 'session=abc',
+        'referrer': 'https://example.com/page',
+      }),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await input.close();
+    await run;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await replySub.cancel();
+    await output.close();
+
+    expect(engine.calls, ['probe:https://example.com/watch?v=1']);
+    expect(replies, hasLength(1));
+    expect(replies.single['id'], 'r1');
+    expect(replies.single['ok'], isTrue);
+    final probe = replies.single['probe'] as Map<String, Object?>;
+    expect(probe['supported'], isTrue);
+    expect(probe['title'], 'Test video');
+    final formats = probe['formats'] as List;
+    expect(formats, hasLength(1));
+    expect((formats.single as Map)['formatId'], '18');
   });
 }

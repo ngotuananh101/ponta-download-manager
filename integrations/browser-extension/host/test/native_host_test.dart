@@ -20,8 +20,29 @@ DownloadInfo info({String id = 'dl-1'}) {
   );
 }
 
+YtDlpProbeResult probeResult() {
+  return const YtDlpProbeResult(
+    supported: true,
+    title: 'Test video',
+    thumbnail: 'https://example.com/thumb.jpg',
+    durationSeconds: 120,
+    formats: [
+      YtDlpFormat(
+        formatId: '18',
+        ext: 'mp4',
+        resolution: '640x360',
+        width: 640,
+        height: 360,
+        vcodec: 'avc1',
+        acodec: 'mp4a',
+      ),
+    ],
+  );
+}
+
 void main() {
   setUpAll(() {
+    registerFallbackValue('');
     registerFallbackValue(
       CreateDownloadRequest(
         url: 'http://127.0.0.1:9/f.bin',
@@ -249,6 +270,181 @@ void main() {
       expect(replies, hasLength(1));
       expect(replies.single['ok'], isFalse);
       expect(replies.single['code'], 'internal');
+    });
+
+    test('ytdlp.probe forwards url, cookie and referrer and replies '
+        'with the probe JSON', () async {
+      when(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      ).thenAnswer((_) async => probeResult());
+      final replies = await runWith(host(), [
+        {
+          'type': 'ytdlp.probe',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+          'cookie': 'session=abc',
+          'referrer': 'https://example.com/page',
+        },
+      ]);
+      expect(replies, hasLength(1));
+      expect(replies.single['id'], 'r1');
+      expect(replies.single['ok'], isTrue);
+      final probe = replies.single['probe'] as Map<String, Object?>;
+      expect(probe['supported'], isTrue);
+      expect(probe['title'], 'Test video');
+      final formats = probe['formats'] as List;
+      expect(formats, hasLength(1));
+      expect((formats.single as Map)['formatId'], '18');
+      verify(
+        () => client.probeYtDlp(
+          url: 'https://example.com/watch?v=1',
+          cookie: 'session=abc',
+          referrer: 'https://example.com/page',
+        ),
+      ).called(1);
+    });
+
+    test('a ytdlp.probe error replies with the engine code', () async {
+      when(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      ).thenThrow(
+        const DownloadError('yt-dlp-unsupported', 'no extractor'),
+      );
+      final replies = await runWith(host(), [
+        {
+          'type': 'ytdlp.probe',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'yt-dlp-unsupported');
+      verify(
+        () => client.probeYtDlp(
+          url: 'https://example.com/watch?v=1',
+          cookie: null,
+          referrer: null,
+        ),
+      ).called(1);
+    });
+
+    test('a non-string cookie on ytdlp.probe is rejected and never calls '
+        'the client', () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'ytdlp.probe',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+          'cookie': 42,
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      );
+    });
+
+    test('a non-string referrer on ytdlp.probe is rejected and never '
+        'calls the client', () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'ytdlp.probe',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+          'referrer': 42,
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      );
+    });
+
+    test('a missing url on ytdlp.probe is rejected', () async {
+      final replies = await runWith(host(), [
+        {'type': 'ytdlp.probe', 'id': 'r1'},
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      );
+    });
+
+    test('a non-http url on ytdlp.probe is rejected', () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'ytdlp.probe',
+          'id': 'r1',
+          'url': 'ftp://example.com/watch?v=1',
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(
+        () => client.probeYtDlp(
+          url: any(named: 'url'),
+          cookie: any(named: 'cookie'),
+          referrer: any(named: 'referrer'),
+        ),
+      );
+    });
+
+    test('download.create with ytDlpFormat forwards it', () async {
+      when(
+        () => client.createDownload(any()),
+      ).thenAnswer((_) async => info());
+      final replies = await runWith(host(), [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+          'fileName': 'video.mp4',
+          'ytDlpFormat': '137+bestaudio',
+        },
+      ]);
+      expect(replies.single['ok'], isTrue);
+      final captured =
+          verify(() => client.createDownload(captureAny())).captured.single
+              as CreateDownloadRequest;
+      expect(captured.ytDlpFormat, '137+bestaudio');
+    });
+
+    test('a non-string ytDlpFormat is rejected and never calls the client',
+        () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'https://example.com/watch?v=1',
+          'ytDlpFormat': 42,
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(() => client.createDownload(any()));
     });
   });
 }
