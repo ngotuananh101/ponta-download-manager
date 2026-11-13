@@ -535,7 +535,13 @@ class PdmEngine implements DownloadEngine {
       referrer: referrer,
     );
     final trimmed = _trimProbeResult(result);
-    _probeCache[key] = _CachedProbe(trimmed, DateTime.now());
+    // Only successful probes are cached: a failed probe is re-run on
+    // the next call, so a transient failure (bad cookies, a YouTube
+    // hiccup) can heal on its own instead of showing the same error
+    // until the TTL expires.
+    if (trimmed.supported) {
+      _probeCache[key] = _CachedProbe(trimmed, DateTime.now());
+    }
     return trimmed;
   }
 

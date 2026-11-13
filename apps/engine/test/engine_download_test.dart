@@ -2641,6 +2641,29 @@ exit 0
         await engine.probeYtDlp(url);
         expect(probeLogLines(), hasLength(2));
       });
+      test('probeYtDlp does not cache a failed probe', () async {
+        const failingProbeScript = r'''#!/bin/sh
+echo "$@" >> "$(dirname "$0")/probe.log"
+if [ "$1" = "-J" ]; then
+  echo "ERROR: [youtube] test123: Requested format is not available. Use --list-formats for a list of available formats" >&2
+  exit 1
+fi
+exit 0
+''';
+        final fake = await makeFakeYtDlp(failingProbeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        final first = await engine.probeYtDlp(url);
+        expect(first.supported, isFalse);
+        expect(first.errorCode, 'yt-dlp-probe-failed');
+        // A failed probe is not cached: the second call runs yt-dlp
+        // again, so a transient failure can heal on its own.
+        final second = await engine.probeYtDlp(url);
+        expect(second.supported, isFalse);
+        expect(probeLogLines(), hasLength(2));
+      });
+
 
       test(
           'createDownload with a video-only ytDlpFormat passes -f with bestaudio',
