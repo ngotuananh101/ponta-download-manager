@@ -163,7 +163,16 @@ jobs:
           # (dpkg-architecture to find the multiarch libdir, file to
           # classify ELF vs script). They are not pulled in by
           # libgtk-3-dev.
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev dpkg-dev file ruby ruby-dev
+          #
+          # librsvg2-common is what actually creates
+          # /usr/lib/<triplet>/gdk-pixbuf-2.0/2.10.0/ (it drops the SVG
+          # pixbuf loader in there). On Ubuntu 26.04 that directory is
+          # not shipped by any package libgtk-3-dev pulls in, and the
+          # runner has recommends disabled, so the gtk plugin dies with
+          # `cp: cannot stat 'gdk-pixbuf-2.0/2.10.0'` right after
+          # "Installing GDK PixBufs". The app also needs it at runtime
+          # to render SVG icons.
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev dpkg-dev file librsvg2-common ruby ruby-dev
           sudo gem install fpm
 
       - name: Get dependencies
