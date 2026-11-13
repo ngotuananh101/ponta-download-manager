@@ -79,7 +79,9 @@ class YtDlpDownloader {
   /// Starts downloading [url]. [outputTemplate] is the yt-dlp `-o`
   /// template (e.g. `/dir/live.%(ext)s`). Returns the event stream
   /// for this download; it closes when the download reaches a
-  /// terminal state (completed / failed / paused / cancelled).
+  /// terminal state (completed / failed / paused / cancelled). A run
+  /// with cookies that fails at format selection is retried once
+  /// without cookies (see [_run]).
   Stream<DownloadEvent> start({
     required String downloadId,
     required String url,
@@ -124,6 +126,12 @@ class YtDlpDownloader {
         running.cookieFile = null;
       }
     }
+    // A failed run with cookies is retried once without them (see
+    // the failure path at the end of this loop). The loop body keeps
+    // its old indentation so the diff stays reviewable; every path
+    // inside returns except the retry, which requires attempt 0.
+    String? firstError;
+    for (var attempt = 0; ; attempt++) {
     final args = [
       '--ffmpeg-location',
       ffmpegDir,
@@ -246,7 +254,23 @@ class YtDlpDownloader {
     final message = running.lastErrorLine.isNotEmpty
         ? running.lastErrorLine
         : 'yt-dlp exited with code $exitCode';
-    _fail(running, 'yt-dlp-failed', message);
+    // Format selection happens before any transfer, so a failure
+    // here means nothing was downloaded yet: retrying without
+    // cookies is safe. The original error is kept when the retry
+    // fails too.
+    if (attempt == 0 &&
+        running.cookieFile != null &&
+        message.contains('Requested format is not available')) {
+      firstError = message;
+      running.cookieFile?.delete();
+      running.cookieFile = null;
+      running.lastErrorLine = '';
+      running.finalPath = null;
+      continue;
+    }
+    _fail(running, 'yt-dlp-failed', firstError ?? message);
+    return;
+    } // for (attempt)
   }
 
 

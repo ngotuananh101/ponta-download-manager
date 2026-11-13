@@ -832,6 +832,167 @@ void main() {
       expect(File(cookiePath!).existsSync(), isFalse);
       expect(Directory(p.dirname(cookiePath!)).existsSync(), isFalse);
     });
+
+    test('start retries without cookies when the cookie run fails with a format error',
+        () async {
+      final first = _FakeProcess();
+      final second = _FakeProcess();
+      final calls = <List<String>>[];
+      String? cookiePath;
+      final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+      final finalPath = p.join(outDir.path, 'live.mp4');
+      File(finalPath).writeAsStringSync('x');
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          final index = args.indexOf('--cookies');
+          if (index != -1) cookiePath = args[index + 1];
+          if (calls.length == 1) {
+            first.addStderr(
+              'ERROR: [youtube] xyz: Requested format is not available. '
+              'Use --list-formats for a list of available formats',
+            );
+            first.closeStreams();
+            first.completeExit(1);
+            return first;
+          }
+          second.addStdout(
+            '[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30',
+          );
+          second.addStdout(finalPath);
+          second.closeStreams();
+          second.completeExit(0);
+          return second;
+        },
+      );
+      final events = await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+            format: '137+bestaudio',
+            cookie: 'session=abc123',
+            referrer: 'https://www.youtube.com/watch?v=xyz',
+          )
+          .toList();
+      expect(events.last, isA<DownloadCompleted>());
+      expect(calls.length, 2);
+      expect(calls.first, contains('--cookies'));
+      expect(calls.last, isNot(contains('--cookies')));
+      expect(calls.last, contains('-f'));
+      expect(calls.last[calls.last.indexOf('-f') + 1], '137+bestaudio');
+      expect(calls.last, contains('--referer'));
+      expect(cookiePath, isNotNull);
+      expect(File(cookiePath!).existsSync(), isFalse);
+    });
+
+    test('start reports the first error when the retry also fails',
+        () async {
+      final first = _FakeProcess();
+      final second = _FakeProcess();
+      final calls = <List<String>>[];
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          if (calls.length == 1) {
+            first.addStderr(
+              'ERROR: [youtube] xyz: Requested format is not available. '
+              'Use --list-formats for a list of available formats',
+            );
+            first.closeStreams();
+            first.completeExit(1);
+            return first;
+          }
+          second.addStderr('ERROR: unable to download video data');
+          second.closeStreams();
+          second.completeExit(1);
+          return second;
+        },
+      );
+      final events = await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
+            format: '137+bestaudio',
+            cookie: 'session=abc123',
+          )
+          .toList();
+      expect(events.length, 1);
+      final failed = events.single as DownloadFailed;
+      expect(failed.code, 'yt-dlp-failed');
+      expect(
+        failed.message,
+        contains('Requested format is not available'),
+      );
+      expect(calls.length, 2);
+    });
+
+    test('start does not retry a non-format failure', () async {
+      final fake = _FakeProcess();
+      final calls = <List<String>>[];
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          fake.addStderr('ERROR: unable to download video data');
+          fake.closeStreams();
+          fake.completeExit(1);
+          return fake;
+        },
+      );
+      final events = await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
+            cookie: 'session=abc123',
+          )
+          .toList();
+      expect(events.length, 1);
+      final failed = events.single as DownloadFailed;
+      expect(failed.message, contains('unable to download video data'));
+      expect(calls.length, 1);
+    });
+
+    test('start does not retry when no cookie was given', () async {
+      final fake = _FakeProcess();
+      final calls = <List<String>>[];
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          fake.addStderr(
+            'ERROR: [youtube] xyz: Requested format is not available. '
+            'Use --list-formats for a list of available formats',
+          );
+          fake.closeStreams();
+          fake.completeExit(1);
+          return fake;
+        },
+      );
+      final events = await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
+            format: '137+bestaudio',
+          )
+          .toList();
+      expect(events.length, 1);
+      final failed = events.single as DownloadFailed;
+      expect(
+        failed.message,
+        contains('Requested format is not available'),
+      );
+      expect(calls.length, 1);
+    });
   });
 
   test('buildNetscapeCookies starts with the Netscape header line', () {
