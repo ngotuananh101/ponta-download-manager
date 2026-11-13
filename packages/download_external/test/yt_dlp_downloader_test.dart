@@ -580,6 +580,7 @@ void main() {
       expect(cookiePath, isNotNull);
       expect(
         cookieContent,
+        '# Netscape HTTP Cookie File\n'
         '.www.youtube.com\tTRUE\t/\tTRUE\t0\tsession\tabc123\n'
         '.www.youtube.com\tTRUE\t/\tTRUE\t0\ttheme\tdark\n',
       );
@@ -730,6 +731,14 @@ void main() {
     });
   });
 
+  test('buildNetscapeCookies starts with the Netscape header line', () {
+    final content = buildNetscapeCookies(
+      cookieHeader: 'session=abc123',
+      url: Uri.parse('https://www.youtube.com/watch?v=xyz'),
+    );
+    expect(content.startsWith('# Netscape HTTP Cookie File\n'), isTrue);
+  });
+
   test('buildNetscapeCookies writes one line per cookie', () {
     final content = buildNetscapeCookies(
       cookieHeader: 'session=abc123; theme=dark',
@@ -737,6 +746,7 @@ void main() {
     );
     expect(
       content,
+      '# Netscape HTTP Cookie File\n'
       '.www.youtube.com\tTRUE\t/\tTRUE\t0\tsession\tabc123\n'
       '.www.youtube.com\tTRUE\t/\tTRUE\t0\ttheme\tdark\n',
     );
@@ -747,7 +757,7 @@ void main() {
       cookieHeader: 'a=b',
       url: Uri.parse('http://example.com/video'),
     );
-    expect(content, '.example.com\tTRUE\t/\tFALSE\t0\ta\tb\n');
+    expect(content, '# Netscape HTTP Cookie File\n' '.example.com\tTRUE\t/\tFALSE\t0\ta\tb\n');
   });
 
   test('buildNetscapeCookies keeps equals signs in values', () {
@@ -755,7 +765,7 @@ void main() {
       cookieHeader: 'token=abc=def',
       url: Uri.parse('https://example.com/'),
     );
-    expect(content, '.example.com\tTRUE\t/\tTRUE\t0\ttoken\tabc=def\n');
+    expect(content, '# Netscape HTTP Cookie File\n' '.example.com\tTRUE\t/\tTRUE\t0\ttoken\tabc=def\n');
   });
 
   test('scrubCookieMaterial replaces the cookies path and redacts Cookie headers',

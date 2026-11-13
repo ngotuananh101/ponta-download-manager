@@ -3,7 +3,8 @@ import 'dart:io';
 /// Builds the content of a Netscape-format cookies file from a
 /// `name=value; ...` cookie header value, for [url].
 ///
-/// Each cookie becomes one line:
+/// The file starts with the '# Netscape HTTP Cookie File' header line
+/// that yt-dlp requires. Each cookie then becomes one line:
 ///
 /// `<domain>\tTRUE\t/\t<secure>\t0\t<name>\t<value>`
 ///
@@ -34,7 +35,9 @@ String buildNetscapeCookies({
     }
     lines.add('$domain\tTRUE\t/\t$secure\t0\t$name\t$value');
   }
-  return lines.map((line) => '$line\n').join();
+  // yt-dlp (MozillaCookieJar) rejects the file unless its first line
+  // is the Netscape header.
+  return '# Netscape HTTP Cookie File\n' + lines.map((line) => '$line\n').join();
 }
 
 /// Strips tab/line-break characters that would corrupt a
