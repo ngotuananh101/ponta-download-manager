@@ -72,8 +72,29 @@ class NativeHost {
     if (fileName == null) {
       return _error(id, IpcErrorCode.invalidParams, 'Invalid fileName');
     }
+    final cookie = message['cookie'];
+    if (cookie != null && cookie is! String) {
+      return _error(
+        id,
+        IpcErrorCode.invalidParams,
+        'cookie must be a string',
+      );
+    }
+    final referrer = message['referrer'];
+    if (referrer != null && referrer is! String) {
+      return _error(
+        id,
+        IpcErrorCode.invalidParams,
+        'referrer must be a string',
+      );
+    }
     try {
-      final info = await _create(url, fileName);
+      final info = await _create(
+        url,
+        fileName,
+        cookie as String?,
+        referrer as String?,
+      );
       _log.info('Created ${info.id} for ${uri.host} ($fileName)');
       return {'id': id, 'ok': true, 'downloadId': info.id};
     } on DownloadError catch (e) {
@@ -104,7 +125,12 @@ class NativeHost {
     return last.isNotEmpty ? last : 'download';
   }
 
-  Future<DownloadInfo> _create(String url, String fileName) async {
+  Future<DownloadInfo> _create(
+    String url,
+    String fileName,
+    String? cookie,
+    String? referrer,
+  ) async {
     // The extension cannot show the app's file-exists dialog, so a
     // browser download never overwrites and never fails on an
     // existing file: it renames to the first free name instead.
@@ -112,6 +138,8 @@ class NativeHost {
       url: url,
       destination: p.join(downloadDirectory, fileName),
       conflictPolicy: FileConflictPolicy.rename,
+      cookie: cookie,
+      referrer: referrer,
     );
     try {
       final client = await _ensureClient();

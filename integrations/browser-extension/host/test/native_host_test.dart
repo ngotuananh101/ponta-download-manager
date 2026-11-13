@@ -92,6 +92,59 @@ void main() {
       expect(captured.conflictPolicy, FileConflictPolicy.rename);
     });
 
+    test('download.create with cookie and referrer forwards them',
+        () async {
+      when(
+        () => client.createDownload(any()),
+      ).thenAnswer((_) async => info());
+      final replies = await runWith(host(), [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'http://127.0.0.1:9/f.bin',
+          'cookie': 'session=abc',
+          'referrer': 'http://127.0.0.1:9/page',
+        },
+      ]);
+      expect(replies.single['ok'], isTrue);
+      final captured =
+          verify(() => client.createDownload(captureAny())).captured.single
+              as CreateDownloadRequest;
+      expect(captured.cookie, 'session=abc');
+      expect(captured.referrer, 'http://127.0.0.1:9/page');
+    });
+
+    test('a non-string cookie is rejected and never calls the client',
+        () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'http://127.0.0.1:9/f.bin',
+          'cookie': 42,
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(() => client.createDownload(any()));
+    });
+
+    test('a non-string referrer is rejected and never calls the client',
+        () async {
+      final replies = await runWith(host(), [
+        {
+          'type': 'download.create',
+          'id': 'r1',
+          'url': 'http://127.0.0.1:9/f.bin',
+          'referrer': 42,
+        },
+      ]);
+      expect(replies.single['ok'], isFalse);
+      expect(replies.single['code'], 'invalid-params');
+      verifyNever(() => client.createDownload(any()));
+    });
+
+
     test('an unknown type is rejected and never calls the client', () async {
       final replies = await runWith(host(), [
         {'type': 'download.list', 'id': 'r1'},
