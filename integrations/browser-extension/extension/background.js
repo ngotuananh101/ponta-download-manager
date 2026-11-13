@@ -127,11 +127,13 @@ function showError(chromeApi, message) {
 }
 
 // Sends one download to PDM through the native host. Shared by the
-// context menu and the download interceptor. `referrer` is the page
-// the download came from, when known. The cookies the browser would
-// send for the URL go along too, so login-walled downloads work;
-// public links are unaffected. Both are omitted when absent.
-function sendDownload(chromeApi, url, fileName, referrer) {
+// context menu, the download interceptor, and the yt-dlp format picker.
+// `referrer` is the page the download came from, when known. The cookies
+// the browser would send for the URL go along too, so login-walled
+// downloads work; public links are unaffected. Both are omitted when
+// absent. `ytDlpFormat` forces the yt-dlp branch for the download and is
+// omitted for ordinary downloads.
+function sendDownload(chromeApi, url, fileName, referrer, ytDlpFormat) {
   const id = randomId();
   let port;
   try {
@@ -179,6 +181,96 @@ function sendDownload(chromeApi, url, fileName, referrer) {
     }
     if (referrer) {
       message.referrer = referrer;
+    }
+    if (ytDlpFormat) {
+      message.ytDlpFormat = ytDlpFormat;
+    }
+    port.postMessage(message);
+  };
+  const cookiesApi = chromeApi.cookies && chromeApi.cookies.getAll;
+  if (typeof cookiesApi !== 'function') {
+    post();
+    return;
+  }
+  cookiesApi.call(chromeApi.cookies, {url}, (cookies) => {
+    let cookie;
+    if (Array.isArray(cookies) && cookies.length > 0) {
+      cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    }
+    post(cookie);
+  });
+}
+
+// yt-dlp probes in flight, keyed by tab URL. A second popup opened
+// while a probe is running joins the same reply list instead of
+// starting another yt-dlp run.
+const pendingProbes = new Map();
+
+// Probes one tab URL with yt-dlp through the native host and answers
+// every waiting popup with the result. The tab URL is both the probed
+// URL and the referrer; the browser's cookies for the URL go along so
+// login-walled pages probe as supported.
+function probeYtDlp(chromeApi, url, sendResponse) {
+  const pending = pendingProbes.get(url);
+  if (pending) {
+    pending.push(sendResponse);
+    return;
+  }
+  pendingProbes.set(url, [sendResponse]);
+  const finish = (response) => {
+    const waiters = pendingProbes.get(url) || [];
+    pendingProbes.delete(url);
+    waiters.forEach((respond) => respond(response));
+  };
+  const id = randomId();
+  let port;
+  try {
+    port = chromeApi.runtime.connectNative(HOST_NAME);
+  } catch {
+    finish({
+      ok: false,
+      code: 'native-host-missing',
+      message: 'PDM native host is not installed — run install.sh',
+    });
+    return;
+  }
+  const onMessage = (reply) => {
+    if (!reply || reply.id !== id) {
+      return;
+    }
+    port.onMessage.removeListener(onMessage);
+    port.disconnect();
+    if (reply.ok) {
+      finish({ok: true, probe: reply.probe});
+    } else {
+      finish({
+        ok: false,
+        code: reply.code || 'probe-failed',
+        message: reply.message || 'Probe failed',
+      });
+    }
+  };
+  const onDisconnect = () => {
+    port.onMessage.removeListener(onMessage);
+    if (!pendingProbes.has(url)) {
+      // Already answered: the reply handler disconnected the port.
+      return;
+    }
+    const error = chromeApi.runtime.lastError;
+    finish({
+      ok: false,
+      code: 'connection-closed',
+      message: error
+        ? 'PDM native host is not installed — run install.sh'
+        : 'Connection to PDM closed',
+    });
+  };
+  port.onMessage.addListener(onMessage);
+  port.onDisconnect.addListener(onDisconnect);
+  const post = (cookie) => {
+    const message = {type: 'ytdlp.probe', id, url, referrer: url};
+    if (cookie) {
+      message.cookie = cookie;
     }
     port.postMessage(message);
   };
@@ -323,6 +415,42 @@ function handleMessage(chromeApi, message, sender, sendResponse) {
       sendResponse({ok: true});
       return false;
     }
+    case 'ytdlp.probe': {
+      if (!chromeApi.tabs || !chromeApi.tabs.query) {
+        sendResponse({
+          ok: false,
+          code: 'no-active-tab',
+          message: 'No active tab',
+        });
+        return false;
+      }
+      chromeApi.tabs.query({active: true, currentWindow: true}, (tabs) => {
+        const tabUrl = tabs && tabs[0] && tabs[0].url;
+        if (typeof tabUrl !== 'string' || !tabUrl) {
+          sendResponse({
+            ok: false,
+            code: 'no-active-tab',
+            message: 'No active tab',
+          });
+          return;
+        }
+        probeYtDlp(chromeApi, tabUrl, sendResponse);
+      });
+      return true;
+    }
+    case 'ytdlp.download': {
+      if (typeof message.url === 'string') {
+        sendDownload(
+          chromeApi,
+          message.url,
+          message.fileName,
+          message.referrer,
+          message.formatId,
+        );
+      }
+      sendResponse({ok: true});
+      return false;
+    }
     case 'intercept.get': {
       // While the stored value is still loading, answer from storage
       // directly so the popup never shows the safe default as the
@@ -352,6 +480,7 @@ function setupExtension(chromeApi) {
   // resetting here also keeps repeated setups independent.)
   interceptEnabled = false;
   interceptLoaded = false;
+  pendingProbes.clear();
   loadInterceptSetting(chromeApi);
   chromeApi.runtime.onInstalled.addListener(() => {
     chromeApi.contextMenus.create({

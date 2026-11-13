@@ -61,6 +61,7 @@ function fakeChrome() {
   const sessionValues = {};
   const storageChangeListeners = [];
   let activeTabId = 1;
+  let activeTabUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
   const chromeApi = {
     runtime: {
       lastError: null,
@@ -82,7 +83,7 @@ function fakeChrome() {
       onRemoved: {addListener: (fn) => listeners.tabRemoved.push(fn)},
       onUpdated: {addListener: (fn) => listeners.tabUpdated.push(fn)},
       query: (queryInfo, cb) => {
-        cb([{id: activeTabId}]);
+        cb([{id: activeTabId, url: activeTabUrl}]);
       },
     },
     contextMenus: {
@@ -174,6 +175,9 @@ function fakeChrome() {
     sessionValues,
     setActiveTabId: (id) => {
       activeTabId = id;
+    },
+    setActiveTabUrl: (url) => {
+      activeTabUrl = url;
     },
   };
 }
@@ -728,4 +732,135 @@ test('intercept get and set round-trip through storage', () => {
   assert.equal(storageValues.pdmIntercept, false);
   reply = emitMessage(listeners, {type: 'intercept.get'});
   assert.deepEqual(reply.response(), {enabled: false});
+});
+
+test('ytdlp.probe posts a probe message with the tab cookies and the tab url as referrer', () => {
+  const {chromeApi, listeners, ports, cookies, cookieRequests, setActiveTabUrl} = fakeChrome();
+  cookies.push({name: 'session', value: 'abc'}, {name: 'pref', value: 'x'});
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe1');
+  const reply = emitMessage(listeners, {type: 'ytdlp.probe'});
+  assert.equal(reply.async, true);
+  assert.equal(reply.response(), undefined);
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].name, 'com.ponta.pdm');
+  assert.deepEqual(cookieRequests, ['https://www.youtube.com/watch?v=probe1']);
+  assert.equal(ports[0].posted.length, 1);
+  const message = ports[0].posted[0];
+  assert.equal(message.type, 'ytdlp.probe');
+  assert.equal(message.url, 'https://www.youtube.com/watch?v=probe1');
+  assert.equal(message.cookie, 'session=abc; pref=x');
+  assert.equal(message.referrer, 'https://www.youtube.com/watch?v=probe1');
+  assert.equal(typeof message.id, 'string');
+});
+
+test('ytdlp.probe forwards the host reply to the popup', () => {
+  const {chromeApi, listeners, ports, setActiveTabUrl} = fakeChrome();
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe2');
+  const reply = emitMessage(listeners, {type: 'ytdlp.probe'});
+  const message = ports[0].posted[0];
+  const probe = {
+    supported: true,
+    title: 'Some video',
+    formats: [{formatId: '18', ext: 'mp4', vcodec: 'avc1', acodec: 'mp4a'}],
+  };
+  ports[0]._emitMessage({id: message.id, ok: true, probe});
+  assert.deepEqual(reply.response(), {ok: true, probe});
+  assert.equal(ports[0].disconnected, true);
+});
+
+test('ytdlp.probe forwards a host error as ok false', () => {
+  const {chromeApi, listeners, ports, setActiveTabUrl} = fakeChrome();
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe3');
+  const reply = emitMessage(listeners, {type: 'ytdlp.probe'});
+  const message = ports[0].posted[0];
+  ports[0]._emitMessage({
+    id: message.id,
+    ok: false,
+    code: 'yt-dlp-unsupported',
+    message: 'Unsupported URL',
+  });
+  assert.deepEqual(reply.response(), {
+    ok: false,
+    code: 'yt-dlp-unsupported',
+    message: 'Unsupported URL',
+  });
+});
+
+test('two concurrent probes for the same url post once', () => {
+  const {chromeApi, listeners, ports, setActiveTabUrl} = fakeChrome();
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe4');
+  const first = emitMessage(listeners, {type: 'ytdlp.probe'});
+  const second = emitMessage(listeners, {type: 'ytdlp.probe'});
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted.length, 1);
+  const probe = {supported: false, errorCode: 'yt-dlp-unsupported'};
+  ports[0]._emitMessage({id: ports[0].posted[0].id, ok: true, probe});
+  assert.deepEqual(first.response(), {ok: true, probe});
+  assert.deepEqual(second.response(), {ok: true, probe});
+});
+
+test('ytdlp.download posts download.create with ytDlpFormat', () => {
+  const {chromeApi, listeners, ports, cookies, cookieRequests} = fakeChrome();
+  cookies.push({name: 'session', value: 'abc'});
+  installed(chromeApi, listeners);
+  const reply = emitMessage(listeners, {
+    type: 'ytdlp.download',
+    url: 'https://www.youtube.com/watch?v=probe5',
+    formatId: '137',
+    fileName: 'Some video.mp4',
+    referrer: 'https://www.youtube.com/watch?v=probe5',
+  });
+  assert.equal(ports.length, 1);
+  assert.deepEqual(cookieRequests, ['https://www.youtube.com/watch?v=probe5']);
+  const message = ports[0].posted[0];
+  assert.equal(message.type, 'download.create');
+  assert.equal(message.url, 'https://www.youtube.com/watch?v=probe5');
+  assert.equal(message.fileName, 'Some video.mp4');
+  assert.equal(message.referrer, 'https://www.youtube.com/watch?v=probe5');
+  assert.equal(message.ytDlpFormat, '137');
+  assert.equal(message.cookie, 'session=abc');
+  assert.deepEqual(reply.response(), {ok: true});
+});
+
+test('ytdlp.probe without an active tab answers ok false', () => {
+  const {chromeApi, listeners, ports} = fakeChrome();
+  installed(chromeApi, listeners);
+  chromeApi.tabs.query = (queryInfo, cb) => cb([]);
+  const reply = emitMessage(listeners, {type: 'ytdlp.probe'});
+  assert.equal(reply.async, true);
+  assert.deepEqual(reply.response(), {
+    ok: false,
+    code: 'no-active-tab',
+    message: 'No active tab',
+  });
+  assert.equal(ports.length, 0);
+});
+
+test('ytdlp.probe still posts when the cookies API is absent', () => {
+  const {chromeApi, listeners, ports, setActiveTabUrl} = fakeChrome();
+  delete chromeApi.cookies;
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe7');
+  emitMessage(listeners, {type: 'ytdlp.probe'});
+  assert.equal(ports.length, 1);
+  assert.equal(ports[0].posted[0].type, 'ytdlp.probe');
+  assert.equal('cookie' in ports[0].posted[0], false);
+});
+
+test('a probe reply with a different id is ignored', () => {
+  const {chromeApi, listeners, ports, setActiveTabUrl} = fakeChrome();
+  installed(chromeApi, listeners);
+  setActiveTabUrl('https://www.youtube.com/watch?v=probe8');
+  const reply = emitMessage(listeners, {type: 'ytdlp.probe'});
+  const message = ports[0].posted[0];
+  ports[0]._emitMessage({id: 'someone-else', ok: true, probe: {supported: true}});
+  assert.equal(reply.response(), undefined);
+  assert.equal(ports[0].disconnected, false);
+  const probe = {supported: true, title: 'Some video', formats: []};
+  ports[0]._emitMessage({id: message.id, ok: true, probe});
+  assert.deepEqual(reply.response(), {ok: true, probe});
 });
