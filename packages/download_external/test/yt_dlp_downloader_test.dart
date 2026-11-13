@@ -598,15 +598,18 @@ void main() {
         ytDlpPath: 'yt-dlp',
         ffmpegDir: tmp.path,
         processStarter: (String exe, List<String> args) async {
+          // A fresh process per spawn: the retry runs a second
+          // process, and a fake's streams can only be listened to once.
           calls.add(args);
+          final attempt = _FakeProcess();
           final index = args.indexOf('--cookies');
           if (index != -1) {
             cookiePath = args[index + 1];
-            fake.addStderr('ERROR: could not read $cookiePath');
           }
-          fake.closeStreams();
-          fake.completeExit(1);
-          return fake;
+          attempt.addStderr('ERROR: could not read $cookiePath');
+          attempt.closeStreams();
+          attempt.completeExit(1);
+          return attempt;
         },
       );
       final result = await downloader.probe(
@@ -617,6 +620,106 @@ void main() {
       expect(result.errorCode, 'yt-dlp-probe-failed');
       expect(result.errorMessage, isNot(contains(cookiePath!)));
       expect(result.errorMessage, contains('<cookies-file>'));
+      expect(calls.length, 2);
+    });
+
+    test('probe retries without cookies when the cookie run fails with a format error',
+        () async {
+      final first = _FakeProcess();
+      final second = _FakeProcess();
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          if (calls.length == 1) {
+            first.addStderr(
+              'ERROR: [youtube] xyz: Requested format is not available. '
+              'Use --list-formats for a list of available formats',
+            );
+            first.closeStreams();
+            first.completeExit(1);
+            return first;
+          }
+          second.addStdout(probeJson());
+          second.closeStreams();
+          second.completeExit(0);
+          return second;
+        },
+      );
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+        cookie: 'session=abc123',
+        referrer: 'https://www.youtube.com/watch?v=xyz',
+      );
+      expect(result.supported, isTrue);
+      expect(result.title, 'Test video');
+      expect(calls.length, 2);
+      expect(calls.first, contains('--cookies'));
+      expect(calls.last, isNot(contains('--cookies')));
+      expect(calls.last, contains('--referer'));
+    });
+
+    test('probe reports the first error when the retry also fails',
+        () async {
+      final first = _FakeProcess();
+      final second = _FakeProcess();
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          if (calls.length == 1) {
+            first.addStderr(
+              'ERROR: [youtube] xyz: Requested format is not available. '
+              'Use --list-formats for a list of available formats',
+            );
+            first.closeStreams();
+            first.completeExit(1);
+            return first;
+          }
+          second.addStderr('ERROR: unable to download video data');
+          second.closeStreams();
+          second.completeExit(1);
+          return second;
+        },
+      );
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+        cookie: 'session=abc123',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-probe-failed');
+      expect(
+        result.errorMessage,
+        contains('Requested format is not available'),
+      );
+      expect(calls.length, 2);
+    });
+
+    test('probe does not retry an unsupported URL', () async {
+      fake.addStderr('ERROR: Unsupported URL: https://example.com/page');
+      fake.closeStreams();
+      fake.completeExit(1);
+      final result = await downloader.probe(
+        url: 'https://example.com/page',
+        cookie: 'session=abc123',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-unsupported');
+      expect(calls.length, 1);
+    });
+
+    test('probe does not retry when no cookie was given', () async {
+      fake.addStderr('ERROR: unable to download video data');
+      fake.closeStreams();
+      fake.completeExit(1);
+      final result = await downloader.probe(
+        url: 'https://example.com/video',
+      );
+      expect(result.supported, isFalse);
+      expect(result.errorCode, 'yt-dlp-probe-failed');
+      expect(calls.length, 1);
     });
   });
 

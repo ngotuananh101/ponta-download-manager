@@ -254,7 +254,9 @@ class YtDlpDownloader {
   /// metadata and formats, or a `supported: false` result when no
   /// extractor matches or the probe fails. Never throws for a yt-dlp
   /// failure; those are reported in the result. The temp cookies file
-  /// (when [cookie] is given) is deleted before this returns.
+  /// (when [cookie] is given) is deleted before this returns. A run
+  /// with cookies that fails is retried once without them, so a bad
+  /// cookie can never make a public video un-probeable.
   Future<YtDlpProbeResult> probe({
     required String url,
     String? cookie,
@@ -275,6 +277,45 @@ class YtDlpDownloader {
       }
     }
     try {
+      final first = await _probeOnce(
+        url: url,
+        cookieFile: cookieFile,
+        referrer: referrer,
+        timeout: timeout,
+      );
+      // A failed run with cookies is retried once without them:
+      // cookies must only ever add capability (login-walled videos),
+      // never make a public video un-probeable. The original error is
+      // kept when the retry fails too.
+      if (cookieFile != null &&
+          !first.supported &&
+          first.errorCode != 'yt-dlp-unsupported' &&
+          first.errorCode != 'yt-dlp-timeout') {
+        final retry = await _probeOnce(
+          url: url,
+          referrer: referrer,
+          timeout: timeout,
+        );
+        if (retry.supported) return retry;
+      }
+      return first;
+    } finally {
+      cookieFile?.delete();
+    }
+  }
+
+  /// One `yt-dlp -J --no-playlist` run. Never throws for a yt-dlp
+  /// failure; those are reported in the result. The temp cookies file
+  /// (when [cookieFile] is given) is owned by the caller and deleted
+  /// by it, so a retry can run without cookies afterwards.
+  Future<YtDlpProbeResult> _probeOnce({
+    required String url,
+    TempCookieFile? cookieFile,
+    String? referrer,
+    required Duration timeout,
+  }) async {
+    {
+      // One attempt, in a block so the old body keeps its shape.
       final args = <String>[
         '-J',
         '--no-playlist',
@@ -375,8 +416,6 @@ class YtDlpDownloader {
         errorCode: 'yt-dlp-probe-failed',
         errorMessage: lastError,
       );
-    } finally {
-      cookieFile?.delete();
     }
   }
 
