@@ -18,6 +18,8 @@ _CreateDownloadRequest _$CreateDownloadRequestFromJson(
     json['conflictPolicy'],
   ),
   paused: json['paused'] as bool? ?? false,
+  cookie: json['cookie'] as String?,
+  referrer: json['referrer'] as String?,
 );
 
 Map<String, dynamic> _$CreateDownloadRequestToJson(
@@ -29,6 +31,8 @@ Map<String, dynamic> _$CreateDownloadRequestToJson(
   'priority': instance.priority,
   'conflictPolicy': _$FileConflictPolicyEnumMap[instance.conflictPolicy],
   'paused': instance.paused,
+  'cookie': instance.cookie,
+  'referrer': instance.referrer,
 };
 
 const _$FileConflictPolicyEnumMap = {

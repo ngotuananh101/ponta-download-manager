@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'update_check_result.dart';
@@ -9,6 +9,7 @@ part of 'update_check_result.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
@@ -28,16 +29,21 @@ $UpdateCheckResultCopyWith<UpdateCheckResult> get copyWith => _$UpdateCheckResul
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateCheckResult&&(identical(other.hasUpdate, hasUpdate) || other.hasUpdate == hasUpdate)&&(identical(other.inconclusive, inconclusive) || other.inconclusive == inconclusive)&&(identical(other.newTotalBytes, newTotalBytes) || other.newTotalBytes == newTotalBytes));
+  final _this = this as UpdateCheckResult;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateCheckResult&&(identical(other.hasUpdate, _this.hasUpdate) || other.hasUpdate == _this.hasUpdate)&&(identical(other.inconclusive, _this.inconclusive) || other.inconclusive == _this.inconclusive)&&(identical(other.newTotalBytes, _this.newTotalBytes) || other.newTotalBytes == _this.newTotalBytes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,hasUpdate,inconclusive,newTotalBytes);
+int get hashCode {
+  final _this = this as UpdateCheckResult;
+  return Object.hash(runtimeType,_this.hasUpdate,_this.inconclusive,_this.newTotalBytes);
+}
 
 @override
 String toString() {
-  return 'UpdateCheckResult(hasUpdate: $hasUpdate, inconclusive: $inconclusive, newTotalBytes: $newTotalBytes)';
+  final _this = this as UpdateCheckResult;
+  return 'UpdateCheckResult(hasUpdate: ${_this.hasUpdate}, inconclusive: ${_this.inconclusive}, newTotalBytes: ${_this.newTotalBytes})';
 }
 
 
@@ -66,7 +72,7 @@ class _$UpdateCheckResultCopyWithImpl<$Res>
 /// Create a copy of UpdateCheckResult
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? hasUpdate = null,Object? inconclusive = null,Object? newTotalBytes = null,}) {
-  return _then(_self.copyWith(
+  return _then(UpdateCheckResult(
 hasUpdate: null == hasUpdate ? _self.hasUpdate : hasUpdate // ignore: cast_nullable_to_non_nullable
 as bool,inconclusive: null == inconclusive ? _self.inconclusive : inconclusive // ignore: cast_nullable_to_non_nullable
 as bool,newTotalBytes: null == newTotalBytes ? _self.newTotalBytes : newTotalBytes // ignore: cast_nullable_to_non_nullable
@@ -231,16 +237,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UpdateCheckResult&&(identical(other.hasUpdate, hasUpdate) || other.hasUpdate == hasUpdate)&&(identical(other.inconclusive, inconclusive) || other.inconclusive == inconclusive)&&(identical(other.newTotalBytes, newTotalBytes) || other.newTotalBytes == newTotalBytes));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _UpdateCheckResult&&(identical(other.hasUpdate, hasUpdate) || other.hasUpdate == hasUpdate)&&(identical(other.inconclusive, inconclusive) || other.inconclusive == inconclusive)&&(identical(other.newTotalBytes, newTotalBytes) || other.newTotalBytes == newTotalBytes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,hasUpdate,inconclusive,newTotalBytes);
+int get hashCode {
+    return Object.hash(runtimeType,hasUpdate,inconclusive,newTotalBytes);
+}
 
 @override
 String toString() {
-  return 'UpdateCheckResult(hasUpdate: $hasUpdate, inconclusive: $inconclusive, newTotalBytes: $newTotalBytes)';
+    return 'UpdateCheckResult(hasUpdate: $hasUpdate, inconclusive: $inconclusive, newTotalBytes: $newTotalBytes)';
 }
 
 

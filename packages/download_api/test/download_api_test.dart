@@ -74,6 +74,28 @@ void main() {
       );
       expect(request.conflictPolicy, isNull);
     });
+
+    test('round-trips cookie and referrer through JSON', () {
+      const request = CreateDownloadRequest(
+        url: 'https://example.com/file.zip',
+        destination: '/tmp/file.zip',
+        cookie: 'session=abc; theme=dark',
+        referrer: 'https://example.com/page',
+      );
+      final restored = CreateDownloadRequest.fromJson(request.toJson());
+      expect(restored, request);
+      expect(restored.cookie, 'session=abc; theme=dark');
+      expect(restored.referrer, 'https://example.com/page');
+    });
+
+    test('defaults to no cookie or referrer', () {
+      const request = CreateDownloadRequest(
+        url: 'https://example.com/file.zip',
+        destination: '/tmp/file.zip',
+      );
+      expect(request.cookie, isNull);
+      expect(request.referrer, isNull);
+    });
   });
 
   group('DownloadEvent', () {

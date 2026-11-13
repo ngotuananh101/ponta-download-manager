@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'download_event.dart';
@@ -9,6 +9,7 @@ part of 'download_event.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 DownloadEvent _$DownloadEventFromJson(
@@ -59,16 +60,21 @@ $DownloadEventCopyWith<DownloadEvent> get copyWith => _$DownloadEventCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadEvent&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId));
+  final _this = this as DownloadEvent;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadEvent&&(identical(other.downloadId, _this.downloadId) || other.downloadId == _this.downloadId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,downloadId);
+int get hashCode {
+  final _this = this as DownloadEvent;
+  return Object.hash(runtimeType,_this.downloadId);
+}
 
 @override
 String toString() {
-  return 'DownloadEvent(downloadId: $downloadId)';
+  final _this = this as DownloadEvent;
+  return 'DownloadEvent(downloadId: ${_this.downloadId})';
 }
 
 
@@ -258,7 +264,7 @@ return failed(_that.downloadId,_that.code,_that.message);case _:
 @JsonSerializable()
 
 class DownloadProgress implements DownloadEvent {
-  const DownloadProgress({required this.downloadId, required this.downloadedBytes, required this.totalBytes, required this.bytesPerSecond, final  String? $type}): $type = $type ?? 'progress';
+  const DownloadProgress({required this.downloadId, required this.downloadedBytes, required this.totalBytes, required this.bytesPerSecond,  String? $type}): $type = $type ?? 'progress';
   factory DownloadProgress.fromJson(Map<String, dynamic> json) => _$DownloadProgressFromJson(json);
 
 @override final  String downloadId;
@@ -283,16 +289,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadProgress&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadProgress&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,downloadId,downloadedBytes,totalBytes,bytesPerSecond);
+int get hashCode {
+    return Object.hash(runtimeType,downloadId,downloadedBytes,totalBytes,bytesPerSecond);
+}
 
 @override
 String toString() {
-  return 'DownloadEvent.progress(downloadId: $downloadId, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond)';
+    return 'DownloadEvent.progress(downloadId: $downloadId, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond)';
 }
 
 
@@ -337,7 +345,7 @@ as int,
 @JsonSerializable()
 
 class DownloadStateChanged implements DownloadEvent {
-  const DownloadStateChanged({required this.downloadId, required this.status, final  String? $type}): $type = $type ?? 'stateChanged';
+  const DownloadStateChanged({required this.downloadId, required this.status,  String? $type}): $type = $type ?? 'stateChanged';
   factory DownloadStateChanged.fromJson(Map<String, dynamic> json) => _$DownloadStateChangedFromJson(json);
 
 @override final  String downloadId;
@@ -360,16 +368,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadStateChanged&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.status, status) || other.status == status));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadStateChanged&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.status, status) || other.status == status));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,downloadId,status);
+int get hashCode {
+    return Object.hash(runtimeType,downloadId,status);
+}
 
 @override
 String toString() {
-  return 'DownloadEvent.stateChanged(downloadId: $downloadId, status: $status)';
+    return 'DownloadEvent.stateChanged(downloadId: $downloadId, status: $status)';
 }
 
 
@@ -412,7 +422,7 @@ as DownloadStatus,
 @JsonSerializable()
 
 class DownloadCompleted implements DownloadEvent {
-  const DownloadCompleted({required this.downloadId, required this.filePath, final  String? $type}): $type = $type ?? 'completed';
+  const DownloadCompleted({required this.downloadId, required this.filePath,  String? $type}): $type = $type ?? 'completed';
   factory DownloadCompleted.fromJson(Map<String, dynamic> json) => _$DownloadCompletedFromJson(json);
 
 @override final  String downloadId;
@@ -435,16 +445,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadCompleted&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.filePath, filePath) || other.filePath == filePath));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadCompleted&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.filePath, filePath) || other.filePath == filePath));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,downloadId,filePath);
+int get hashCode {
+    return Object.hash(runtimeType,downloadId,filePath);
+}
 
 @override
 String toString() {
-  return 'DownloadEvent.completed(downloadId: $downloadId, filePath: $filePath)';
+    return 'DownloadEvent.completed(downloadId: $downloadId, filePath: $filePath)';
 }
 
 
@@ -487,7 +499,7 @@ as String,
 @JsonSerializable()
 
 class DownloadFailed implements DownloadEvent {
-  const DownloadFailed({required this.downloadId, required this.code, required this.message, final  String? $type}): $type = $type ?? 'failed';
+  const DownloadFailed({required this.downloadId, required this.code, required this.message,  String? $type}): $type = $type ?? 'failed';
   factory DownloadFailed.fromJson(Map<String, dynamic> json) => _$DownloadFailedFromJson(json);
 
 @override final  String downloadId;
@@ -511,16 +523,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadFailed&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.code, code) || other.code == code)&&(identical(other.message, message) || other.message == message));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadFailed&&(identical(other.downloadId, downloadId) || other.downloadId == downloadId)&&(identical(other.code, code) || other.code == code)&&(identical(other.message, message) || other.message == message));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,downloadId,code,message);
+int get hashCode {
+    return Object.hash(runtimeType,downloadId,code,message);
+}
 
 @override
 String toString() {
-  return 'DownloadEvent.failed(downloadId: $downloadId, code: $code, message: $message)';
+    return 'DownloadEvent.failed(downloadId: $downloadId, code: $code, message: $message)';
 }
 
 

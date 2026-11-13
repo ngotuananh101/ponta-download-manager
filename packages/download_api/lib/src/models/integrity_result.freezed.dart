@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'integrity_result.dart';
@@ -9,6 +9,7 @@ part of 'integrity_result.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 IntegrityResult _$IntegrityResultFromJson(
@@ -62,7 +63,7 @@ mixin _$IntegrityResult {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityResult);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityResult);
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -71,7 +72,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'IntegrityResult()';
+    return 'IntegrityResult()';
 }
 
 
@@ -247,7 +248,7 @@ return unreadable(_that.message);case _:
 @JsonSerializable()
 
 class IntegrityOk implements IntegrityResult {
-  const IntegrityOk({required this.bytes, final  String? $type}): $type = $type ?? 'ok';
+  const IntegrityOk({required this.bytes,  String? $type}): $type = $type ?? 'ok';
   factory IntegrityOk.fromJson(Map<String, dynamic> json) => _$IntegrityOkFromJson(json);
 
  final  int bytes;
@@ -269,16 +270,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityOk&&(identical(other.bytes, bytes) || other.bytes == bytes));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityOk&&(identical(other.bytes, bytes) || other.bytes == bytes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,bytes);
+int get hashCode {
+    return Object.hash(runtimeType,bytes);
+}
 
 @override
 String toString() {
-  return 'IntegrityResult.ok(bytes: $bytes)';
+    return 'IntegrityResult.ok(bytes: $bytes)';
 }
 
 
@@ -320,7 +323,7 @@ as int,
 @JsonSerializable()
 
 class IntegrityUnknownSize implements IntegrityResult {
-  const IntegrityUnknownSize({required this.bytes, final  String? $type}): $type = $type ?? 'unknownSize';
+  const IntegrityUnknownSize({required this.bytes,  String? $type}): $type = $type ?? 'unknownSize';
   factory IntegrityUnknownSize.fromJson(Map<String, dynamic> json) => _$IntegrityUnknownSizeFromJson(json);
 
  final  int bytes;
@@ -342,16 +345,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityUnknownSize&&(identical(other.bytes, bytes) || other.bytes == bytes));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityUnknownSize&&(identical(other.bytes, bytes) || other.bytes == bytes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,bytes);
+int get hashCode {
+    return Object.hash(runtimeType,bytes);
+}
 
 @override
 String toString() {
-  return 'IntegrityResult.unknownSize(bytes: $bytes)';
+    return 'IntegrityResult.unknownSize(bytes: $bytes)';
 }
 
 
@@ -393,7 +398,7 @@ as int,
 @JsonSerializable()
 
 class IntegrityMissing implements IntegrityResult {
-  const IntegrityMissing({final  String? $type}): $type = $type ?? 'missing';
+  const IntegrityMissing({ String? $type}): $type = $type ?? 'missing';
   factory IntegrityMissing.fromJson(Map<String, dynamic> json) => _$IntegrityMissingFromJson(json);
 
 
@@ -410,7 +415,7 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityMissing);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityMissing);
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -419,7 +424,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'IntegrityResult.missing()';
+    return 'IntegrityResult.missing()';
 }
 
 
@@ -432,7 +437,7 @@ String toString() {
 @JsonSerializable()
 
 class IntegritySizeMismatch implements IntegrityResult {
-  const IntegritySizeMismatch({required this.expectedBytes, required this.actualBytes, final  String? $type}): $type = $type ?? 'sizeMismatch';
+  const IntegritySizeMismatch({required this.expectedBytes, required this.actualBytes,  String? $type}): $type = $type ?? 'sizeMismatch';
   factory IntegritySizeMismatch.fromJson(Map<String, dynamic> json) => _$IntegritySizeMismatchFromJson(json);
 
  final  int expectedBytes;
@@ -455,16 +460,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegritySizeMismatch&&(identical(other.expectedBytes, expectedBytes) || other.expectedBytes == expectedBytes)&&(identical(other.actualBytes, actualBytes) || other.actualBytes == actualBytes));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegritySizeMismatch&&(identical(other.expectedBytes, expectedBytes) || other.expectedBytes == expectedBytes)&&(identical(other.actualBytes, actualBytes) || other.actualBytes == actualBytes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,expectedBytes,actualBytes);
+int get hashCode {
+    return Object.hash(runtimeType,expectedBytes,actualBytes);
+}
 
 @override
 String toString() {
-  return 'IntegrityResult.sizeMismatch(expectedBytes: $expectedBytes, actualBytes: $actualBytes)';
+    return 'IntegrityResult.sizeMismatch(expectedBytes: $expectedBytes, actualBytes: $actualBytes)';
 }
 
 
@@ -507,7 +514,7 @@ as int,
 @JsonSerializable()
 
 class IntegrityChecksumMismatch implements IntegrityResult {
-  const IntegrityChecksumMismatch({required this.expectedSha256, required this.actualSha256, final  String? $type}): $type = $type ?? 'checksumMismatch';
+  const IntegrityChecksumMismatch({required this.expectedSha256, required this.actualSha256,  String? $type}): $type = $type ?? 'checksumMismatch';
   factory IntegrityChecksumMismatch.fromJson(Map<String, dynamic> json) => _$IntegrityChecksumMismatchFromJson(json);
 
  final  String expectedSha256;
@@ -530,16 +537,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityChecksumMismatch&&(identical(other.expectedSha256, expectedSha256) || other.expectedSha256 == expectedSha256)&&(identical(other.actualSha256, actualSha256) || other.actualSha256 == actualSha256));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityChecksumMismatch&&(identical(other.expectedSha256, expectedSha256) || other.expectedSha256 == expectedSha256)&&(identical(other.actualSha256, actualSha256) || other.actualSha256 == actualSha256));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,expectedSha256,actualSha256);
+int get hashCode {
+    return Object.hash(runtimeType,expectedSha256,actualSha256);
+}
 
 @override
 String toString() {
-  return 'IntegrityResult.checksumMismatch(expectedSha256: $expectedSha256, actualSha256: $actualSha256)';
+    return 'IntegrityResult.checksumMismatch(expectedSha256: $expectedSha256, actualSha256: $actualSha256)';
 }
 
 
@@ -582,7 +591,7 @@ as String,
 @JsonSerializable()
 
 class IntegrityUnreadable implements IntegrityResult {
-  const IntegrityUnreadable({required this.message, final  String? $type}): $type = $type ?? 'unreadable';
+  const IntegrityUnreadable({required this.message,  String? $type}): $type = $type ?? 'unreadable';
   factory IntegrityUnreadable.fromJson(Map<String, dynamic> json) => _$IntegrityUnreadableFromJson(json);
 
  final  String message;
@@ -604,16 +613,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityUnreadable&&(identical(other.message, message) || other.message == message));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is IntegrityUnreadable&&(identical(other.message, message) || other.message == message));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,message);
+int get hashCode {
+    return Object.hash(runtimeType,message);
+}
 
 @override
 String toString() {
-  return 'IntegrityResult.unreadable(message: $message)';
+    return 'IntegrityResult.unreadable(message: $message)';
 }
 
 

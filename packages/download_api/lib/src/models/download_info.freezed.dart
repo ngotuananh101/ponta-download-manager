@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'download_info.dart';
@@ -9,24 +9,14 @@ part of 'download_info.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 
 /// @nodoc
 mixin _$DownloadInfo {
 
- String get id; String get url; String get fileName; DownloadStatus get status; int get downloadedBytes; int get totalBytes; int get bytesPerSecond; DateTime? get createdAt;// Final on-disk destination (directory + fileName). Null for infos
-// that predate this field or arrive over IPC, which does not carry
-// it. The desktop UI needs it for the "Missing Files" filter.
- String? get filePath;// Queue priority. Higher runs first; 0 is the default (normal).
-// The UI shows it as high / normal / low.
- int get priority;// Labels on the download, for grouping. Empty by default; older
-// IPC JSON without the field decodes to [].
- List<String> get tags;// Why a download failed (e.g. 'http-404' + 'Not Found'). Null
-// unless the download failed; the engine maps these from the
-// stored record, so the reason survives a restart. Older IPC
-// JSON without the fields decodes to null.
- String? get errorCode; String? get errorMessage;
+ String get id; String get url; String get fileName; DownloadStatus get status; int get downloadedBytes; int get totalBytes; int get bytesPerSecond; DateTime? get createdAt; String? get filePath; int get priority; List<String> get tags; String? get errorCode; String? get errorMessage;
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -39,16 +29,21 @@ $DownloadInfoCopyWith<DownloadInfo> get copyWith => _$DownloadInfoCopyWithImpl<D
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.errorCode, errorCode) || other.errorCode == errorCode)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
+  final _this = this as DownloadInfo;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is DownloadInfo&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.url, _this.url) || other.url == _this.url)&&(identical(other.fileName, _this.fileName) || other.fileName == _this.fileName)&&(identical(other.status, _this.status) || other.status == _this.status)&&(identical(other.downloadedBytes, _this.downloadedBytes) || other.downloadedBytes == _this.downloadedBytes)&&(identical(other.totalBytes, _this.totalBytes) || other.totalBytes == _this.totalBytes)&&(identical(other.bytesPerSecond, _this.bytesPerSecond) || other.bytesPerSecond == _this.bytesPerSecond)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&(identical(other.filePath, _this.filePath) || other.filePath == _this.filePath)&&(identical(other.priority, _this.priority) || other.priority == _this.priority)&&const DeepCollectionEquality().equals(other.tags, _this.tags)&&(identical(other.errorCode, _this.errorCode) || other.errorCode == _this.errorCode)&&(identical(other.errorMessage, _this.errorMessage) || other.errorMessage == _this.errorMessage));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond,createdAt,filePath,priority,const DeepCollectionEquality().hash(tags),errorCode,errorMessage);
+int get hashCode {
+  final _this = this as DownloadInfo;
+  return Object.hash(runtimeType,_this.id,_this.url,_this.fileName,_this.status,_this.downloadedBytes,_this.totalBytes,_this.bytesPerSecond,_this.createdAt,_this.filePath,_this.priority,const DeepCollectionEquality().hash(_this.tags),_this.errorCode,_this.errorMessage);
+}
 
 @override
 String toString() {
-  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond, createdAt: $createdAt, filePath: $filePath, priority: $priority, tags: $tags, errorCode: $errorCode, errorMessage: $errorMessage)';
+  final _this = this as DownloadInfo;
+  return 'DownloadInfo(id: ${_this.id}, url: ${_this.url}, fileName: ${_this.fileName}, status: ${_this.status}, downloadedBytes: ${_this.downloadedBytes}, totalBytes: ${_this.totalBytes}, bytesPerSecond: ${_this.bytesPerSecond}, createdAt: ${_this.createdAt}, filePath: ${_this.filePath}, priority: ${_this.priority}, tags: ${_this.tags}, errorCode: ${_this.errorCode}, errorMessage: ${_this.errorMessage})';
 }
 
 
@@ -77,7 +72,7 @@ class _$DownloadInfoCopyWithImpl<$Res>
 /// Create a copy of DownloadInfo
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? url = null,Object? fileName = null,Object? status = null,Object? downloadedBytes = null,Object? totalBytes = null,Object? bytesPerSecond = null,Object? createdAt = freezed,Object? filePath = freezed,Object? priority = null,Object? tags = null,Object? errorCode = freezed,Object? errorMessage = freezed,}) {
-  return _then(_self.copyWith(
+  return _then(DownloadInfo(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
 as String,fileName: null == fileName ? _self.fileName : fileName // ignore: cast_nullable_to_non_nullable
@@ -232,7 +227,7 @@ return $default(_that.id,_that.url,_that.fileName,_that.status,_that.downloadedB
 @JsonSerializable()
 
 class _DownloadInfo implements DownloadInfo {
-  const _DownloadInfo({required this.id, required this.url, required this.fileName, required this.status, this.downloadedBytes = 0, required this.totalBytes, this.bytesPerSecond = 0, this.createdAt, this.filePath, this.priority = 0, final  List<String> tags = const [], this.errorCode, this.errorMessage}): _tags = tags;
+  const _DownloadInfo({required this.id, required this.url, required this.fileName, required this.status, this.downloadedBytes = 0, required this.totalBytes, this.bytesPerSecond = 0, this.createdAt, this.filePath, this.priority = 0,  List<String> tags = const [], this.errorCode, this.errorMessage}): _tags = tags;
   factory _DownloadInfo.fromJson(Map<String, dynamic> json) => _$DownloadInfoFromJson(json);
 
 @override final  String id;
@@ -243,28 +238,15 @@ class _DownloadInfo implements DownloadInfo {
 @override final  int totalBytes;
 @override@JsonKey() final  int bytesPerSecond;
 @override final  DateTime? createdAt;
-// Final on-disk destination (directory + fileName). Null for infos
-// that predate this field or arrive over IPC, which does not carry
-// it. The desktop UI needs it for the "Missing Files" filter.
 @override final  String? filePath;
-// Queue priority. Higher runs first; 0 is the default (normal).
-// The UI shows it as high / normal / low.
 @override@JsonKey() final  int priority;
-// Labels on the download, for grouping. Empty by default; older
-// IPC JSON without the field decodes to [].
  final  List<String> _tags;
-// Labels on the download, for grouping. Empty by default; older
-// IPC JSON without the field decodes to [].
 @override@JsonKey() List<String> get tags {
   if (_tags is EqualUnmodifiableListView) return _tags;
   // ignore: implicit_dynamic_type
   return EqualUnmodifiableListView(_tags);
 }
 
-// Why a download failed (e.g. 'http-404' + 'Not Found'). Null
-// unless the download failed; the engine maps these from the
-// stored record, so the reason survives a restart. Older IPC
-// JSON without the fields decodes to null.
 @override final  String? errorCode;
 @override final  String? errorMessage;
 
@@ -281,16 +263,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.errorCode, errorCode) || other.errorCode == errorCode)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _DownloadInfo&&(identical(other.id, id) || other.id == id)&&(identical(other.url, url) || other.url == url)&&(identical(other.fileName, fileName) || other.fileName == fileName)&&(identical(other.status, status) || other.status == status)&&(identical(other.downloadedBytes, downloadedBytes) || other.downloadedBytes == downloadedBytes)&&(identical(other.totalBytes, totalBytes) || other.totalBytes == totalBytes)&&(identical(other.bytesPerSecond, bytesPerSecond) || other.bytesPerSecond == bytesPerSecond)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other.tags, _tags)&&(identical(other.errorCode, errorCode) || other.errorCode == errorCode)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond,createdAt,filePath,priority,const DeepCollectionEquality().hash(_tags),errorCode,errorMessage);
+int get hashCode {
+    return Object.hash(runtimeType,id,url,fileName,status,downloadedBytes,totalBytes,bytesPerSecond,createdAt,filePath,priority,const DeepCollectionEquality().hash(_tags),errorCode,errorMessage);
+}
 
 @override
 String toString() {
-  return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond, createdAt: $createdAt, filePath: $filePath, priority: $priority, tags: $tags, errorCode: $errorCode, errorMessage: $errorMessage)';
+    return 'DownloadInfo(id: $id, url: $url, fileName: $fileName, status: $status, downloadedBytes: $downloadedBytes, totalBytes: $totalBytes, bytesPerSecond: $bytesPerSecond, createdAt: $createdAt, filePath: $filePath, priority: $priority, tags: $tags, errorCode: $errorCode, errorMessage: $errorMessage)';
 }
 
 

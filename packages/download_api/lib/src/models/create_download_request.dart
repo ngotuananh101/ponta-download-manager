@@ -14,6 +14,8 @@ abstract class CreateDownloadRequest with _$CreateDownloadRequest {
     int? priority,
     FileConflictPolicy? conflictPolicy,
     @Default(false) bool paused,
+    String? cookie,
+    String? referrer,
   }) = _CreateDownloadRequest;
 
   factory CreateDownloadRequest.fromJson(Map<String, dynamic> json) =>
