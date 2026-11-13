@@ -44,6 +44,19 @@ typedef _RequestHeaders = ({
   String origin,
 });
 
+/// Cache key for a yt-dlp probe: the URL plus whether cookies were
+/// supplied, so a login-state change re-probes instead of reusing a
+/// result from the other state.
+typedef _ProbeCacheKey = ({String url, bool hasCookies});
+
+/// One cached probe result with its probe time (10 minute TTL).
+class _CachedProbe {
+  _CachedProbe(this.result, this.probedAt);
+
+  final YtDlpProbeResult result;
+  final DateTime probedAt;
+}
+
 /// The standalone download engine: the §16 DownloadEngine backed by
 /// the scheduler, the SQLite checkpoint store and the bandwidth
 /// limiter. Created with [PdmEngine.open]; shut down with [dispose].
@@ -133,6 +146,17 @@ class PdmEngine implements DownloadEngine {
   /// on cancel/delete/dispose, and gone after a restart by design.
   final _requestHeaders = <String, _RequestHeaders>{};
 
+  /// Chosen yt-dlp format id per download, keyed by download id.
+  /// In-memory only, like [_requestHeaders]: dropped on cancel/delete/
+  /// dispose, and gone after a restart (a resumed download then falls
+  /// back to yt-dlp's default format selection).
+  final _ytDlpFormats = <String, String>{};
+
+  /// Probe results per URL and cookie state, 10 minute TTL. Probing
+  /// spawns a yt-dlp process, so reopening the popup reuses the last
+  /// probe instead of running yt-dlp again.
+  final _probeCache = <_ProbeCacheKey, _CachedProbe>{};
+
   /// Headers stored for [downloadId] when [url] has the same origin
   /// they were captured for; null otherwise (unknown id, or another
   /// origin). A retry or failover re-sends a session cookie only to
@@ -159,6 +183,14 @@ class PdmEngine implements DownloadEngine {
     final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
     return path.endsWith('.m3u8') || path.endsWith('.mpd');
   }
+
+  /// True for downloads the yt-dlp branch owns: streaming playlists,
+  /// or any download created with a chosen yt-dlp format. The `yt-`
+  /// id prefix is the persisted marker — the yt-dlp branch always
+  /// creates `yt-N` ids while the scheduler creates `dl-N` — so this
+  /// also holds after a restart, when the in-memory format map is gone.
+  bool _isYtDlpDownload(DownloadRecord record) =>
+      _isStreamingPlaylist(record.url) || record.id.startsWith('yt-');
 
   /// Advances the yt-dlp id counter past [id] (e.g. 'yt-7'), so a
   /// later generated id never collides with one already in the store.
@@ -198,14 +230,70 @@ class PdmEngine implements DownloadEngine {
     return p.join(record.directory, '$stem.%(ext)s');
   }
 
+  /// Caps a probe result at the best 30 formats (best first), so the
+  /// IPC line stays far under the 1 MiB cap and the popup stays usable.
+  YtDlpProbeResult _trimProbeResult(YtDlpProbeResult result) {
+    if (result.formats.length <= 30) {
+      return result;
+    }
+    final sorted = [...result.formats]..sort(_compareFormats);
+    return result.copyWith(formats: sorted.take(30).toList());
+  }
+
+  /// Best first: taller, then larger, then by format id for stability.
+  int _compareFormats(YtDlpFormat a, YtDlpFormat b) {
+    final height = (b.height ?? 0).compareTo(a.height ?? 0);
+    if (height != 0) return height;
+    final size = _formatSize(b).compareTo(_formatSize(a));
+    if (size != 0) return size;
+    return a.formatId.compareTo(b.formatId);
+  }
+
+  int _formatSize(YtDlpFormat format) =>
+      format.filesize ?? format.filesizeApprox ?? 0;
+
+  /// The yt-dlp `-f` argument for [record]: the chosen format id, with
+  /// `+bestaudio` appended for video-only picks (the cached probe says
+  /// which formats carry audio). Without a cached probe the id is
+  /// passed verbatim. Null when no format was chosen, so yt-dlp picks
+  /// its default format.
+  String? _formatArgFor(DownloadRecord record) {
+    final formatId = _ytDlpFormats[record.id];
+    if (formatId == null) return null;
+    final cookie = _headersFor(record.id, record.url)?.cookie;
+    final key = (
+      url: record.url,
+      hasCookies: cookie != null && cookie.trim().isNotEmpty,
+    );
+    final cached = _probeCache[key];
+    YtDlpFormat? format;
+    if (cached != null) {
+      for (final candidate in cached.result.formats) {
+        if (candidate.formatId == formatId) {
+          format = candidate;
+          break;
+        }
+      }
+    }
+    if (format == null) return formatId;
+    if (format.vcodec != 'none' && format.acodec == 'none') {
+      return '$formatId+bestaudio';
+    }
+    return formatId;
+  }
+
   /// Starts a yt-dlp download for [record] and wires its events into
   /// the engine event stream and the store.
   void _startYtDlp(DownloadRecord record, YtDlpDownloader downloader) {
+    final headers = _headersFor(record.id, record.url);
     final sub = downloader
         .start(
           downloadId: record.id,
           url: record.url,
           outputTemplate: _ytDlpTemplate(record),
+          format: _formatArgFor(record),
+          cookie: headers?.cookie,
+          referrer: headers?.referrer,
         )
         .listen(_onYtDlpEvent);
     _ytDlpSubs[record.id] = sub;
@@ -413,8 +501,42 @@ class PdmEngine implements DownloadEngine {
     String url, {
     String? cookie,
     String? referrer,
-  }) {
-    throw UnimplementedError();
+  }) async {
+    _throwIfDisposed();
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      throw const DownloadError(
+        'invalid-url',
+        'URL must start with http:// or https://',
+      );
+    }
+    // The downloader never throws for a yt-dlp failure: it returns a
+    // supported:false result carrying the error code, so the popup can
+    // show the right copy. Only a bad URL or missing tools throw here.
+    final hasCookies = cookie != null && cookie.trim().isNotEmpty;
+    final key = (url: url, hasCookies: hasCookies);
+    final cached = _probeCache[key];
+    if (cached != null &&
+        DateTime.now().difference(cached.probedAt) <
+            const Duration(minutes: 10)) {
+      return cached.result;
+    }
+    final downloader = await _ytDlpDownloader();
+    if (downloader == null) {
+      throw const DownloadError(
+        'external-tools-missing',
+        'ffmpeg and yt-dlp are required to probe this page. '
+        'They are bundled with PDM; check the app bundle.',
+      );
+    }
+    final result = await downloader.probe(
+      url: url,
+      cookie: cookie,
+      referrer: referrer,
+    );
+    final trimmed = _trimProbeResult(result);
+    _probeCache[key] = _CachedProbe(trimmed, DateTime.now());
+    return trimmed;
   }
 
   @override
@@ -450,7 +572,7 @@ class PdmEngine implements DownloadEngine {
           );
         }
     }
-    if (_isStreamingPlaylist(request.url)) {
+    if (_isStreamingPlaylist(request.url) || request.ytDlpFormat != null) {
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
         throw const DownloadError(
@@ -473,6 +595,19 @@ class PdmEngine implements DownloadEngine {
             request.maxConnections ?? config.maxConnectionsPerDownload,
       );
       _store.upsertDownload(record);
+      // The yt-dlp branch stores the browser headers and the chosen
+      // format in memory, like the scheduler branch stores headers:
+      // retry/resume re-send them, and they never reach the store.
+      if (request.cookie != null || request.referrer != null) {
+        _requestHeaders[id] = (
+          cookie: request.cookie,
+          referrer: request.referrer,
+          origin: Uri.parse(request.url).origin,
+        );
+      }
+      if (request.ytDlpFormat != null) {
+        _ytDlpFormats[id] = request.ytDlpFormat!;
+      }
       // A paused playlist is stored paused and starts only on resume
       // (resumeDownload starts it through the downloader).
       if (!request.paused) {
@@ -526,7 +661,7 @@ class PdmEngine implements DownloadEngine {
             record.status != DownloadStatus.downloading)) {
       return;
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       await _ytDlp?.pause(downloadId);
       _updateStatus(downloadId, DownloadStatus.paused);
       return;
@@ -544,7 +679,7 @@ class PdmEngine implements DownloadEngine {
     if (record == null || record.status != DownloadStatus.paused) {
       return;
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
         throw const DownloadError(
@@ -563,8 +698,9 @@ class PdmEngine implements DownloadEngine {
   @override
   Future<void> cancelDownload(String downloadId) async {
     _requestHeaders.remove(downloadId);
+    _ytDlpFormats.remove(downloadId);
     final record = _store.getDownload(downloadId);
-    if (record != null && _isStreamingPlaylist(record.url)) {
+    if (record != null && _isYtDlpDownload(record)) {
       await _ytDlp?.cancel(downloadId);
       _updateStatus(downloadId, DownloadStatus.cancelled);
       return;
@@ -580,7 +716,7 @@ class PdmEngine implements DownloadEngine {
     if (record == null) {
       return;
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
         throw const DownloadError(
@@ -659,11 +795,12 @@ class PdmEngine implements DownloadEngine {
     bool deleteFile = false,
   }) async {
     _requestHeaders.remove(downloadId);
+    _ytDlpFormats.remove(downloadId);
     final record = _store.getDownload(downloadId);
     if (record == null) {
       return;
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       final downloader = await _ytDlpDownloader();
       await downloader?.cancel(downloadId);
       if (deleteFile) {
@@ -713,7 +850,7 @@ class PdmEngine implements DownloadEngine {
     if (record == null) {
       return;
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       final downloader = await _ytDlpDownloader();
       // Delete the produced file (and any partial) too.
       downloader?.deleteOutput(_ytDlpTemplate(record));
@@ -895,7 +1032,7 @@ class PdmEngine implements DownloadEngine {
     if (record == null) {
       throw const DownloadError('not-found', 'Download not found');
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       // yt-dlp decides the size at download time; probing the
       // playlist file itself would report the playlist's own size.
       return const UpdateCheckResult(
@@ -968,7 +1105,7 @@ class PdmEngine implements DownloadEngine {
     if (record == null) {
       return [];
     }
-    if (_isStreamingPlaylist(record.url)) {
+    if (_isYtDlpDownload(record)) {
       // yt-dlp downloads have no segments: report the whole file as
       // one segment so the PROGRESS tab still shows a bitmap.
       return [
@@ -1024,6 +1161,8 @@ class PdmEngine implements DownloadEngine {
     await _schedulerSub?.cancel();
     await _scheduler.dispose();
     _requestHeaders.clear();
+    _ytDlpFormats.clear();
+    _probeCache.clear();
     await _writer.dispose();
     await _events.close();
     for (final record in paused) {
@@ -1126,7 +1265,7 @@ class PdmEngine implements DownloadEngine {
     final ytDlpRecords = <DownloadRecord>[];
     final nativeDecisions = <RecoveryDecision>[];
     for (final decision in Recovery(_store).reconcile()) {
-      if (_isStreamingPlaylist(decision.record.url)) {
+      if (_isYtDlpDownload(decision.record)) {
         ytDlpRecords.add(decision.record);
       } else {
         nativeDecisions.add(decision);

@@ -2567,6 +2567,244 @@ exit 1
         );
         expect(done.fileName, 'live.mp4');
       });
+
+      const probeScript = r'''#!/bin/sh
+echo "$@" >> "$(dirname "$0")/probe.log"
+if [ "$1" = "-J" ]; then
+prev=""
+for arg in "$@"; do
+if [ "$prev" = "--cookies" ]; then cat "$arg" >> "$(dirname "$0")/cookies.log"; fi
+prev="$arg"
+done
+cat <<'EOF'
+{"title":"Test Video","thumbnail":"https://example.com/thumb.jpg","duration":125,"formats":[{"format_id":"18","ext":"mp4","resolution":"640x360","width":640,"height":360,"filesize":1234567,"vcodec":"avc1","acodec":"mp4a"},{"format_id":"137","ext":"mp4","resolution":"1920x1080","width":1920,"height":1080,"filesize":9876543,"vcodec":"avc1","acodec":"none"},{"format_id":"140","ext":"m4a","resolution":"audio only","filesize":234567,"vcodec":"none","acodec":"mp4a"}]}
+EOF
+exit 0
+fi
+out=""
+prev=""
+for arg in "$@"; do
+if [ "$prev" = "-o" ]; then out="$arg"; fi
+prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo "[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30"
+echo "[download] 100% of  100.00MiB in 00:01"
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
+      YtDlpDownloader makeProbeDownloader(String fake) =>
+          YtDlpDownloader(ytDlpPath: fake, ffmpegDir: tempDir.path);
+
+      List<String> probeLogLines() =>
+          File(p.join(tempDir.path, 'probe.log')).readAsLinesSync();
+
+      test('probeYtDlp returns formats and serves the second call from cache',
+          () async {
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        final first = await engine.probeYtDlp(url);
+        expect(first.supported, isTrue);
+        expect(first.title, 'Test Video');
+        expect(first.thumbnail, 'https://example.com/thumb.jpg');
+        expect(first.durationSeconds, 125);
+        expect(
+          first.formats.map((f) => f.formatId).toList(),
+          ['18', '137', '140'],
+        );
+        final second = await engine.probeYtDlp(url);
+        expect(second, first);
+        // The fake ran once: the second probe came from the cache.
+        expect(probeLogLines(), hasLength(1));
+      });
+
+      test('probeYtDlp passes cookies to yt-dlp', () async {
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        final result = await engine.probeYtDlp(url, cookie: 'session=abc');
+        expect(result.supported, isTrue);
+        final cookies =
+            File(p.join(tempDir.path, 'cookies.log')).readAsStringSync();
+        expect(cookies, contains('session'));
+        expect(cookies, contains('abc'));
+        // Same cookies: the second probe is served from the cache.
+        await engine.probeYtDlp(url, cookie: 'session=abc');
+        expect(probeLogLines(), hasLength(1));
+        // Without cookies is a different cache entry: yt-dlp runs again.
+        await engine.probeYtDlp(url);
+        expect(probeLogLines(), hasLength(2));
+      });
+
+      test(
+          'createDownload with a video-only ytDlpFormat passes -f with bestaudio',
+          () async {
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        await engine.probeYtDlp(url);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: url,
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        expect(info.id.startsWith('yt-'), isTrue);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'video.mp4');
+        final downloadLine =
+            probeLogLines().firstWhere((l) => !l.startsWith('-J'));
+        expect(downloadLine, contains('-f 137+bestaudio'));
+      });
+
+      test('createDownload with a combined ytDlpFormat passes -f verbatim',
+          () async {
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        await engine.probeYtDlp(url);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: url,
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '18',
+          ),
+        );
+        expect(info.id.startsWith('yt-'), isTrue);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        final downloadLine =
+            probeLogLines().firstWhere((l) => !l.startsWith('-J'));
+        expect(downloadLine, contains('-f 18 '));
+        expect(downloadLine, isNot(contains('+bestaudio')));
+      });
+
+      test('retryDownload reuses the chosen format', () async {
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        await engine.probeYtDlp(url);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: url,
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        await engine.retryDownload(info.id);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        final downloadLines =
+            probeLogLines().where((l) => !l.startsWith('-J')).toList();
+        expect(downloadLines, hasLength(2));
+        expect(
+          downloadLines.every((l) => l.contains('-f 137+bestaudio')),
+          isTrue,
+        );
+      });
+
+      test('probeYtDlp without the tools throws external-tools-missing',
+          () async {
+        final engine = openEngine(
+          externalTools: const ExternalTools(ffmpegPath: null, ytDlpPath: null),
+        );
+        addTearDown(engine.dispose);
+        await expectLater(
+          engine.probeYtDlp('https://www.youtube.com/watch?v=test123'),
+          throwsA(
+            isA<DownloadError>().having(
+              (e) => e.code,
+              'code',
+              'external-tools-missing',
+            ),
+          ),
+        );
+      });
+
+      test(
+          'createDownload with ytDlpFormat without the tools throws external-tools-missing',
+          () async {
+        final engine = openEngine(
+          externalTools: const ExternalTools(ffmpegPath: null, ytDlpPath: null),
+        );
+        addTearDown(engine.dispose);
+        await expectLater(
+          engine.createDownload(
+            CreateDownloadRequest(
+              url: 'https://www.youtube.com/watch?v=test123',
+              destination: p.join(tempDir.path, 'video.mp4'),
+              ytDlpFormat: '137',
+            ),
+          ),
+          throwsA(
+            isA<DownloadError>().having(
+              (e) => e.code,
+              'code',
+              'external-tools-missing',
+            ),
+          ),
+        );
+        expect(await engine.listDownloads(), isEmpty);
+      });
+
+      test('a chosen-format download pauses and resumes through yt-dlp',
+          () async {
+        final fake = await makeFakeYtDlp(slowScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://www.youtube.com/watch?v=test123',
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        expect(info.id.startsWith('yt-'), isTrue);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading && d.downloadedBytes > 0,
+        );
+        await engine.pauseDownload(info.id);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+        await engine.resumeDownload(info.id);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'video.mp4');
+      });
     });
 
     group('file conflict policy', () {
