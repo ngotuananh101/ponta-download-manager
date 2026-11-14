@@ -174,6 +174,51 @@ class _StallingCancelDownloader extends YtDlpDownloader {
   }
 }
 
+/// A downloader that appends a line to [logPath] every time the engine
+/// asks it to start a run, so a test can count the processes spawned
+/// even when they are killed before any event is observed.
+class _LoggingStartDownloader extends YtDlpDownloader {
+  _LoggingStartDownloader({
+    required super.ytDlpPath,
+    required super.ffmpegDir,
+    required this.logPath,
+  });
+
+  final String logPath;
+
+  /// How many times the engine asked for this download's output to be
+  /// deleted. A second retry that loses the race still deletes the file
+  /// the first run is writing, so counting the calls sees it even when
+  /// the second start is refused.
+  var deleteOutputCalls = 0;
+
+  @override
+  void deleteOutput(String outputTemplate) {
+    deleteOutputCalls++;
+    super.deleteOutput(outputTemplate);
+  }
+
+  @override
+  Stream<DownloadEvent> start({
+    required String downloadId,
+    required String url,
+    required String outputTemplate,
+    String? format,
+    String? cookie,
+    String? referrer,
+  }) {
+    File(logPath).writeAsStringSync('run\n', mode: FileMode.append);
+    return super.start(
+      downloadId: downloadId,
+      url: url,
+      outputTemplate: outputTemplate,
+      format: format,
+      cookie: cookie,
+      referrer: referrer,
+    );
+  }
+}
+
 void main() {
   group('parseCliArgs flags', () {
     const url = 'http://example.test/f.bin';
@@ -2285,6 +2330,157 @@ exit 1
       expect(after.status, DownloadStatus.cancelled);
     });
 
+    test('a resume that a cancel overtakes does not start the download',
+        () async {
+      // resumeDownload resolves the downloader before it announces and
+      // starts anything. A cancel issued in that window is the user's
+      // later intent: the resume must not write queued over cancelled
+      // and, above all, must not spawn a yt-dlp run whose output the
+      // cancel already deleted.
+      final fake = await makeFakeYtDlp(slowScript);
+      // Records a run against the shared log so the assertions below can
+      // tell a spawned process from one that silently finished elsewhere.
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      // No await between the two calls: resume suspends at its first
+      // await, then cancel runs and wins.
+      final resume = engine.resumeDownload(info.id);
+      await engine.cancelDownload(info.id);
+      await resume;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+      // Nothing may be running: a spawned run would finish and flip the
+      // row back to completed.
+      expect(engine.ytDlpSubscriptionCount, 0);
+      // The subscription count alone cannot see a run that the resume
+      // started and the second cancel then killed. That run still does
+      // real work — it deletes the cancelled download's output and
+      // writes a fresh partial — so no process may have been spawned at
+      // all.
+      expect(
+        File(runsLog).existsSync() ? File(runsLog).readAsLinesSync() : const [],
+        isEmpty,
+        reason: 'the resume spawned a yt-dlp run after the cancel won',
+      );
+      // The row must not flash back to Queued either: the user cancelled
+      // after resuming, so the last thing the UI was told is Cancelled.
+      final states = seen
+          .whereType<DownloadStateChanged>()
+          .map((e) => e.status)
+          .toList();
+      final cancelIndex = states.indexOf(DownloadStatus.cancelled);
+      expect(cancelIndex, isNonNegative);
+      expect(
+        states.skip(cancelIndex + 1),
+        isNot(contains(DownloadStatus.queued)),
+        reason: 'resume announced queued after the cancel already won',
+      );
+    });
+
+    test('two retries for the same download start only one run', () async {
+      // Both calls pass the _ytDlpSubs check before either awaits, then
+      // both delete the output and start a run. The second run deletes
+      // the first one's file and the two processes race for the same
+      // output: the row restarts from zero (the "100% then downloads
+      // again" report).
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      // Both calls are in flight at once: the second must not pass the
+      // "already running" check while the first is still resolving, so
+      // it never deletes the output the first run is already writing.
+      final first = engine.retryDownload(info.id);
+      final second = engine.retryDownload(info.id);
+      await Future.wait([first, second]);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      expect(engine.ytDlpSubscriptionCount, 1);
+      expect(
+        File(runsLog).readAsLinesSync().length,
+        1,
+        reason: 'the second retry started a second yt-dlp for one id',
+      );
+      expect(
+        downloader.deleteOutputCalls,
+        1,
+        reason: 'the losing retry deleted the output the first run writes',
+      );
+      await engine.cancelDownload(info.id);
+    });
+
+    test('a retry that a cancel overtakes does not start the download',
+        () async {
+      // retryDownload resolves the downloader before it clears the old
+      // output and starts a run. A cancel issued in that window is the
+      // user's later intent; the retry must not delete a file the user
+      // just dismissed nor spawn a run for a cancelled row.
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      final retry = engine.retryDownload(info.id);
+      await engine.cancelDownload(info.id);
+      await retry;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+      expect(engine.ytDlpSubscriptionCount, 0);
+      // No process may be spawned at all: the retry that lost must not
+      // delete the output or write a fresh partial for a cancelled row.
+      expect(
+        File(runsLog).existsSync() ? File(runsLog).readAsLinesSync() : const [],
+        isEmpty,
+        reason: 'the retry spawned a yt-dlp run after the cancel won',
+      );
+    });
+
     test('cancelling a paused yt-dlp download announces cancelled',
         () async {
       // A paused yt-dlp download has no live run, so the downloader's
@@ -2631,6 +2827,86 @@ exit 1
         );
         expect(done.fileName, 'f.bin');
         expect(File(p.join(tempDir.path, 'f.bin')).readAsBytesSync(), data);
+      });
+
+      test('recovery does not revive a download cancelled while the tools '
+          'resolve', () async {
+        // Recovery runs unawaited at startup: it is still resolving the
+        // tools when the user opens the window and cancels a row that
+        // was left queued by the previous session. That cancel is the
+        // later intent. Starting the run anyway both erased the cancel
+        // (the resumed transfer moves the row to downloading) and
+        // downloaded a file the user just dismissed.
+        final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+        store.upsertDownload(
+          DownloadRecord(
+            id: 'yt-1',
+            url: 'https://example.com/live.m3u8',
+            fileName: 'live.m3u8',
+            directory: tempDir.path,
+            status: DownloadStatus.downloading,
+          ),
+        );
+        store.close();
+        final fake = await makeFakeYtDlp(slowScript);
+        final runsLog = p.join(tempDir.path, 'runs.log');
+        final engine = openEngine(
+          ytDlpDownloader: _LoggingStartDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+            logPath: runsLog,
+          ),
+        );
+        addTearDown(engine.dispose);
+        // Recovery starts unawaited inside the engine factory and
+        // suspends at the downloader lookup, so this cancel runs first
+        // without any timing help.
+        await engine.cancelDownload('yt-1');
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        final after = (await engine.listDownloads())
+            .firstWhere((d) => d.id == 'yt-1');
+        expect(after.status, DownloadStatus.cancelled);
+        expect(engine.ytDlpSubscriptionCount, 0);
+        expect(File(runsLog).existsSync(), isFalse,
+            reason: 'recovery started a run for a cancelled row');
+      });
+
+      test('recovery reports a download it cannot start as failed', () async {
+        // On startup a queued yt-dlp record is resumed through the
+        // downloader. Without the tools there is nothing to resume, so
+        // the record is marked failed — and the UI has to hear it: it
+        // learns state only from events, and the initial snapshot is a
+        // queued row that will never move on its own.
+        final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+        store.upsertDownload(
+          DownloadRecord(
+            id: 'yt-1',
+            url: 'https://example.com/live.m3u8',
+            fileName: 'live.m3u8',
+            directory: tempDir.path,
+            status: DownloadStatus.downloading,
+          ),
+        );
+        store.close();
+        final engine = openEngine(
+          externalTools: const ExternalTools(
+            ffmpegPath: null,
+            ytDlpPath: null,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final seen = <DownloadEvent>[];
+        final subscription = engine.events.listen(seen.add);
+        addTearDown(subscription.cancel);
+        await waitForInfo(
+          engine,
+          'yt-1',
+          (d) => d.status == DownloadStatus.failed,
+        );
+        expect(
+          seen.whereType<DownloadStateChanged>().map((e) => e.status),
+          contains(DownloadStatus.failed),
+        );
       });
 
       test('an m3u8 url without the tools throws external-tools-missing',

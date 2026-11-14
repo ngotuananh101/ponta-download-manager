@@ -132,6 +132,13 @@ class PdmEngine implements DownloadEngine {
   StreamSubscription<DownloadEvent>? _schedulerSub;
   final _ytDlpSubs = <String, StreamSubscription<DownloadEvent>>{};
 
+  /// yt-dlp downloads whose retry has begun but whose run is not
+  /// registered in [_ytDlpSubs] yet. A second retry in that window
+  /// would delete the output the first run is writing and then start a
+  /// process against it, so a retry claims the id here before its first
+  /// await.
+  final _ytDlpStarting = <String>{};
+
   /// Counter for yt-dlp download ids (`yt-N`), a separate id space
   /// from the scheduler's `dl-N` so the two can never collide.
   var _ytCounter = 0;
@@ -723,6 +730,16 @@ class PdmEngine implements DownloadEngine {
     }
     if (_isYtDlpDownload(record)) {
       final downloader = await _ytDlpDownloader();
+      // A cancel, pause or delete can land while the tools resolve.
+      // Re-read the store: the row the user stopped must not be
+      // revived, and a deleted one must not be started at all. The
+      // later action is the user's current intent, so it wins. This
+      // also makes a second resume of the same row a no-op: the first
+      // one has already written queued by the time this check runs.
+      final current = _store.getDownload(downloadId);
+      if (current == null || current.status != DownloadStatus.paused) {
+        return;
+      }
       if (downloader == null) {
         throw const DownloadError(
           'external-tools-missing',
@@ -772,6 +789,23 @@ class PdmEngine implements DownloadEngine {
       // without the event below the store said cancelled while the UI
       // kept showing Paused.
       final hadLiveRun = _ytDlpSubs.containsKey(downloadId);
+      if (!hadLiveRun) {
+        // With no live run there is no progress or terminal event to
+        // wait for and no run whose completion must win, so the status
+        // can be written now, before the first await. That is what makes
+        // the cancel stick: a resume or retry suspended while it
+        // resolves the tools re-reads the store when it continues and
+        // must not start a run for a row the user already stopped.
+        // Writing it after the await let that start slip through and
+        // spawn a transfer for a cancelled row.
+        _updateStatus(downloadId, DownloadStatus.cancelled);
+        _events.add(
+          DownloadEvent.stateChanged(
+            downloadId: downloadId,
+            status: DownloadStatus.cancelled,
+          ),
+        );
+      }
       await _ytDlp?.cancel(downloadId);
       // The cancel waits for the run to be torn down, and the run can
       // reach a terminal state in that window (the process exits with
@@ -785,14 +819,6 @@ class PdmEngine implements DownloadEngine {
         return;
       }
       _updateStatus(downloadId, DownloadStatus.cancelled);
-      if (!hadLiveRun) {
-        _events.add(
-          DownloadEvent.stateChanged(
-            downloadId: downloadId,
-            status: DownloadStatus.cancelled,
-          ),
-        );
-      }
       return;
     }
     // The scheduler emits cancelled for every job it still holds
@@ -814,45 +840,62 @@ class PdmEngine implements DownloadEngine {
       // row and hand yt-dlp the same output again: the transfer
       // restarts mid-flight (the "100% then download again" report)
       // and the running process would race the new one for the file.
-      if (_ytDlpSubs.containsKey(record.id)) {
+      if (_ytDlpSubs.containsKey(record.id) ||
+          !_ytDlpStarting.add(record.id)) {
+        // Running already, or another retry is between its check and
+        // its start: a second run would share the output.
         return;
       }
-      final downloader = await _ytDlpDownloader();
-      if (downloader == null) {
-        throw const DownloadError(
-          'external-tools-missing',
-          'ffmpeg and yt-dlp are required to retry this download.',
+      try {
+        final downloader = await _ytDlpDownloader();
+        // A cancel or delete that landed while the tools resolved wins:
+        // its output is already gone and its status is the one to keep.
+        // A completed record is a legitimate retry target (it replaces
+        // the finished file), so only a cancelled or missing one stops
+        // the retry.
+        final current = _store.getDownload(record.id);
+        if (current == null ||
+            current.status == DownloadStatus.cancelled) {
+          return;
+        }
+        if (downloader == null) {
+          throw const DownloadError(
+            'external-tools-missing',
+            'ffmpeg and yt-dlp are required to retry this download.',
+          );
+        }
+        downloader.deleteOutput(_ytDlpTemplate(record));
+        final ytPartial = File(record.partialPath);
+        if (ytPartial.existsSync()) {
+          ytPartial.deleteSync();
+        }
+        _store.upsertDownload(
+          DownloadRecord(
+            id: record.id,
+            url: record.url,
+            fileName: record.fileName,
+            directory: record.directory,
+            status: DownloadStatus.queued,
+            priority: record.priority,
+            maxConnections: record.maxConnections,
+            mirrors: record.mirrors,
+            tags: record.tags,
+            createdAt: record.createdAt,
+          ),
         );
+        // Announce the restart before the first progress line, for the
+        // same reason as resume: the UI keeps a failed row at Failed
+        // when progress arrives.
+        _events.add(
+          DownloadEvent.stateChanged(
+            downloadId: record.id,
+            status: DownloadStatus.queued,
+          ),
+        );
+        _startYtDlp(record, downloader);
+      } finally {
+        _ytDlpStarting.remove(record.id);
       }
-      downloader.deleteOutput(_ytDlpTemplate(record));
-      final ytPartial = File(record.partialPath);
-      if (ytPartial.existsSync()) {
-        ytPartial.deleteSync();
-      }
-      _store.upsertDownload(
-        DownloadRecord(
-          id: record.id,
-          url: record.url,
-          fileName: record.fileName,
-          directory: record.directory,
-          status: DownloadStatus.queued,
-          priority: record.priority,
-          maxConnections: record.maxConnections,
-          mirrors: record.mirrors,
-          tags: record.tags,
-          createdAt: record.createdAt,
-        ),
-      );
-      // Announce the restart before the first progress line, for the
-      // same reason as resume: the UI keeps a failed row at Failed
-      // when progress arrives.
-      _events.add(
-        DownloadEvent.stateChanged(
-          downloadId: record.id,
-          status: DownloadStatus.queued,
-        ),
-      );
-      _startYtDlp(record, downloader);
       return;
     }
     final partial = File(record.partialPath);
@@ -1337,9 +1380,23 @@ class PdmEngine implements DownloadEngine {
 
   /// Resumes a yt-dlp record after a restart. If the tools are
   /// missing the record is marked failed with a clear error instead
-  /// of staying queued forever.
+  /// of staying queued forever. A pause, cancel or delete that landed
+  /// while the tools were resolving wins: recovery started on its own,
+  /// before the user could act, so their later action is the intent
+  /// that must stick.
   Future<void> _resumeYtDlp(DownloadRecord record) async {
     final downloader = await _ytDlpDownloader();
+    final current = _store.getDownload(record.id);
+    if (current == null) {
+      // Deleted while the tools were resolving.
+      return;
+    }
+    if (current.status == DownloadStatus.paused ||
+        _isTerminalStatus(current.status)) {
+      // Paused, cancelled or finished in the meantime: leave it alone
+      // rather than start a transfer the user already stopped.
+      return;
+    }
     if (downloader == null) {
       _store.upsertDownload(
         record.copyWith(
@@ -1347,6 +1404,15 @@ class PdmEngine implements DownloadEngine {
           errorCode: 'external-tools-missing',
           errorMessage:
               'ffmpeg and yt-dlp are required to download streams.',
+        ),
+      );
+      // The UI learns state only from events, and the initial snapshot
+      // showed this row queued: without this event it would sit there
+      // as a download that never starts.
+      _events.add(
+        DownloadEvent.stateChanged(
+          downloadId: record.id,
+          status: DownloadStatus.failed,
         ),
       );
       return;
