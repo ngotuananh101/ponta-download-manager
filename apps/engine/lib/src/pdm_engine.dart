@@ -752,12 +752,15 @@ class PdmEngine implements DownloadEngine {
   @override
   Future<void> cancelDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
-    // A finished download is not cancelled: cancelling it would rewrite
-    // a completed/failed record to cancelled (and lose the error) for a
-    // transfer that is already over. It is a no-op, including the
-    // in-memory headers and format: those are the only record of what
-    // the user picked, and retry reuses them.
-    if (record != null && _isTerminalStatus(record.status)) {
+    // A completed or cancelled download is not cancelled again: there is
+    // nothing to stop and the status is already what cancel means. A
+    // failed one is different — the row menu offers Cancel there to
+    // dismiss the error — so it is allowed through. No-op means no-op,
+    // including the in-memory headers and format: those are the only
+    // record of what the user picked, and retry reuses them.
+    if (record != null &&
+        (record.status == DownloadStatus.completed ||
+            record.status == DownloadStatus.cancelled)) {
       return;
     }
     _requestHeaders.remove(downloadId);
@@ -776,7 +779,9 @@ class PdmEngine implements DownloadEngine {
       // already told the UI the download finished; rewriting the store
       // to cancelled would leave the two disagreeing.
       final current = _store.getDownload(downloadId);
-      if (current != null && _isTerminalStatus(current.status)) {
+      if (current != null &&
+          (current.status == DownloadStatus.completed ||
+              current.status == DownloadStatus.cancelled)) {
         return;
       }
       _updateStatus(downloadId, DownloadStatus.cancelled);

@@ -2255,6 +2255,36 @@ exit 1
       expect(engine.ytDlpSubscriptionCount, 0);
     });
 
+    test('cancelling a failed yt-dlp download marks it cancelled', () async {
+      // The row menu offers Cancel for a failed download, so it has to
+      // work there: the user is dismissing the error and dropping the
+      // row's claim on a file. Treating every terminal status as
+      // untouchable made the menu item silently do nothing.
+      final fake = await makeFakeYtDlp(failingScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      await engine.cancelDownload(info.id);
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+    });
+
     test('cancelling a paused yt-dlp download announces cancelled',
         () async {
       // A paused yt-dlp download has no live run, so the downloader's
