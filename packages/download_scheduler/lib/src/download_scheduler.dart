@@ -103,6 +103,12 @@ class DownloadScheduler {
   final _starting = <int>{};
   final _cancelledWhileStarting = <int>{};
   final _pausedWhileStarting = <int>{};
+  // Ids whose attempt is inside its task factory right now. A retry
+  // enqueued in that window must not start: the factory opens the
+  // destination's .partial exclusively, and the replaced attempt has
+  // not released it yet — the retry would fail `file-exists` before
+  // its first request, and it is the retry that owns the row.
+  final _building = <String>{};
   final _jobs = <String, DownloadJob>{};
   final _infos = <String, DownloadInfo>{};
   final _events = StreamController<DownloadEvent>.broadcast();
@@ -192,14 +198,16 @@ class DownloadScheduler {
       referrer: referrer,
     );
     // A new attempt for an id means the user (or a failover) replaced
-    // whatever that id was doing. A paused attempt is not discarded by
-    // anything else: it waits for a resume, either parked in
-    // _pausedRunning with its task and sink alive, or still in _pending
-    // with its paused flag — a download created paused never leaves the
-    // queue, and neither does one paused while it waited for a slot.
-    // Leaving it there keeps two attempts for one id: the retried one
-    // starts, and a later resume() finds the stale one first and runs
-    // it as well, downloading the same file over the retry.
+    // whatever that id was doing. Two shapes survive that replacement
+    // otherwise. A paused attempt waits for a resume: parked in
+    // _pausedRunning with its task and sink alive, or in _pending with
+    // its paused flag — a download created paused never leaves the
+    // queue, and neither does one paused while it waited for a slot —
+    // and a later resume() runs it over the file the retry owns. An
+    // unpaused one can still be in _pending instead: its slot is taken
+    // (or its id is being built), so it waits behind the retry, and
+    // when the slot frees it starts a second transfer of the same
+    // file.
     final replaced = _pausedRunning.remove(jobId);
     if (replaced != null) {
       // Stop listening before cancelling the task. task.cancel() only
@@ -223,9 +231,7 @@ class DownloadScheduler {
         unawaited(replaced.started.sink.close());
       }
     }
-    for (final queued in _pending.where(
-      (q) => q.job.id == jobId && q.paused,
-    ).toList()) {
+    for (final queued in _pending.where((q) => q.job.id == jobId).toList()) {
       _pending.remove(queued);
       _discardQueued(queued);
     }
@@ -558,6 +564,7 @@ class DownloadScheduler {
     _pausedRunning.clear();
     _pending.clear();
     _starting.clear();
+    _building.clear();
     for (final running in jobs) {
       unawaited(running.subscription.cancel());
       if (running.runStarted) {
@@ -626,12 +633,18 @@ class DownloadScheduler {
     }
   }
 
-  /// Index of the first non-paused pending job, or -1. The only
-  /// limit on starting jobs is maxConcurrent (see _pump): there is
-  /// no total connection cap.
+  /// Index of the first pending job that may start, or -1. A paused
+  /// job waits for a resume, and one whose id has an attempt inside its
+  /// factory waits for that attempt to leave it: starting both at once
+  /// races them for the same partial file. That waiting job is always
+  /// the newer attempt — enqueue() drops every older one — so the
+  /// attempt it waits on is superseded, and _start's superseded branch
+  /// pumps once the gate clears. The only limit on starting jobs is
+  /// maxConcurrent (see _pump): there is no total connection cap.
   int _nextStartableIndex() {
     for (var i = 0; i < _pending.length; i++) {
-      if (!_pending[i].paused) {
+      final job = _pending[i].job;
+      if (!_pending[i].paused && !_building.contains(job.id)) {
         return i;
       }
     }
@@ -644,7 +657,13 @@ class DownloadScheduler {
     try {
       final started = queued.started;
       if (started == null) {
-        final built = await _taskFactory(job);
+        final ScheduledTask built;
+        _building.add(job.id);
+        try {
+          built = await _taskFactory(job);
+        } finally {
+          _building.remove(job.id);
+        }
         if (_disposed) {
           _starting.remove(job.sequence);
           built.onAbandoned?.call();

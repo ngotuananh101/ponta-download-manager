@@ -861,6 +861,144 @@ void main() {
       expect(infoOf(scheduler, a).status, DownloadStatus.completed);
     });
 
+    test('a retry discards an unpaused attempt still waiting in the queue',
+        () async {
+      // The third parked shape: an attempt with no slot free, so it sits
+      // in _pending with no task at all. Nothing else ever removes it,
+      // and when a slot frees the pump picks it first — it has the lower
+      // sequence — so its factory opens the destination's partial for a
+      // download the retry owns, and the retry waits behind a build that
+      // is thrown away.
+      final transport = _FakeTransport(data: bytesOf(256));
+      final builtUrls = <String>[];
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          builtUrls.add(job.url);
+          final sink = _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+          );
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      // c takes the only slot, so a waits behind it.
+      final c = scheduler.enqueue(
+        url: 'http://example.test/c',
+        fileName: 'c.bin',
+        maxConnections: 1,
+      );
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      scheduler.enqueue(
+        id: a,
+        url: 'http://example.test/b',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      await waitForStatus(scheduler, c, DownloadStatus.completed);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      expect(
+        builtUrls.where((u) => u.endsWith('/a')),
+        isEmpty,
+        reason: 'the replaced attempt was built, then thrown away',
+      );
+      expect(
+        transport.startedUrls.where((u) => u.endsWith('/a')),
+        isEmpty,
+        reason: 'the replaced attempt ran a second download',
+      );
+      expect(infoOf(scheduler, a).status, DownloadStatus.completed);
+    });
+
+    test('a retry waits for the attempt it replaced to leave its factory',
+        () async {
+      // The engine's task factory opens the destination's .partial
+      // exclusively and discards it when the start was replaced. With
+      // slots to spare, _pump starts the retry while the replaced
+      // attempt is still inside its factory: the retry's exclusive
+      // create runs against a file the old attempt has not released
+      // yet, so it fails `file-exists` before its first request and
+      // the retry — the attempt that owns the row — is the one marked
+      // failed.
+      final transport = _FakeTransport(data: bytesOf(256));
+      final factoryEntered = Completer<void>();
+      final releaseFactory = Completer<void>();
+      var partialTaken = false;
+      late DownloadScheduler scheduler;
+      scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          if (job.url.endsWith('/a')) {
+            // The attempt the retry replaces: it takes the partial and
+            // holds the factory open while the retry is enqueued.
+            if (partialTaken) {
+              throw const DownloadError(
+                'file-exists',
+                'Partial file already exists',
+              );
+            }
+            partialTaken = true;
+            factoryEntered.complete();
+            await releaseFactory.future;
+            if (!scheduler.isCurrentAttempt(job)) {
+              // What the engine does with a start it no longer owns.
+              partialTaken = false;
+            }
+          } else if (partialTaken) {
+            throw const DownloadError(
+              'file-exists',
+              'Partial file already exists',
+            );
+          }
+          final sink = _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryEntered.future.timeout(const Duration(seconds: 5));
+      scheduler.enqueue(
+        id: id,
+        url: 'http://example.test/b',
+        fileName: 'f.bin',
+        maxConnections: 1,
+      );
+      // The retry must be waiting, not racing the replaced attempt for
+      // the partial.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        infoOf(scheduler, id).status,
+        isNot(DownloadStatus.failed),
+        reason: 'the retry started inside the replaced attempt\'s factory',
+      );
+      releaseFactory.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(transport.startedUrls, ['http://example.test/b']);
+    });
+
     test('a pause does not leave a failed task holding its slot', () async {
       // Pausing moves the attempt from _running to _pausedRunning. The
       // task can still fail afterwards — a paused transfer is only
@@ -1484,17 +1622,11 @@ void main() {
       // ran to completion after the user paused it.
       final transport = _FakeTransport(data: bytesOf(4096));
       final factories = <Completer<void>>[];
-      final starts = <Completer<void>>[];
       final scheduler = DownloadScheduler(
         maxConcurrent: 3,
         taskFactory: (job) async {
           final release = Completer<void>();
           factories.add(release);
-          if (starts.isEmpty || factories.length > starts.length) {
-            final started = Completer<void>();
-            starts.add(started);
-            started.complete();
-          }
           await release.future;
           final sink = _NullSink();
           return ScheduledTask(
@@ -1519,19 +1651,17 @@ void main() {
       await waitFor(() => factories.isNotEmpty);
       scheduler.pause(id);
       scheduler.cancel(id);
-      // The retry starts and blocks in its own factory.
+      // The retry waits for the cancelled attempt to leave its factory.
       scheduler.enqueue(
         url: 'http://example.test/a',
         fileName: 'a.bin',
         maxConnections: 1,
         id: 'dl-1',
       );
+      factories.first.complete();
       await waitFor(() => factories.length == 2);
       // The pause lands on the retry, which is still building.
       scheduler.pause(id);
-      // Only now does the aborted attempt's factory resolve.
-      factories.first.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       factories.last.complete();
       await waitForStatus(scheduler, id, DownloadStatus.paused);
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -1658,16 +1788,15 @@ void main() {
       // the retry that already owns and runs it. The factory asks
       // isCurrentAttempt() before it touches shared state.
       final transport = _FakeTransport(data: bytesOf(64));
-      final releases = <Completer<void>>[];
+      final releaseFirst = Completer<void>();
       final seen = <bool>[];
       late DownloadScheduler scheduler;
       scheduler = DownloadScheduler(
         maxConcurrent: 2,
         taskFactory: (job) async {
-          final release = Completer<void>();
-          releases.add(release);
-          if (releases.length == 1) {
-            await release.future;
+          final first = seen.isEmpty;
+          if (first) {
+            await releaseFirst.future;
           }
           seen.add(scheduler.isCurrentAttempt(job));
           final sink = _NullSink();
@@ -1690,21 +1819,27 @@ void main() {
         maxConnections: 1,
         id: 'dl-1',
       );
-      await waitFor(() => releases.length == 1);
+      await waitFor(() => seen.isEmpty && scheduler.downloads.isNotEmpty);
       scheduler.enqueue(
         url: 'http://example.test/a',
         fileName: 'a.bin',
         maxConnections: 1,
         id: 'dl-1',
       );
-      await waitFor(() => releases.length == 2);
-      await waitForStatus(scheduler, id, DownloadStatus.completed);
-      releases.first.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // The retry waits for the replaced attempt to leave its factory:
+      // both would open the same partial.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(
         seen,
-        [true, false],
-        reason: 'the abandoned attempt still reported itself as current',
+        isEmpty,
+        reason: 'the retry entered the replaced attempt\'s factory too',
+      );
+      releaseFirst.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(
+        seen,
+        [false, true],
+        reason: 'the abandoned attempt reported itself as current',
       );
     });
 
@@ -1754,14 +1889,15 @@ void main() {
         maxConnections: 1,
         id: 'dl-1',
       );
-      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      // The retry waits for the replaced attempt to leave its factory.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(
         abandoned,
         isEmpty,
         reason: 'the running retry was reported as abandoned',
       );
       releases.first.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
       expect(
         abandoned,
         [id],
@@ -1806,17 +1942,19 @@ void main() {
         id: 'dl-1',
       );
       await waitFor(() => releases.length == 1);
-      // Retry: a second attempt starts right away, with the first
-      // still inside its factory.
+      // Retry: a second attempt for the id the first is still building.
       scheduler.enqueue(
         url: 'http://example.test/a',
         fileName: 'a.bin',
         maxConnections: 1,
         id: 'dl-1',
       );
-      await waitForStatus(scheduler, id, DownloadStatus.completed);
-      // The retry is done; only now does the aborted factory resolve.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      // The replaced factory resolves only after the retry was
+      // enqueued, and the retry has waited for it: its task is thrown
+      // away, not run.
       releases.first.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(
         transport.startedUrls,
