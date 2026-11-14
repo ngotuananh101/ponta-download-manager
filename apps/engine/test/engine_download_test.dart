@@ -824,6 +824,12 @@ void main() {
       // snapshot, writing `queued` over the cancelled row every second.
       // The row came back as a download waiting to start, and the next
       // startup's recovery downloaded it again.
+      //
+      // The cancel must land while the factory is genuinely inside its
+      // await, or the task is never tracked and the test proves
+      // nothing. Cancel synchronously after createDownload: the engine's
+      // id space is deterministic ('dl-1'), and the cancel runs while
+      // _taskFactory is still in its first await, before _writer.track.
       final data = bytesOf(1024);
       await startServer(data: data);
       final engine = openEngine();
@@ -834,11 +840,11 @@ void main() {
           destination: p.join(tempDir.path, 'f.bin'),
         ),
       );
-      // Cancel while the factory is still building (the engine's id
-      // space is deterministic, and the factory awaits real file IO).
       await engine.cancelDownload('dl-1');
       await created;
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      // One checkpoint tick is 1s: wait past two so a revived row would
+      // have been written.
+      await Future<void>.delayed(const Duration(milliseconds: 2500));
       final after = (await engine.listDownloads())
           .firstWhere((d) => d.id == 'dl-1');
       expect(

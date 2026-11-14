@@ -1574,6 +1574,16 @@ class PdmEngine implements DownloadEngine {
         cookie: job.cookie,
         referrer: job.referrer,
       );
+      if (!_scheduler.isCurrentAttempt(job)) {
+        // The sink creation awaited real IO, and the scheduler moved on
+        // while it did: a retry replaced this attempt, or the engine is
+        // shutting down. Registering the task now would take the row's
+        // checkpoints away from the attempt that actually owns it (the
+        // retry is already running and tracked), and _start is about to
+        // throw this one away. Return it unregistered; that is also the
+        // only branch where nothing has to be undone on the way out.
+        return ScheduledTask(task, sink);
+      }
       _writer.track(
         task,
         directory: job.directory,
@@ -1594,10 +1604,16 @@ class PdmEngine implements DownloadEngine {
     } catch (e) {
       // The task never started, so no events will update the store.
       // Mark the record failed here so it does not stay queued forever
-      // — unless the user cancelled the row while the factory was
-      // running: the scheduler already announced cancelled for it, and
-      // the failure of a start nobody waits for any more must not put
-      // Failed on a row the user dismissed.
+      // — unless the row is no longer ours to settle. The sink
+      // creation awaited real IO, so in that window the user may have
+      // cancelled the row (the scheduler announced cancelled for it, and
+      // the failure of a start nobody waits for must not put Failed on
+      // a row the user dismissed) or retried it (the retry owns the row
+      // now and is running: writing failed here would settle it under
+      // the retry).
+      if (!_scheduler.isCurrentAttempt(job)) {
+        rethrow;
+      }
       final record = _store.getDownload(job.id);
       if (record != null && record.status != DownloadStatus.cancelled) {
         _store.upsertDownload(

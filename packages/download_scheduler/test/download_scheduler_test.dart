@@ -784,6 +784,172 @@ void main() {
       );
     });
 
+    test('a cancel of a job parked before its run tells the owner', () async {
+      // Pausing during the start window parks the built task in
+      // _pausedRunning with runStarted: false: the task exists and was
+      // registered with its owner, but run() was never called. The
+      // cancel path for that state drops the task silently — no
+      // task.cancel() (it emits nothing before run()) and no
+      // onAbandoned — so the owner kept writing the queued/0-byte
+      // snapshot over the row the cancel had just settled.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final abandoned = <String>[];
+      final factoryEntered = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          if (!factoryEntered.isCompleted) {
+            factoryEntered.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+            onAbandoned: () => abandoned.add(job.id),
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryEntered.future.timeout(const Duration(seconds: 5));
+      // Pause while the factory is still building: the intent is
+      // recorded, and _start parks the task in _pausedRunning when the
+      // factory resolves. run() is then never called.
+      scheduler.pause(id);
+      releaseFactory.complete();
+      await waitFor(
+        () => infoOf(scheduler, id).status == DownloadStatus.paused,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      scheduler.cancel(id);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        abandoned,
+        [id],
+        reason: 'the parked task stayed tracked after its cancel',
+      );
+    });
+
+    test('dispose tells the owner about a task that never ran', () async {
+      // Same state, on the way out: dispose() drops a parked task
+      // without running it. Its owner (the checkpoint writer) must
+      // stop ticking it, exactly like _start's own _disposed branch.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final abandoned = <String>[];
+      final factoryEntered = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          if (!factoryEntered.isCompleted) {
+            factoryEntered.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+            onAbandoned: () => abandoned.add(job.id),
+          );
+        },
+      );
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryEntered.future.timeout(const Duration(seconds: 5));
+      scheduler.pause(id);
+      releaseFactory.complete();
+      await waitFor(
+        () => infoOf(scheduler, id).status == DownloadStatus.paused,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await scheduler.dispose();
+      expect(
+        abandoned,
+        [id],
+        reason: 'dispose left a never-run task tracked in its owner',
+      );
+    });
+
+    test('isCurrentAttempt is false once a retry replaced the job', () async {
+      // The engine registers a task with its checkpoint writer after
+      // the factory's await. By then a retry may have replaced the
+      // attempt: registering it would take the row's checkpoints from
+      // the retry that already owns and runs it. The factory asks
+      // isCurrentAttempt() before it touches shared state.
+      final transport = _FakeTransport(data: bytesOf(64));
+      final releases = <Completer<void>>[];
+      final seen = <bool>[];
+      late DownloadScheduler scheduler;
+      scheduler = DownloadScheduler(
+        maxConcurrent: 2,
+        taskFactory: (job) async {
+          final release = Completer<void>();
+          releases.add(release);
+          if (releases.length == 1) {
+            await release.future;
+          }
+          seen.add(scheduler.isCurrentAttempt(job));
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 1);
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 2);
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      releases.first.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        seen,
+        [true, false],
+        reason: 'the abandoned attempt still reported itself as current',
+      );
+    });
+
     test('an abandoned start tells its owner to stop tracking it', () async {
       // The factory registers the task with whoever persists its
       // state (the engine's checkpoint writer). A retry replaces the

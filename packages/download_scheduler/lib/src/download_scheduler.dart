@@ -230,6 +230,17 @@ class DownloadScheduler {
   /// attempt must then touch nothing the retry owns.
   bool _superseded(DownloadJob job) => _jobs[job.id]?.sequence != job.sequence;
 
+  /// True while [job] is still the attempt the scheduler will act on.
+  ///
+  /// A task factory awaits real work (the engine opens a file), so the
+  /// job it was handed can be replaced by a retry before the factory
+  /// returns. The engine registers the task with its checkpoint writer
+  /// inside that window; registering an already-superseded attempt
+  /// would take the row over from the retry that owns it. The factory
+  /// asks this after its await, before it touches any shared state.
+  bool isCurrentAttempt(DownloadJob job) =>
+      !_disposed && !_superseded(job);
+
   /// Pauses a running download (freeing its slot) or a queued one.
   void pause(String id) {
     _throwIfDisposed();
@@ -406,6 +417,10 @@ class DownloadScheduler {
         _pausedRunning.remove(id);
         unawaited(running.subscription.cancel());
         unawaited(running.started.sink.close());
+        // The task was built but run() was never called: it is
+        // discarded exactly like an abandoned start, so its owner has
+        // to stop tracking it.
+        running.started.onAbandoned?.call();
         _markCancelled(running.job);
         _pump();
       }
@@ -423,6 +438,14 @@ class DownloadScheduler {
       if (queued.started != null) {
         unawaited(queued.subscription!.cancel());
         queued.started!.task.cancel();
+        if (!queued.runStarted) {
+          // task.cancel() emits nothing before run(), and this task
+          // will never run: it is discarded, so its owner must stop
+          // tracking it. runStarted means the task owns its own
+          // terminal event instead.
+          unawaited(queued.started!.sink.close());
+          queued.started!.onAbandoned?.call();
+        }
       }
       _markCancelled(queued.job);
     }
@@ -508,6 +531,9 @@ class DownloadScheduler {
         running.started.task.cancel();
       } else {
         unawaited(running.started.sink.close());
+        // Never ran: discarding it is the same as an abandoned start,
+        // so its owner must stop tracking it.
+        running.started.onAbandoned?.call();
       }
     }
     for (final queued in pendingStarted) {
@@ -516,6 +542,7 @@ class DownloadScheduler {
         queued.started!.task.cancel();
       } else {
         unawaited(queued.started!.sink.close());
+        queued.started!.onAbandoned?.call();
       }
     }
     if (_ownsTransport) {
