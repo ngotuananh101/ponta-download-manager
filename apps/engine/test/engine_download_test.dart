@@ -645,6 +645,42 @@ void main() {
       expect(downloads.first.id, info.id);
     });
 
+    test('cancelling a failed native download announces cancelled',
+        () async {
+      // The row menu offers Cancel on a failed download to dismiss the
+      // error. The scheduler already dropped that job, so its cancel()
+      // is a silent no-op: without an engine event the store says
+      // cancelled while the UI stays on Failed.
+      final data = bytesOf(2048);
+      await startServer(data: data, failFirst: 1);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      await engine.cancelDownload(info.id);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.cancelled),
+        reason: 'the store says cancelled but the UI was never told',
+      );
+    });
+
     test('retries a download after a failure', () async {
       final data = bytesOf(2048);
       await startServer(data: data, failFirst: 1);

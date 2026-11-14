@@ -875,9 +875,22 @@ class PdmEngine implements DownloadEngine {
     }
     // The scheduler emits cancelled for every job it still holds
     // (running, paused, starting or pending), so no event is added
-    // here.
+    // here for those. A failed job is the exception: the scheduler
+    // already dropped it, so its cancel() is a silent no-op. Cancel on
+    // a failed row is how the user dismisses the error, and the UI
+    // learns state only from events, so without one the store says
+    // cancelled while the row stays Failed.
+    final wasFailed = record?.status == DownloadStatus.failed;
     _scheduler.cancel(downloadId);
     _updateStatus(downloadId, DownloadStatus.cancelled);
+    if (wasFailed) {
+      _events.add(
+        DownloadEvent.stateChanged(
+          downloadId: downloadId,
+          status: DownloadStatus.cancelled,
+        ),
+      );
+    }
   }
 
   @override
