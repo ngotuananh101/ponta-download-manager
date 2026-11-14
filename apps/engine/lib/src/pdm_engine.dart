@@ -695,6 +695,16 @@ class PdmEngine implements DownloadEngine {
     }
     if (_isYtDlpDownload(record)) {
       await _ytDlp?.pause(downloadId);
+      // The pause waits for the downloader to tear the run down, and
+      // the run can reach a terminal state in that window: a short
+      // stream finishes between the status check above and the kill,
+      // and its completed event lands in the store. Writing paused
+      // here would overwrite a finished download (and deny the user
+      // the file it just produced).
+      final current = _store.getDownload(downloadId);
+      if (current != null && _isTerminalStatus(current.status)) {
+        return;
+      }
       _updateStatus(downloadId, DownloadStatus.paused);
       return;
     }

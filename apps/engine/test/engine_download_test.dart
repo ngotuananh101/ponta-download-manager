@@ -137,6 +137,25 @@ Future<DownloadInfo> waitForInfo(
   }
 }
 
+/// A yt-dlp downloader whose pause waits for the test before it
+/// reaches the real implementation, so the run can finish while the
+/// engine is still awaiting the pause.
+class _StallingPauseDownloader extends YtDlpDownloader {
+  _StallingPauseDownloader({
+    required super.ytDlpPath,
+    required super.ffmpegDir,
+    required this.onPause,
+  });
+
+  final Future<void> Function(String downloadId) onPause;
+
+  @override
+  Future<void> pause(String downloadId) async {
+    await onPause(downloadId);
+    return super.pause(downloadId);
+  }
+}
+
 void main() {
   group('parseCliArgs flags', () {
     const url = 'http://example.test/f.bin';
@@ -2033,6 +2052,25 @@ echo "$final"
 exit 0
 ''';
 
+      // Finishes quickly but not instantly: the first progress line
+      // moves the row to downloading, then the run exits 0 with the
+      // final file while the test holds pauseDownload in the engine.
+      const finishDuringPauseScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo "[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30"
+sleep 0.3
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
       const failingScript = r'''#!/bin/sh
 echo "ERROR: unable to download video data" >&2
 exit 1
@@ -2065,7 +2103,56 @@ exit 1
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
 
-    test('resumeDownload on a completed playlist download does not restart it',
+      test('a download that completes during pauseDownload stays completed',
+          () async {
+        // The pause waits for the downloader to kill the process. In
+        // that window the process can still exit on its own with the
+        // final file (a short stream finishing between the status
+        // check and the kill). The completed record must not be
+        // rewritten to paused afterwards.
+        final fake = await makeFakeYtDlp(finishDuringPauseScript);
+        final pauseEntered = Completer<void>();
+        final releasePause = Completer<void>();
+        final downloader = _StallingPauseDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+          onPause: (_) async {
+            if (!pauseEntered.isCompleted) {
+              pauseEntered.complete();
+            }
+            await releasePause.future;
+          },
+        );
+        final engine = openEngine(ytDlpDownloader: downloader);
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.downloading,
+        );
+        final pause = engine.pauseDownload(info.id);
+        await pauseEntered.future;
+        // The run finishes while pauseDownload is still awaiting the
+        // downloader.
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        releasePause.complete();
+        await pause;
+        final after = (await engine.listDownloads())
+            .firstWhere((d) => d.id == info.id);
+        expect(after.status, DownloadStatus.completed);
+      });
+
+      test('resumeDownload on a completed playlist download does not restart it',
         () async {
       final fake = await makeFakeYtDlp(successScript);
       final engine = openEngine(
