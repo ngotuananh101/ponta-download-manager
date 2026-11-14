@@ -1615,10 +1615,10 @@ void main() {
     test('a pause on the retry survives the aborted start finishing',
         () async {
       // Same window, the other half: the retry is building its task
-      // when the aborted attempt's factory resolves. That attempt used
-      // to clear the id's _starting membership, so the pause issued on
-      // the retry fell through to the queued branch — which cannot see
-      // the retry, now in _starting — and was dropped: the download
+      // when the pause lands, and the aborted attempt finishes around
+      // it. That attempt used to clear the id's _starting membership,
+      // so the pause fell through to the queued branch — which cannot
+      // see the retry, now in _starting — and was dropped: the download
       // ran to completion after the user paused it.
       final transport = _FakeTransport(data: bytesOf(4096));
       final factories = <Completer<void>>[];
