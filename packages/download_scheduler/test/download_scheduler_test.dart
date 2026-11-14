@@ -749,10 +749,10 @@ void main() {
       // A download created paused never reaches _pausedRunning: it sits
       // in _pending, flagged paused, until resume() un-pauses it. A
       // retry for the same id enqueues a second attempt, and both are
-      // now queued under one id — the retried one starts, the paused one
-      // stays behind it. Any later resume() finds the old attempt first
-      // (it is earlier in the queue) and starts it, so the same file is
-      // downloaded a second time over the retry that already owns it.
+      // then queued under one id — the retried one runs, the paused one
+      // keeps its place. The row is settled by the retry, and the next
+      // resume() finds the stale attempt first: it announces queued for
+      // a finished download and starts it over the file the retry owns.
       final transport = _FakeTransport(data: bytesOf(256));
       final scheduler = _makeScheduler(transport);
       addTearDown(scheduler.dispose);
@@ -769,12 +769,32 @@ void main() {
         maxConnections: 1,
       );
       await waitForStatus(scheduler, id, DownloadStatus.completed);
+      // A settled row: resuming it must be a no-op, and the datasource
+      // learns state only from events, so an event here would put the
+      // finished row back on Queued.
+      final seen = <DownloadStatus>[];
+      final subscription = scheduler.events.listen((event) {
+        event.maybeWhen(
+          stateChanged: (downloadId, status) {
+            if (downloadId == id) {
+              seen.add(status);
+            }
+          },
+          orElse: () {},
+        );
+      });
+      addTearDown(subscription.cancel);
       scheduler.resume(id);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        seen,
+        isEmpty,
+        reason: 'the paused attempt the retry replaced was resumed',
+      );
       expect(
         transport.startedUrls,
         ['http://example.test/b'],
-        reason: 'the paused attempt the retry replaced ran as well',
+        reason: 'the replaced attempt ran a second download',
       );
       expect(infoOf(scheduler, id).status, DownloadStatus.completed);
     });
@@ -784,9 +804,8 @@ void main() {
       // The other parked shape: an attempt that was paused while it ran
       // and then resumed still has its task, sink and subscription, and
       // waits in _pending until a slot frees. A retry that replaces it
-      // must drop all three: a stale entry with a live task behind the
-      // retry's own download in the queue is run again by the next
-      // resume(), over the file the retry owns.
+      // must drop all three — a stale entry with a live task in the
+      // queue is run by the next resume(), over the file the retry owns.
       final transport = _FakeTransport(data: bytesOf(256));
       final scheduler = _makeScheduler(transport, maxConcurrent: 1);
       addTearDown(scheduler.dispose);
@@ -803,7 +822,7 @@ void main() {
       );
       scheduler.pause(a);
       await waitForStatus(scheduler, a, DownloadStatus.paused);
-      // No slot free now that c starts, so this attempt waits in the
+      // No slot free until c finishes, so this attempt waits in the
       // queue with its task still attached.
       scheduler.resume(a);
       scheduler.pause(a);
@@ -815,8 +834,25 @@ void main() {
       );
       await waitForStatus(scheduler, c, DownloadStatus.completed);
       await waitForStatus(scheduler, a, DownloadStatus.completed);
+      final seen = <DownloadStatus>[];
+      final subscription = scheduler.events.listen((event) {
+        event.maybeWhen(
+          stateChanged: (downloadId, status) {
+            if (downloadId == a) {
+              seen.add(status);
+            }
+          },
+          orElse: () {},
+        );
+      });
+      addTearDown(subscription.cancel);
       scheduler.resume(a);
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        seen,
+        isEmpty,
+        reason: 'the replaced attempt was resumed after the retry finished',
+      );
       expect(
         transport.startedUrls.where((u) => u.endsWith('/a')),
         isEmpty,
