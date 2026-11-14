@@ -26,6 +26,7 @@ def write_executable(path, content):
 
 def run_script(script, *, cwd, args=(), env_extra=None):
     env = dict(os.environ)
+    env.pop("XDG_CONFIG_HOME", None)
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
