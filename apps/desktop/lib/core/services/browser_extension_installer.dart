@@ -493,11 +493,29 @@ class BrowserExtensionInstaller {
     if (settings is Map) requireMap(settings, chromeExtensionId);
   }
 
+  /// Whether the user enabled Developer mode, wherever this Chrome version
+  /// keeps the checkbox.
+  ///
+  /// Older versions store it in the unsigned `extensions.ui` block. Chrome
+  /// 157 moved it to the signed-in account copy,
+  /// `account_values.extensions.ui`, and leaves `extensions.ui` absent (a
+  /// real profile written by 157 has no `extensions.ui` at all). Reading only
+  /// the old location made every profile look like Developer mode was off, so
+  /// the unattended install never ran. Either location being true is enough:
+  /// a browser that still writes the old key keeps working.
   static bool _hasDeveloperMode(Map<String, dynamic> prefs) {
-    final extensions = prefs['extensions'];
-    if (extensions is! Map) return false;
-    final ui = extensions['ui'];
-    return ui is Map && ui['developer_mode'] == true;
+    bool enabledIn(Object? container) {
+      if (container is! Map) return false;
+      final ui = container['ui'];
+      return ui is Map && ui['developer_mode'] == true;
+    }
+
+    return enabledIn(prefs['extensions']) ||
+        enabledIn(
+          prefs['account_values'] is Map
+              ? (prefs['account_values'] as Map)['extensions']
+              : null,
+        );
   }
 
   static bool _isDisabled(Map<String, dynamic> entry) {

@@ -238,6 +238,59 @@ void main() {
       },
     );
 
+    test(
+      'honours developer mode where Chrome 157 stores it (account_values)',
+      () async {
+        // Chrome 157 moved the developer-mode checkbox into the signed-in
+        // account prefs: a real profile has account_values.extensions.ui
+        // .developer_mode == true and no extensions.ui at all. Reading only
+        // extensions.ui reported "enable developer mode" for a profile where
+        // the user had already enabled it, so the automatic install never ran.
+        final home = makeHome(['.config/google-chrome/Default']);
+        addTearDown(() => home.deleteSync(recursive: true));
+        final extension = makeExtension(home);
+        writePreferences(home, '.config/google-chrome/Default/Preferences', {
+          'profile': {'exit_type': 'Normal'},
+          'extensions': {
+            'settings': {
+              'otherid': {'path': '/other', 'location': 4, 'state': 1},
+            },
+          },
+          'account_values': {
+            'extensions': {
+              'ui': {'developer_mode': true},
+            },
+          },
+        });
+
+        final result = await BrowserExtensionInstaller.install(
+          isReleaseBuild: true,
+          configHome: '${home.path}/.config',
+          extensionDirectory: extension.path,
+          isBrowserRunning: (_) => false,
+        );
+
+        expect(result.installed.map((s) => s.browserId), ['chrome']);
+        final prefs = readPreferences(
+          home,
+          '.config/google-chrome/Default/Preferences',
+        );
+        final settings =
+            prefs['extensions']['settings'] as Map<String, dynamic>;
+        expect(
+          settings[BrowserExtensionInstaller.chromeExtensionId]['path'],
+          extension.path,
+        );
+        // The account copy is left exactly as Chrome wrote it; only the
+        // unsigned extensions.ui block is ours to add.
+        expect(
+          (prefs['account_values']
+              as Map)['extensions']['ui']['developer_mode'],
+          isTrue,
+        );
+      },
+    );
+
     test('is a no-op when the extension is already there', () async {
       final home = makeHome(['.config/google-chrome/Default']);
       addTearDown(() => home.deleteSync(recursive: true));
