@@ -108,15 +108,6 @@ class DownloadScheduler {
   /// Latest known info for every download, in enqueue order.
   List<DownloadInfo> get downloads => List.of(_infos.values);
 
-  /// True when a run for [id] is under way — its task has started, or
-  /// its factory is still building it.
-  ///
-  /// A retry of such a download would start a second run for the same
-  /// id: both write the same partial file, and the transfer visibly
-  /// restarts from zero while the first one keeps going.
-  bool isActive(String id) =>
-      _running.containsKey(id) || _starting.contains(_jobs[id]?.sequence);
-
   /// Live per-segment progress for a download the scheduler currently
   /// holds (running or paused). Null when the download is not held
   /// (queued but not started, or finished), so the caller falls back

@@ -60,6 +60,9 @@ class _TestServer {
   /// a download actually tried).
   int get requests => _requests;
 
+  /// Path of every request served, in arrival order.
+  final requestPaths = <String>[];
+
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server.listen(_handle);
@@ -69,6 +72,7 @@ class _TestServer {
 
   Future<void> _handle(HttpRequest request) async {
     _requests++;
+    requestPaths.add(request.uri.path);
     cookiesSeen.add(request.headers.value('cookie'));
     referersSeen.add(request.headers.value('referer'));
     final response = request.response;
@@ -2244,6 +2248,54 @@ void main() {
         server.requests - beforeRetry,
         0,
         reason: 'the retry started a second transfer for the same file',
+      );
+    });
+
+    test('a retry of a queued native download does not start it twice',
+        () async {
+      // Same rule for a job that has not started yet: it is waiting
+      // for a slot, not settled. A retry enqueues a second copy of it,
+      // and when the slot frees both run — two transfers for one file.
+      await startServer(data: bytesOf(2048));
+      final engine = openEngine(maxConcurrent: 1, maxConnections: 1);
+      addTearDown(engine.dispose);
+      final first = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/a.bin',
+          destination: p.join(tempDir.path, 'a.bin'),
+        ),
+      );
+      final second = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/b.bin',
+          destination: p.join(tempDir.path, 'b.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        second.id,
+        (d) => d.status == DownloadStatus.queued,
+      );
+      await engine.retryDownload(second.id);
+      await waitForInfo(
+        engine,
+        first.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      await waitForInfo(
+        engine,
+        second.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final fetches = <String, int>{};
+      for (final path in server.requestPaths) {
+        fetches[path] = (fetches[path] ?? 0) + 1;
+      }
+      expect(
+        fetches['/b.bin'],
+        fetches['/a.bin'],
+        reason: 'the retry queued a second copy of a download already '
+            'waiting, so b.bin was transferred twice',
       );
     });
 

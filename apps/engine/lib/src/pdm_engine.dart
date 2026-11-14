@@ -1083,11 +1083,14 @@ class PdmEngine implements DownloadEngine {
       _startYtDlp(current, downloader);
       return;
     }
-    if (_scheduler.isActive(record.id)) {
-      // Same rule as the yt-dlp branch above: re-enqueueing a run that
-      // is still going starts a second transfer for the same file onto
-      // the same partial, and the row visibly restarts from 0% while
-      // the first run keeps writing. Retry is for a settled row.
+    if (record.status == DownloadStatus.queued ||
+        record.status == DownloadStatus.downloading) {
+      // Same rule as the yt-dlp branch above, for a job that has not
+      // settled yet: still queued (waiting for a slot, or still in its
+      // factory) or already transferring. Re-enqueueing it would start
+      // a second run for the same file on the same partial — the row
+      // visibly restarts from 0% while the first run keeps writing.
+      // Retry is for a settled row.
       return;
     }
     final partial = File(record.partialPath);
