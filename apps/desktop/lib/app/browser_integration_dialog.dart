@@ -93,6 +93,7 @@ Future<BrowserIntegrationSnapshot> loadBrowserIntegrationSnapshot({
     configHome: config,
     localAppData: local,
     appData: roaming,
+    environment: env,
     isWindows: windows,
     isReleaseBuild: isReleaseBuild,
   );

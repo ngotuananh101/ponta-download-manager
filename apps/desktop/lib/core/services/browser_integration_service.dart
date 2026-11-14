@@ -269,8 +269,8 @@ class BrowserIntegrationService {
   /// Only release builds write anything: a debug build's host binary lives in
   /// `build/`, and a manifest pointing there breaks the moment that directory
   /// is cleaned — the same rule `LinuxDesktopService` follows. [isReleaseBuild],
-  /// [homeDir], [configHome], [localAppData], [appData], [isWindows] and
-  /// [runProcess] are test seams.
+  /// [homeDir], [configHome], [localAppData], [appData], [isWindows],
+  /// [environment] and [runProcess] are test seams.
   static Future<BrowserIntegrationResult> ensureNativeHosts({
     String? homeDir,
     String? configHome,
@@ -279,9 +279,11 @@ class BrowserIntegrationService {
     required String hostBinaryPath,
     bool? isReleaseBuild,
     bool? isWindows,
+    Map<String, String>? environment,
     Future<ProcessResult> Function(String executable, List<String> args)?
     runProcess,
   }) async {
+    final env = environment ?? Platform.environment;
     final release = isReleaseBuild ?? _isReleaseBuild;
     if (!release) {
       return const BrowserIntegrationResult(
@@ -307,30 +309,24 @@ class BrowserIntegrationService {
               hostBinaryPath: hostBinaryPath,
               localAppData:
                   _nonEmpty(localAppData) ??
-                  _nonEmpty(Platform.environment['LOCALAPPDATA']) ??
-                  _joinWindows(
-                    homeDir ?? Platform.environment['USERPROFILE'],
-                    r'AppData\Local',
-                  ),
+                  _nonEmpty(env['LOCALAPPDATA']) ??
+                  _joinWindows(homeDir ?? env['USERPROFILE'], r'AppData\Local'),
               appData:
                   _nonEmpty(appData) ??
-                  _nonEmpty(Platform.environment['APPDATA']) ??
+                  _nonEmpty(env['APPDATA']) ??
                   _joinWindows(
-                    homeDir ?? Platform.environment['USERPROFILE'],
+                    homeDir ?? env['USERPROFILE'],
                     r'AppData\Roaming',
                   ),
               runProcess: runProcess ?? _runProcess,
             )
           : await _ensureLinux(
               hostBinaryPath: hostBinaryPath,
-              homeDir: homeDir ?? Platform.environment['HOME'] ?? '',
+              homeDir: homeDir ?? env['HOME'] ?? '',
               configHome:
                   _nonEmpty(configHome) ??
-                  _nonEmpty(Platform.environment['XDG_CONFIG_HOME']) ??
-                  p.join(
-                    homeDir ?? Platform.environment['HOME'] ?? '',
-                    '.config',
-                  ),
+                  _nonEmpty(env['XDG_CONFIG_HOME']) ??
+                  p.join(homeDir ?? env['HOME'] ?? '', '.config'),
             );
     } catch (e) {
       _log.warning('native host registration failed: $e');

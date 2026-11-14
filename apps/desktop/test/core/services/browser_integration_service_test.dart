@@ -129,6 +129,7 @@ void main() {
     final result = await BrowserIntegrationService.ensureNativeHosts(
       homeDir: home.path,
       configHome: '',
+      environment: const {},
       hostBinaryPath: plantHost(home),
       isWindows: false,
       isReleaseBuild: true,

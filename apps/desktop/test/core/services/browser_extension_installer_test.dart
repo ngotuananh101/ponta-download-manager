@@ -770,12 +770,20 @@ void main() {
         writePreferences(home, profile, developerPreferences());
         final file = File('${home.path}/$profile');
         final before = file.readAsBytesSync();
-        final binary = File('/usr/bin/sleep').copySync('${home.path}/$comm');
-        final process = await Process.start(binary.path, ['60']);
+        // Ubuntu 25.10+ ships uutils coreutils, where /usr/bin/sleep is a
+        // multicall binary that rejects unknown argv[0] names such as "chrome".
+        // A shebang script sets /proc/<pid>/comm to its filename on execve and
+        // stays in that process via shell builtins until stdin closes.
+        final binary = File('${home.path}/$comm')
+          ..writeAsStringSync('#!/bin/sh\nprintf \'ready\\n\'\nread _\n');
+        final chmod = await Process.run('chmod', ['+x', binary.path]);
+        expect(chmod.exitCode, 0);
+        final process = await Process.start(binary.path, const []);
         addTearDown(() async {
           process.kill();
           await process.exitCode;
         });
+        await process.stdout.first;
         final result = await BrowserExtensionInstaller.install(
           isReleaseBuild: true,
           configHome: '${home.path}/.config',
