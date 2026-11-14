@@ -884,6 +884,53 @@ void main() {
       expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
     });
 
+    test('a retry that replaces a building start still runs', () async {
+      // The aborted attempt opens its sink after the retry already
+      // deleted the partial: the sink creation is queued behind real
+      // file IO, so the delete-and-recreate order is not guaranteed.
+      // The attempt is then discarded without running — but the sink it
+      // opened is left behind, and the retry's sink factory refuses a
+      // destination whose .partial already exists (`file-exists`), so
+      // the retry fails before its first request.
+      final data = bytesOf(2048);
+      await startServer(data: data);
+      // One slot, so the retry waits in the queue until the aborted
+      // attempt leaves the start window: the order below is then fixed.
+      final engine = openEngine(maxConcurrent: 1, maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      // The first attempt is still inside its factory: cancel it and
+      // retry at once, so the retry's enqueue lands in that window.
+      // Both bodies run to their end synchronously, so the cancel and
+      // the retry's partial delete happen while the first factory is
+      // suspended on its first await and has not created its partial
+      // yet — the file it creates afterwards is orphaned.
+      unawaited(engine.cancelDownload(info.id));
+      await engine.retryDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) =>
+            d.status == DownloadStatus.completed ||
+            d.status == DownloadStatus.failed,
+      );
+      final after = (await engine.listDownloads()).firstWhere(
+        (d) => d.id == info.id,
+      );
+      expect(
+        after.status,
+        DownloadStatus.completed,
+        reason: 'the orphaned partial made the retry fail: '
+            '${after.errorCode}',
+      );
+      expect(await File(p.join(tempDir.path, 'f.bin')).readAsBytes(), data);
+    });
+
     test('deleteDownload removes the record and drops the partial',
         () async {
       final data = bytesOf(10 * 1024 * 1024);

@@ -10,10 +10,13 @@ import 'package:download_recovery/download_recovery.dart';
 import 'package:download_scheduler/download_scheduler.dart';
 import 'package:download_storage/download_storage.dart';
 import 'package:download_transport/download_transport.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 
 import 'engine_config.dart';
 import 'file_naming.dart';
+
+final _log = Logger('PdmEngine');
 
 /// Default database path: `$XDG_DATA_HOME/pdm/pdm.db` (Linux),
 /// `~/.local/share/pdm/pdm.db` when XDG is unset, and
@@ -1580,8 +1583,24 @@ class PdmEngine implements DownloadEngine {
         // shutting down. Registering the task now would take the row's
         // checkpoints away from the attempt that actually owns it (the
         // retry is already running and tracked), and _start is about to
-        // throw this one away. Return it unregistered; that is also the
-        // only branch where nothing has to be undone on the way out.
+        // throw this one away. Return it unregistered.
+        //
+        // The partial this attempt opened is nobody's now, and it must
+        // not outlive it: a retry creates the same path exclusively and
+        // fails with `file-exists` when the orphan is there, so the
+        // download would fail before its first request. Only this
+        // attempt can own the file: the exclusive create means the
+        // replacement's own create either failed or comes after this
+        // one is gone.
+        //
+        // Shutting down is different: nothing replaces the attempt
+        // then, and a resumed sink's partial is the only copy of the
+        // bytes downloaded so far. Close it and leave the file, the
+        // same as the scheduler does for every task it discards on
+        // dispose.
+        if (!_disposed) {
+          await _discardSink(sink);
+        }
         return ScheduledTask(task, sink);
       }
       _writer.track(
@@ -1625,6 +1644,27 @@ class PdmEngine implements DownloadEngine {
         );
       }
       rethrow;
+    }
+  }
+
+  /// Closes the sink of a start that will never run, removing the file
+  /// it opened. A created partial that nobody writes is an orphan: a
+  /// retry creates its own exclusively and fails with `file-exists`.
+  /// The close is not optional even if the delete throws — the sink
+  /// holds an open handle.
+  Future<void> _discardSink(ChunkSink sink) async {
+    if (sink is FileChunkSink) {
+      try {
+        await sink.discard();
+        return;
+      } catch (e) {
+        _log.warning('Could not discard an abandoned partial: $e');
+      }
+    }
+    try {
+      await sink.close();
+    } catch (e) {
+      _log.warning('Could not close an abandoned sink: $e');
     }
   }
 
