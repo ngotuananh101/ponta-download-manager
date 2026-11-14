@@ -642,6 +642,205 @@ void main() {
       expect(infoOf(scheduler, id).downloadedBytes, 1024);
     });
 
+    test('a retry during the aborted start is not cancelled by it', () async {
+      // The job was paused then cancelled while its factory was still
+      // building, and the user retried the same id before that
+      // factory finished: the retry is a *new* attempt, already
+      // queued and possibly already running. The aborted attempt must
+      // not settle the retry's tracking, nor announce cancelled for
+      // it — the row would show Cancelled during an active download,
+      // and a pause issued on the retry would be lost.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final factoryStarted = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          if (!factoryStarted.isCompleted) {
+            factoryStarted.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: job.maxConnections,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final seen = <DownloadEvent>[];
+      final subscription = scheduler.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryStarted.future.timeout(const Duration(seconds: 5));
+      scheduler.pause(id);
+      scheduler.cancel(id);
+      // The retry lands while the aborted attempt still waits on its
+      // factory, and starts under a free slot of its own.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      releaseFactory.complete();
+      await waitFor(
+        () => infoOf(scheduler, id).status == DownloadStatus.completed,
+        timeout: const Duration(seconds: 5),
+      );
+      final cancelledEvents = seen
+          .whereType<DownloadStateChanged>()
+          .where(
+            (e) => e.downloadId == id && e.status == DownloadStatus.cancelled,
+          )
+          .length;
+      // The aborted attempt may announce cancelled only once — the
+      // explicit cancel. A second cancelled after the retry's queued
+      // event is the stale one this test is about.
+      expect(
+        cancelledEvents,
+        lessThanOrEqualTo(1),
+        reason: 'the aborted start announced cancelled over the retry',
+      );
+      expect(infoOf(scheduler, id).downloadedBytes, 1024);
+    });
+
+    test('a pause on the retry survives the aborted start finishing',
+        () async {
+      // Same window, the other half: the retry is building its task
+      // when the aborted attempt's factory resolves. That attempt used
+      // to clear the id's _starting membership, so the pause issued on
+      // the retry fell through to the queued branch — which cannot see
+      // the retry, now in _starting — and was dropped: the download
+      // ran to completion after the user paused it.
+      final transport = _FakeTransport(data: bytesOf(4096));
+      final factories = <Completer<void>>[];
+      final starts = <Completer<void>>[];
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          final release = Completer<void>();
+          factories.add(release);
+          if (starts.isEmpty || factories.length > starts.length) {
+            final started = Completer<void>();
+            starts.add(started);
+            started.complete();
+          }
+          await release.future;
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: job.maxConnections,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => factories.isNotEmpty);
+      scheduler.pause(id);
+      scheduler.cancel(id);
+      // The retry starts and blocks in its own factory.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => factories.length == 2);
+      // The pause lands on the retry, which is still building.
+      scheduler.pause(id);
+      // Only now does the aborted attempt's factory resolve.
+      factories.first.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      factories.last.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.paused);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        infoOf(scheduler, id).status,
+        DownloadStatus.paused,
+        reason: 'the aborted start dropped the pause on the retry',
+      );
+    });
+
+    test('a retry does not leave the aborted start running too', () async {
+      // The retry replaces the attempt whose factory is still building:
+      // once that factory resolves, its task must be thrown away, not
+      // registered and run. Otherwise both attempts download the same
+      // file at once — the second one overwrites the first's sink —
+      // and pause/cancel act on whichever entry landed last.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final releases = <Completer<void>>[];
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          final release = Completer<void>();
+          releases.add(release);
+          if (releases.length == 1) {
+            await release.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 1);
+      // Retry: a second attempt starts right away, with the first
+      // still inside its factory.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      // The retry is done; only now does the aborted factory resolve.
+      releases.first.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        transport.startedUrls,
+        hasLength(1),
+        reason: 'the aborted start ran its own duplicate download',
+      );
+      expect(infoOf(scheduler, id).status, DownloadStatus.completed);
+    });
+
     test('pauseAll pauses everything and resumeAll restarts it', () async {
       final transport = _FakeTransport(
         data: bytesOf(4096),

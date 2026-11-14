@@ -88,9 +88,13 @@ class DownloadScheduler {
   final _pending = <_QueuedJob>[];
   final _running = <String, _RunningJob>{};
   final _pausedRunning = <String, _RunningJob>{};
-  final _starting = <String>{};
-  final _cancelledWhileStarting = <String>{};
-  final _pausedWhileStarting = <String>{};
+  // Keyed by job.sequence, not by id: a retry enqueues a new attempt
+  // for the same id while the aborted one may still be inside its
+  // factory. Keyed by id, whichever attempt finished first consumed
+  // the other's intents and announced cancelled over the live one.
+  final _starting = <int>{};
+  final _cancelledWhileStarting = <int>{};
+  final _pausedWhileStarting = <int>{};
   final _jobs = <String, DownloadJob>{};
   final _infos = <String, DownloadInfo>{};
   final _events = StreamController<DownloadEvent>.broadcast();
@@ -199,6 +203,25 @@ class DownloadScheduler {
     return job.id;
   }
 
+  /// The attempt for [id] whose factory is still building, or null.
+  ///
+  /// A retry replaces [_jobs] with a new attempt and starts it right
+  /// away; while the aborted attempt is still inside its factory both
+  /// are in [_starting], and the one the user is acting on is the
+  /// newest — the one [_jobs] points at.
+  DownloadJob? _startingAttempt(String id) {
+    final job = _jobs[id];
+    if (job == null || !_starting.contains(job.sequence)) {
+      return null;
+    }
+    return job;
+  }
+
+  /// True when a newer attempt replaced [job] for the same id (a retry
+  /// enqueued while this attempt was still building). The aborted
+  /// attempt must then touch nothing the retry owns.
+  bool _superseded(DownloadJob job) => _jobs[job.id]?.sequence != job.sequence;
+
   /// Pauses a running download (freeing its slot) or a queued one.
   void pause(String id) {
     _throwIfDisposed();
@@ -212,13 +235,14 @@ class DownloadScheduler {
     if (_pausedRunning.containsKey(id)) {
       return;
     }
-    if (_starting.contains(id)) {
+    final starting = _startingAttempt(id);
+    if (starting != null) {
       // The factory is still building the task, so the job cannot be
       // parked in _pausedRunning yet. Record the intent and tell the
       // consumer now: _start parks the job without emitting (no other
       // event would follow until a resume), so a silent intent would
       // leave the row showing Queued for a download that will not run.
-      _pausedWhileStarting.add(id);
+      _pausedWhileStarting.add(starting.sequence);
       final info = _infos[id];
       if (info != null) {
         _infos[id] = info.copyWith(status: DownloadStatus.paused);
@@ -302,7 +326,9 @@ class DownloadScheduler {
     // branches below cannot see it. Dropping it here is what makes the
     // resume effective: _start parks the job when the flag is still
     // set, and nothing else would ever start it again.
-    if (_pausedWhileStarting.remove(id)) {
+    final starting = _startingAttempt(id);
+    if (starting != null &&
+        _pausedWhileStarting.remove(starting.sequence)) {
       final info = _infos[id];
       if (info != null) {
         _infos[id] = info.copyWith(status: DownloadStatus.queued);
@@ -377,12 +403,10 @@ class DownloadScheduler {
       }
       return;
     }
-    if (_starting.contains(id)) {
-      _cancelledWhileStarting.add(id);
-      final job = _jobs[id];
-      if (job != null) {
-        _markCancelled(job);
-      }
+    final starting = _startingAttempt(id);
+    if (starting != null) {
+      _cancelledWhileStarting.add(starting.sequence);
+      _markCancelled(starting);
       return;
     }
     final queued = _findPending(id);
@@ -548,37 +572,55 @@ class DownloadScheduler {
 
   Future<void> _start(_QueuedJob queued) async {
     final job = queued.job;
-    _starting.add(job.id);
+    _starting.add(job.sequence);
     try {
       final started = queued.started;
       if (started == null) {
         final built = await _taskFactory(job);
         if (_disposed) {
-          _starting.remove(job.id);
+          _starting.remove(job.sequence);
           await built.sink.close();
           return;
         }
-        if (_cancelledWhileStarting.remove(job.id)) {
-          _starting.remove(job.id);
+        if (_superseded(job)) {
+          // A retry replaced this attempt while its factory was
+          // building: the retry is the only run for this id, and this
+          // task must never start. Running it would download the same
+          // file a second time and register itself over the retry's
+          // run.
+          _starting.remove(job.sequence);
+          _pausedWhileStarting.remove(job.sequence);
+          _cancelledWhileStarting.remove(job.sequence);
+          await built.sink.close();
+          return;
+        }
+        if (_cancelledWhileStarting.remove(job.sequence)) {
+          _starting.remove(job.sequence);
           // The job was settled as cancelled; a pause intent that
           // arrived before the cancel belongs to a job that will never
           // be parked. Leaving it set parks the next attempt for the
           // same id (a retry) as paused, with no start and no event.
-          _pausedWhileStarting.remove(job.id);
+          _pausedWhileStarting.remove(job.sequence);
           await built.sink.close();
-          _markCancelled(job);
+          // A retry issued while this attempt was building already
+          // replaced it: its queued (and possibly downloading) events
+          // came after the cancel, so announcing cancelled now would
+          // put the row on Cancelled under the retry's live download.
+          if (!_superseded(job)) {
+            _markCancelled(job);
+          }
           _pump();
           return;
         }
         final subscription = built.task.events.listen(_onTaskEvent);
-        if (_pausedWhileStarting.remove(job.id)) {
+        if (_pausedWhileStarting.remove(job.sequence)) {
           _pausedRunning[job.id] = _RunningJob(
             job,
             built,
             subscription,
             runStarted: false,
           );
-          _starting.remove(job.id);
+          _starting.remove(job.sequence);
           _pump();
           return;
         }
@@ -588,7 +630,7 @@ class DownloadScheduler {
           subscription,
           runStarted: true,
         );
-        _starting.remove(job.id);
+        _starting.remove(job.sequence);
         unawaited(
           built.task.run().then(
             (info) => _onTaskDone(job, info),
@@ -603,7 +645,7 @@ class DownloadScheduler {
           runStarted: queued.runStarted,
         );
         _running[job.id] = running;
-        _starting.remove(job.id);
+        _starting.remove(job.sequence);
         if (queued.runStarted) {
           started.task.resume();
         } else {
@@ -616,15 +658,20 @@ class DownloadScheduler {
         }
       }
     } catch (e) {
-      _starting.remove(job.id);
+      _starting.remove(job.sequence);
       // A pause that landed while the task was being built must not
       // survive the failed start: the flag is consumed here, or the
       // next attempt for the same id would be parked as paused even
       // though nobody paused it.
-      _pausedWhileStarting.remove(job.id);
-      if (_cancelledWhileStarting.remove(job.id)) {
-        _markCancelled(job);
-      } else {
+      _pausedWhileStarting.remove(job.sequence);
+      if (_cancelledWhileStarting.remove(job.sequence)) {
+        // The retry that replaced this attempt owns the row now: its
+        // queued event came after the cancel, so a cancelled event
+        // here would leave the UI on Cancelled mid-download.
+        if (!_superseded(job)) {
+          _markCancelled(job);
+        }
+      } else if (!_superseded(job)) {
         _failJob(job, e);
       }
       _pump();
