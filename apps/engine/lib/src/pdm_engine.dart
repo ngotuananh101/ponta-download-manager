@@ -1372,6 +1372,7 @@ class PdmEngine implements DownloadEngine {
     await _scheduler.dispose();
     _requestHeaders.clear();
     _ytDlpFormats.clear();
+    _intentSeq.clear();
     _probeCache.clear();
     await _writer.dispose();
     await _events.close();
