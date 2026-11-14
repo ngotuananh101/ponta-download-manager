@@ -2205,6 +2205,48 @@ void main() {
       expect(downloads.map((d) => d.id).toSet().length, 3);
     });
 
+    test('a retry of a native download that is still running is a no-op',
+        () async {
+      // The row menu offers Retry on a run that has not settled yet
+      // (a slow download, or one whose first attempt is still
+      // probing). Re-enqueueing the same id would start a second
+      // transfer for the same file, and both sink onto the same
+      // partial path: the download visibly restarts from 0% while the
+      // first run keeps writing — the "100% then download again"
+      // report. Only a settled row may be retried.
+      final data = bytesOf(65536);
+      await startServer(
+        data: data,
+        chunkDelay: const Duration(milliseconds: 40),
+      );
+      final engine = openEngine(maxConnections: 1);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      final beforeRetry = server.requests;
+      await engine.retryDownload(info.id);
+      final done = await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(done.downloadedBytes, data.length);
+      expect(
+        server.requests - beforeRetry,
+        0,
+        reason: 'the retry started a second transfer for the same file',
+      );
+    });
+
     test('setPriority reorders queued downloads', () async {
       final data = bytesOf(8192);
       await startServer(
