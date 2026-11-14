@@ -478,6 +478,15 @@ class PdmEngine implements DownloadEngine {
   /// store record the same way the scheduler's writer does for
   /// native downloads.
   void _onYtDlpEvent(DownloadEvent event) {
+    if (_disposed) {
+      // dispose() drains these subscriptions one by one. A run that
+      // finishes in that window delivers a terminal event, and
+      // handling it prunes the subscription from the map dispose() is
+      // iterating: the loop threw and shutdown stopped before the
+      // store was closed. A shut-down engine has no row to update and
+      // no consumer for the event.
+      return;
+    }
     _events.add(event);
     event.when(
       progress: (downloadId, downloadedBytes, totalBytes, bytesPerSecond) {
@@ -1151,7 +1160,14 @@ class PdmEngine implements DownloadEngine {
         // Ignore: the record is deleted below regardless.
       }
     }
-    _store.deleteDownload(downloadId);
+    if (!_disposed) {
+      // The yt-dlp branch deleted the record before its await; this
+      // second delete is for the scheduler branch. The app can quit in
+      // the window the yt-dlp branch waits in, and dispose() closes
+      // the store: writing it afterwards throws out of a
+      // fire-and-forget UI action.
+      _store.deleteDownload(downloadId);
+    }
   }
 
   @override
@@ -1465,7 +1481,12 @@ class PdmEngine implements DownloadEngine {
         .where((r) => r.status == DownloadStatus.paused)
         .toList();
     await _ytDlp?.shutdown();
-    for (final sub in _ytDlpSubs.values) {
+    // Iterate a snapshot: the map is not touched again below, and a
+    // subscription cancelled here can deliver a last event. Clearing
+    // it is what leaves the count at zero after shutdown.
+    final subs = _ytDlpSubs.values.toList();
+    _ytDlpSubs.clear();
+    for (final sub in subs) {
       await sub.cancel();
     }
     await _schedulerSub?.cancel();

@@ -560,6 +560,11 @@ class DownloadScheduler {
         }
         if (_cancelledWhileStarting.remove(job.id)) {
           _starting.remove(job.id);
+          // The job was settled as cancelled; a pause intent that
+          // arrived before the cancel belongs to a job that will never
+          // be parked. Leaving it set parks the next attempt for the
+          // same id (a retry) as paused, with no start and no event.
+          _pausedWhileStarting.remove(job.id);
           await built.sink.close();
           _markCancelled(job);
           _pump();

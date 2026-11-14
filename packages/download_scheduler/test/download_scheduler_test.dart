@@ -585,6 +585,63 @@ void main() {
       expect(infoOf(scheduler, id).downloadedBytes, 1024);
     });
 
+    test('a pause and cancel during a start do not stick to the retry',
+        () async {
+      // The row can be paused and then cancelled while the factory is
+      // still building: cancel settles it, but it was paused first.
+      // The pause flag has to be dropped with the cancelled job, or
+      // the next attempt for the same id (a retry) is parked as paused
+      // and never runs — with no event to correct the row either.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final factoryStarted = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          if (!factoryStarted.isCompleted) {
+            factoryStarted.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: job.maxConnections,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await factoryStarted.future.timeout(const Duration(seconds: 5));
+      scheduler.pause(id);
+      scheduler.cancel(id);
+      releaseFactory.complete();
+      await waitForStatus(scheduler, id, DownloadStatus.cancelled);
+      // Retry the same id: it must actually run, not sit queued
+      // forever on the pause intent of a job that was cancelled.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(
+        () => infoOf(scheduler, id).status == DownloadStatus.completed,
+        timeout: const Duration(seconds: 3),
+      );
+      expect(infoOf(scheduler, id).downloadedBytes, 1024);
+    });
+
     test('pauseAll pauses everything and resumeAll restarts it', () async {
       final transport = _FakeTransport(
         data: bytesOf(4096),

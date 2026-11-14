@@ -197,6 +197,48 @@ class _DeferredCancelDownloader extends YtDlpDownloader {
   }
 }
 
+/// A downloader whose runs never emit on their own: the test drives
+/// the event streams. Cancelling one run's subscription drops a
+/// terminal event on the *other* run, which is what a real run does
+/// when its process exits while dispose() drains the subscriptions.
+class _ScriptedDownloader extends YtDlpDownloader {
+  _ScriptedDownloader({
+    required super.ytDlpPath,
+    required super.ffmpegDir,
+  });
+
+  final controllers = <String, StreamController<DownloadEvent>>{};
+
+  @override
+  Stream<DownloadEvent> start({
+    required String downloadId,
+    required String url,
+    required String outputTemplate,
+    String? format,
+    String? cookie,
+    String? referrer,
+  }) {
+    final controller = StreamController<DownloadEvent>.broadcast(
+      onCancel: () {
+        // Delivered while the engine is mid-way through draining its
+        // subscriptions: resolving it prunes this download's entry.
+        for (final entry in controllers.entries) {
+          if (entry.key != downloadId && !entry.value.isClosed) {
+            entry.value.add(
+              DownloadEvent.stateChanged(
+                downloadId: entry.key,
+                status: DownloadStatus.paused,
+              ),
+            );
+          }
+        }
+      },
+    );
+    controllers[downloadId] = controller;
+    return controller.stream;
+  }
+}
+
 /// A downloader that appends the URL it was asked to fetch to
 /// [logPath], so a test can prove which URL a run actually used.
 class _UrlLoggingDownloader extends YtDlpDownloader {
@@ -3300,6 +3342,85 @@ exit 1
       await engine.dispose();
       releaseResolve.complete();
       await resume;
+    });
+
+    test('a delete still resolving when the engine is disposed does not throw',
+        () async {
+      // The same window as the pause and resume cases, but the row is
+      // already gone from the store before the await: the delete
+      // finishes by writing the store again, which throws once
+      // dispose() has closed it.
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      store.upsertDownload(
+        DownloadRecord(
+          id: 'yt-1',
+          url: 'https://example.com/live.m3u8',
+          fileName: 'live.m3u8',
+          directory: tempDir.path,
+          status: DownloadStatus.paused,
+        ),
+      );
+      store.close();
+      final fake = await makeFakeYtDlp(slowScript);
+      final resolveEntered = Completer<void>();
+      final releaseResolve = Completer<void>();
+      final engine = openEngine(
+        resolveExternalTools: () async {
+          if (!resolveEntered.isCompleted) {
+            resolveEntered.complete();
+          }
+          await releaseResolve.future;
+          return ExternalTools(
+            ffmpegPath: p.join(tempDir.path, 'ffmpeg'),
+            ytDlpPath: fake,
+          );
+        },
+      );
+      final delete = engine.deleteDownload('yt-1');
+      await resolveEntered.future;
+      await engine.dispose();
+      releaseResolve.complete();
+      await delete;
+    });
+
+    test('dispose survives a terminal event landing while it drains',
+        () async {
+      // dispose() drains the event subscriptions one by one, awaiting
+      // each cancel. A run finishing in that window delivers its
+      // terminal event, and handling it prunes the run's subscription
+      // from the same map dispose() is iterating: the loop throws and
+      // shutdown stops before the store is closed.
+      final fake = await makeFakeYtDlp(slowScript);
+      final downloader = _ScriptedDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      final first = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/one.m3u8',
+          destination: p.join(tempDir.path, 'one.m3u8'),
+        ),
+      );
+      final second = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/two.m3u8',
+          destination: p.join(tempDir.path, 'two.m3u8'),
+        ),
+      );
+      await waitFor(() => downloader.controllers.length == 2);
+      await engine.dispose();
+      expect(engine.ytDlpSubscriptionCount, 0);
+      // The store was closed: reading it back is possible only after
+      // reopening, which fails if dispose() threw before closing.
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      addTearDown(store.close);
+      expect(
+        store.getDownload(first.id),
+        isNotNull,
+        reason: 'dispose aborted before it closed the store',
+      );
+      expect(store.getDownload(second.id), isNotNull);
     });
 
     test('recovery does not spawn after the engine is disposed', () async {
