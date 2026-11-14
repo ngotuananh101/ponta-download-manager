@@ -191,6 +191,28 @@ class DownloadScheduler {
       cookie: cookie,
       referrer: referrer,
     );
+    // A new attempt for an id means the user (or a failover) replaced
+    // whatever that id was doing. A paused attempt is not discarded by
+    // anything else: it sits in _pausedRunning with its task and sink
+    // alive, waiting for a resume. Leaving it there keeps two live
+    // tasks for one id — the paused one still holding its sink, and a
+    // later resume would start the attempt the row no longer belongs
+    // to.
+    final replaced = _pausedRunning.remove(jobId);
+    if (replaced != null) {
+      unawaited(replaced.subscription.cancel());
+      if (replaced.runStarted) {
+        // run() is live: cancelling it ends the task, and its own
+        // cancelled event settles its bookkeeping.
+        replaced.started.task.cancel();
+      } else {
+        // run() was never called, so the task emits nothing: close its
+        // sink and tell its owner to stop tracking it, exactly like a
+        // cancelled job parked before its run.
+        unawaited(replaced.started.sink.close());
+        replaced.started.onAbandoned?.call();
+      }
+    }
     _jobs[job.id] = job;
     _infos[job.id] = DownloadInfo(
       id: job.id,
@@ -629,6 +651,13 @@ class DownloadScheduler {
           _cancelledWhileStarting.remove(job.sequence);
           built.onAbandoned?.call();
           await built.sink.close();
+          // This attempt held a slot until the factory resolved it. The
+          // retry that replaced it is usually still in _pending (a full
+          // maxConcurrent means it could not start while this attempt
+          // was building), and nothing else will come along to start
+          // it: without _pump() it waits forever with no task and no
+          // event.
+          _pump();
           return;
         }
         if (_cancelledWhileStarting.remove(job.sequence)) {
@@ -771,17 +800,34 @@ class DownloadScheduler {
   }
 
   Future<void> _onTaskDone(DownloadJob job, DownloadInfo info) async {
-    final running = _running.remove(job.id) ?? _pausedRunning.remove(job.id);
-    if (running != null) {
+    // As in _onTaskError: only this attempt's entry is ours to settle.
+    // The task reports completion before its run() future resolves, so
+    // a consumer acting on that event (a retry, the engine's failover)
+    // may already have enqueued — and started — an attempt in its
+    // place. Removing and reporting by id alone settled the running
+    // replacement, and its own sink was never finished.
+    final entry = _running[job.id] ?? _pausedRunning[job.id];
+    final ownsEntry = entry != null && entry.job.sequence == job.sequence;
+    if (ownsEntry) {
+      (_running.containsKey(job.id) ? _running : _pausedRunning)
+          .remove(job.id);
       unawaited(
         Future<void>.delayed(
           Duration.zero,
-          () => running.subscription.cancel(),
+          () => entry.subscription.cancel(),
         ),
       );
     }
+    if (!ownsEntry) {
+      // This attempt no longer owns the id and is not merely late: a
+      // newer attempt replaced it while its factory was building, then
+      // that attempt owns the row and its own terminal event. The slot
+      // is free again, so pump.
+      _pump();
+      return;
+    }
     if (info.status == DownloadStatus.completed) {
-      final sink = running?.started.sink;
+      final sink = entry.started.sink;
       if (sink is FileChunkSink) {
         try {
           await sink.finish();
@@ -813,7 +859,7 @@ class DownloadScheduler {
       _emit(
         DownloadEvent.completed(
           downloadId: job.id,
-          filePath: sink?.filePath ?? '',
+          filePath: sink.filePath ?? '',
         ),
       );
     } else {
@@ -823,18 +869,26 @@ class DownloadScheduler {
   }
 
   void _onTaskError(DownloadJob job, Object error) {
-    final running = _running.remove(job.id) ?? _pausedRunning.remove(job.id);
-    if (running != null) {
+    // Remove only this attempt's entry. A consumer of the failed event
+    // (the engine's mirror failover, or a retry) may already have
+    // enqueued a replacement for the same id — and that replacement can
+    // be running by now, because a task reports its failure before its
+    // run() future completes. Removing by id alone threw the live
+    // attempt away, so its sink was never finished and the row was
+    // marked failed while the new task kept transferring.
+    final running = _running[job.id];
+    if (running != null && identical(running.job.sequence, job.sequence)) {
+      _running.remove(job.id);
       unawaited(
         Future<void>.delayed(
           Duration.zero,
           () => running.subscription.cancel(),
         ),
       );
-    }
-    final info = _infos[job.id];
-    if (info != null) {
-      _infos[job.id] = info.copyWith(status: DownloadStatus.failed);
+      final info = _infos[job.id];
+      if (info != null) {
+        _infos[job.id] = info.copyWith(status: DownloadStatus.failed);
+      }
     }
     _log.warning('Download ${job.id} failed: $error');
     _pump();

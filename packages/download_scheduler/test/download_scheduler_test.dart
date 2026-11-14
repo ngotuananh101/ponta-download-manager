@@ -133,6 +133,31 @@ class _ThrowingCloseSink extends _NullSink {
   }
 }
 
+/// Records its own close, so a test can see a task being discarded.
+class _RecordingSink extends _NullSink {
+  _RecordingSink(this.onClose);
+
+  final void Function() onClose;
+
+  @override
+  Future<void> close() async {
+    onClose();
+  }
+}
+
+/// Holds close() until [gate] completes, so a test can order a
+/// replacement job against the failing attempt's teardown.
+class _GatedCloseSink extends _NullSink {
+  _GatedCloseSink(this.gate);
+
+  final Future<void> gate;
+
+  @override
+  Future<void> close() async {
+    await gate;
+  }
+}
+
 DownloadScheduler _makeSchedulerWithThrowingClose(
   _FakeTransport transport, {
   int maxConcurrent = 3,
@@ -305,6 +330,229 @@ void main() {
       expect(
         events.whereType<DownloadCompleted>().map((e) => e.downloadId),
         isNot(contains(first)),
+      );
+    });
+
+    test('an erroring attempt cannot settle the job that replaced it',
+        () async {
+      // A failed task emits its failed event before its run() future
+      // completes: it is still closing its sink. A consumer reacts to
+      // that event by starting a new attempt for the same id (the
+      // engine's mirror failover and a retry both do). By the time the
+      // old attempt's error reaches _onTaskError, _running[id] is the
+      // *new* job — and an id-only remove and status write threw the
+      // live attempt away and marked its row failed while it was still
+      // transferring.
+      final closed = Completer<void>();
+      var builds = 0;
+      var restarted = false;
+      late DownloadScheduler scheduler;
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 40),
+      );
+      transport.failPaths.add('/fail');
+      scheduler = DownloadScheduler(
+        maxConcurrent: 2,
+        taskFactory: (job) async {
+          builds++;
+          final ChunkSink sink = job.url.endsWith('/fail')
+              ? _GatedCloseSink(closed.future)
+              : _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          if (job.url.endsWith('/fail')) {
+            // Fire the replacement while the failing attempt is still
+            // tearing down, exactly like a failover on the failed event.
+            final guard = task.events.listen((event) {
+              event.maybeWhen(
+                failed: (downloadId, _, _) {
+                  if (restarted) {
+                    return;
+                  }
+                  restarted = true;
+                  scheduler.enqueue(
+                    url: 'http://example.test/good',
+                    fileName: 'f.bin',
+                    maxConnections: 1,
+                    id: downloadId,
+                  );
+                },
+                orElse: () {},
+              );
+            });
+            addTearDown(guard.cancel);
+          }
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/fail',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(
+        () => transport.startedUrls.contains('http://example.test/good'),
+      );
+      await waitFor(() => infoOf(scheduler, id).downloadedBytes > 0);
+      expect(builds, 2);
+      // The failing attempt finishes tearing down only now: its error
+      // must not touch the attempt that replaced it.
+      closed.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(
+        infoOf(scheduler, id).status,
+        DownloadStatus.downloading,
+        reason: 'the failed attempt marked the replacement failed',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(infoOf(scheduler, id).downloadedBytes, 4096);
+    });
+
+    test('a new attempt for an id discards the paused one it replaces',
+        () async {
+      // Pausing keeps the task alive: it is in _pausedRunning with its
+      // sink open, waiting for a resume. Enqueueing a new attempt for
+      // the same id (a retry of a paused row, a failover) used to leave
+      // it there forever: two live tasks for one id, the paused one
+      // still holding its sink and its segments, and a resume would
+      // then start the attempt the row no longer belongs to.
+      final closed = <String>[];
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 50),
+      );
+      var builds = 0;
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 2,
+        taskFactory: (job) async {
+          builds++;
+          final attempt = builds;
+          final sink = _RecordingSink(
+            () => closed.add('${job.url}#$attempt'),
+          );
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/slow',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => infoOf(scheduler, id).downloadedBytes > 0);
+      scheduler.pause(id);
+      await waitForStatus(scheduler, id, DownloadStatus.paused);
+      // The retry: a second attempt for the id the paused one still
+      // holds.
+      scheduler.enqueue(
+        url: 'http://example.test/fast',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(builds, 2);
+      await waitFor(
+        () => closed.contains('http://example.test/slow#1'),
+        timeout: const Duration(seconds: 2),
+      );
+      expect(infoOf(scheduler, id).downloadedBytes, 4096);
+    });
+
+    test('a finishing attempt cannot settle the job that replaced it',
+        () async {
+      // The same window on the success side. The task reports completed
+      // before its run() future resolves, and changeNotifier-style
+      // consumers react by enqueueing a new attempt for the id. The
+      // scheduler's own bookkeeping then ran against whatever attempt
+      // held the id, so the finished attempt reported completed for a
+      // job that had already been replaced and its own _pump() raced
+      // the new one.
+      final finished = Completer<void>();
+      var builds = 0;
+      var restarted = false;
+      late DownloadScheduler scheduler;
+      // Slow enough that the replacement is still transferring when
+      // the finished attempt reports.
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 25),
+      );
+      scheduler = DownloadScheduler(
+        maxConcurrent: 2,
+        taskFactory: (job) async {
+          builds++;
+          final ChunkSink sink = job.url.endsWith('/a')
+              ? _GatedCloseSink(finished.future)
+              : _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          if (job.url.endsWith('/a')) {
+            final guard = task.events.listen((event) {
+              event.maybeWhen(
+                completed: (downloadId, _) {
+                  if (restarted) {
+                    return;
+                  }
+                  restarted = true;
+                  scheduler.enqueue(
+                    url: 'http://example.test/slow',
+                    fileName: 'f.bin',
+                    maxConnections: 1,
+                    id: downloadId,
+                  );
+                },
+                orElse: () {},
+              );
+            });
+            addTearDown(guard.cancel);
+          }
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(
+        () => transport.startedUrls.contains('http://example.test/slow'),
+      );
+      await waitFor(() => infoOf(scheduler, id).downloadedBytes > 0);
+      expect(builds, 2);
+      // The finished attempt reports now, with the replacement live.
+      finished.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        infoOf(scheduler, id).status,
+        DownloadStatus.downloading,
+        reason: 'the finished attempt reported completed over the replacement',
       );
     });
 
@@ -1066,6 +1314,68 @@ void main() {
         reason: 'the aborted start ran its own duplicate download',
       );
       expect(infoOf(scheduler, id).status, DownloadStatus.completed);
+    });
+
+    test('a discarded start frees its slot for the retry waiting behind it',
+        () async {
+      // With one slot, the aborted start occupies it from the moment
+      // _start begins until its factory resolves: the retry enqueued in
+      // that window cannot start and waits in _pending. When the
+      // aborted factory finally resolves, _start throws the task away
+      // and returns — without _pump(), nothing restarts the queue, and
+      // the retry sits in _pending forever with no task and no event.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final releases = <Completer<void>>[];
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          final release = Completer<void>();
+          releases.add(release);
+          if (releases.length == 1) {
+            await release.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 1);
+      // The retry cannot start yet: the aborted start still holds the
+      // only slot.
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 1);
+      expect(
+        infoOf(scheduler, id).status,
+        isNot(DownloadStatus.completed),
+        reason: 'the retry started while the aborted start held the slot',
+      );
+      // Free the slot by letting the aborted factory finish.
+      releases.first.complete();
+      await waitFor(
+        () => releases.length == 2,
+        timeout: const Duration(seconds: 2),
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
     });
 
     test('pauseAll pauses everything and resumeAll restarts it', () async {
