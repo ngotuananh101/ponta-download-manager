@@ -784,6 +784,67 @@ void main() {
       );
     });
 
+    test('an abandoned start tells its owner to stop tracking it', () async {
+      // The factory registers the task with whoever persists its
+      // state (the engine's checkpoint writer). A retry replaces the
+      // attempt while that factory is still building, so the task is
+      // thrown away without ever running. Its owner must be told: an
+      // untracked task keeps writing its queued/0-byte snapshot over
+      // the row the retry now owns.
+      final transport = _FakeTransport(data: bytesOf(1024));
+      final releases = <Completer<void>>[];
+      final abandoned = <String>[];
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 3,
+        taskFactory: (job) async {
+          final release = Completer<void>();
+          releases.add(release);
+          if (releases.length == 1) {
+            await release.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: 1,
+            ),
+            sink,
+            onAbandoned: () => abandoned.add(job.id),
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => releases.length == 1);
+      scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(
+        abandoned,
+        isEmpty,
+        reason: 'the running retry was reported as abandoned',
+      );
+      releases.first.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        abandoned,
+        [id],
+        reason: 'the abandoned start kept writing its snapshot over the row',
+      );
+    });
+
     test('a retry does not leave the aborted start running too', () async {
       // The retry replaces the attempt whose factory is still building:
       // once that factory resolves, its task must be thrown away, not

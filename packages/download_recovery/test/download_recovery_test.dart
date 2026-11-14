@@ -721,6 +721,39 @@ void main() {
       await run;
     });
 
+    test('an untracked task stops writing over the row', () async {
+      // The scheduler builds a task (and tracks it here) before it
+      // decides whether to run it. When the start is abandoned — a
+      // retry replaced it, or the user cancelled while its factory was
+      // building — the task never runs and must stop being written:
+      // its snapshot says queued/0 bytes, and every tick wrote that
+      // over the cancelled row, reviving a download nobody waits for.
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(
+        store,
+        checkpointInterval: const Duration(milliseconds: 10),
+      );
+      addTearDown(writer.dispose);
+      store.upsertDownload(makeRecord(status: DownloadStatus.cancelled));
+      final task = DownloadTask(
+        transport: _FakeTransport(data: bytesOf(64)),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: '/tmp', fileName: 'f.bin');
+      writer.untrack('dl-1');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(
+        store.getDownload('dl-1')!.status,
+        DownloadStatus.cancelled,
+        reason: 'the abandoned task kept writing its queued snapshot',
+      );
+    });
+
     test('a delete while the sink finalizes is not undone', () async {
       // The scheduler removes the job from its running set, then
       // awaits the sink rename before it announces completion. A

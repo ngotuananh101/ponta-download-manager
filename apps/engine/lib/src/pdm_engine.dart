@@ -1580,7 +1580,17 @@ class PdmEngine implements DownloadEngine {
         fileName: job.fileName,
         priority: job.priority,
       );
-      return ScheduledTask(task, sink);
+      return ScheduledTask(
+        task,
+        sink,
+        // The scheduler may throw this task away without running it (a
+        // retry replaced the attempt, or the user cancelled while the
+        // factory was building). Untrack it then: its snapshot says
+        // queued with zero bytes, and every checkpoint tick would write
+        // that over the row — a cancelled download came back as queued,
+        // and the next startup downloaded it again.
+        onAbandoned: () => _writer.untrack(job.id),
+      );
     } catch (e) {
       // The task never started, so no events will update the store.
       // Mark the record failed here so it does not stay queued forever

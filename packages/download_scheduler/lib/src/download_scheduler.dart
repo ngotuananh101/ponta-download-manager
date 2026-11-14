@@ -16,10 +16,18 @@ final _log = Logger('DownloadScheduler');
 /// A started task plus the sink it writes to. The scheduler finishes the
 /// sink (renames the partial file) when the task completes.
 class ScheduledTask {
-  const ScheduledTask(this.task, this.sink);
+  const ScheduledTask(this.task, this.sink, {this.onAbandoned});
 
   final DownloadTask task;
   final ChunkSink sink;
+
+  /// Called when the scheduler throws this task away without running
+  /// it: a retry replaced the attempt while its factory was building,
+  /// or the job was cancelled in that window. The task never runs, so
+  /// any owner that started tracking its state (the checkpoint writer)
+  /// has to drop it — its snapshot says queued with zero bytes, and
+  /// keeping it rewrites the row it no longer owns.
+  final void Function()? onAbandoned;
 }
 
 /// Builds the task (and its sink) for a job. The scheduler owns the
@@ -579,6 +587,7 @@ class DownloadScheduler {
         final built = await _taskFactory(job);
         if (_disposed) {
           _starting.remove(job.sequence);
+          built.onAbandoned?.call();
           await built.sink.close();
           return;
         }
@@ -591,6 +600,7 @@ class DownloadScheduler {
           _starting.remove(job.sequence);
           _pausedWhileStarting.remove(job.sequence);
           _cancelledWhileStarting.remove(job.sequence);
+          built.onAbandoned?.call();
           await built.sink.close();
           return;
         }
@@ -601,6 +611,7 @@ class DownloadScheduler {
           // be parked. Leaving it set parks the next attempt for the
           // same id (a retry) as paused, with no start and no event.
           _pausedWhileStarting.remove(job.sequence);
+          built.onAbandoned?.call();
           await built.sink.close();
           // A retry issued while this attempt was building already
           // replaced it: its queued (and possibly downloading) events

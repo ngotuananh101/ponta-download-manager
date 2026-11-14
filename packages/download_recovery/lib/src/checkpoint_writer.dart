@@ -152,6 +152,16 @@ class CheckpointWriter {
     }
   }
 
+  /// Stops writing checkpoints for [downloadId] without touching its
+  /// stored record. For a task that was tracked but will never run:
+  /// the scheduler builds it, then throws it away when the start was
+  /// superseded by a retry or cancelled while the factory was still
+  /// building. Its snapshot says queued with zero bytes, so leaving it
+  /// tracked rewrote the row it no longer owns — a cancelled download
+  /// came back as queued on the next tick, and the startup after that
+  /// downloaded it again. No-op when the download is not tracked.
+  void untrack(String downloadId) => _untrack(downloadId);
+
   /// Finalizes a tracked download as completed. Call only after its
   /// final file exists: the scheduler emits its completed events
   /// after the sink rename, while the task's own completed events

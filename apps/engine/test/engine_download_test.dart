@@ -816,6 +816,38 @@ void main() {
       );
     });
 
+    test('a cancel during the start window does not revive the row', () async {
+      // The factory builds the task (and registers it with the
+      // checkpoint writer) before the scheduler decides whether to run
+      // it. A cancel in that window throws the built task away without
+      // running it — and the writer kept ticking the abandoned task's
+      // snapshot, writing `queued` over the cancelled row every second.
+      // The row came back as a download waiting to start, and the next
+      // startup's recovery downloaded it again.
+      final data = bytesOf(1024);
+      await startServer(data: data);
+      final engine = openEngine();
+      addTearDown(engine.dispose);
+      final created = engine.createDownload(
+        CreateDownloadRequest(
+          url: 'http://127.0.0.1:${server.port}/f.bin',
+          destination: p.join(tempDir.path, 'f.bin'),
+        ),
+      );
+      // Cancel while the factory is still building (the engine's id
+      // space is deterministic, and the factory awaits real file IO).
+      await engine.cancelDownload('dl-1');
+      await created;
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == 'dl-1');
+      expect(
+        after.status,
+        DownloadStatus.cancelled,
+        reason: 'the checkpoint writer revived the cancelled row',
+      );
+    });
+
     test('retries a download after a failure', () async {
       final data = bytesOf(2048);
       await startServer(data: data, failFirst: 1);
