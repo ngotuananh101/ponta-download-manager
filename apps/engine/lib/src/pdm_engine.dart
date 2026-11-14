@@ -1589,7 +1589,7 @@ class PdmEngine implements DownloadEngine {
         // queued with zero bytes, and every checkpoint tick would write
         // that over the row — a cancelled download came back as queued,
         // and the next startup downloaded it again.
-        onAbandoned: () => _writer.untrack(job.id),
+        onAbandoned: () => _writer.untrack(job.id, task: task),
       );
     } catch (e) {
       // The task never started, so no events will update the store.

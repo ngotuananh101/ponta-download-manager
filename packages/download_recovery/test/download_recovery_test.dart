@@ -721,6 +721,95 @@ void main() {
       await run;
     });
 
+    test('a retry replaces the abandoned task it shares an id with', () async {
+      // The abandoned attempt and the retry share one download id, so
+      // the retry's track() used to be refused ("already tracked").
+      // The abandoned task was then untracked on its way out and the
+      // row had no writer at all: the retry's progress was never
+      // checkpointed, and a crash mid-retry lost the transfer. The
+      // tracked task must be the one that actually runs.
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      store.upsertDownload(makeRecord(downloadedBytes: 0));
+      final abandoned = DownloadTask(
+        transport: _FakeTransport(data: bytesOf(64)),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      final retry = DownloadTask(
+        transport: _FakeTransport(
+          data: bytesOf(2048),
+          chunkDelay: const Duration(milliseconds: 50),
+        ),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(abandoned, directory: '/tmp', fileName: 'f.bin');
+      writer.track(retry, directory: '/tmp', fileName: 'f.bin');
+      // The abandoned start resolves after the retry is already running.
+      writer.untrack('dl-1', task: abandoned);
+      final run = retry.run();
+      await waitFor(() => retry.downloadedBytes > 0);
+      writer.flush();
+      expect(
+        store.getDownload('dl-1')!.downloadedBytes,
+        retry.downloadedBytes,
+        reason: 'the retry was not checkpointed at all',
+      );
+      retry.cancel();
+      await run;
+    });
+
+    test('untracking another task keeps the tracked one', () async {
+      // The retry and the abandoned attempt share an id. An untrack
+      // that names no task, or names the other one, must not stop the
+      // running task's checkpoints.
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      store.upsertDownload(makeRecord());
+      final abandoned = DownloadTask(
+        transport: _FakeTransport(data: bytesOf(64)),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      final retry = DownloadTask(
+        transport: _FakeTransport(
+          data: bytesOf(2048),
+          chunkDelay: const Duration(milliseconds: 50),
+        ),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(retry, directory: '/tmp', fileName: 'f.bin');
+      writer.untrack('dl-1', task: abandoned);
+      final run = retry.run();
+      await waitFor(() => retry.downloadedBytes > 0);
+      writer.flush();
+      expect(
+        store.getDownload('dl-1')!.downloadedBytes,
+        retry.downloadedBytes,
+        reason: 'a task that was never tracked untracked the live one',
+      );
+      retry.cancel();
+      await run;
+    });
+
     test('an untracked task stops writing over the row', () async {
       // The scheduler builds a task (and tracks it here) before it
       // decides whether to run it. When the start is abandoned — a

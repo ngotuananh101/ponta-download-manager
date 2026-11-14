@@ -53,8 +53,17 @@ class CheckpointWriter {
     required String fileName,
     int priority = 0,
   }) {
-    if (_tracked.containsKey(task.id)) {
+    final already = _tracked[task.id];
+    if (already != null && identical(already.task, task)) {
       return;
+    }
+    if (already != null) {
+      // A retry for the same id: the new attempt is the one that will
+      // run, so it must own the checkpoints. The aborted attempt is
+      // still tracked and will be untracked on its way out — keyed by
+      // id alone that would remove this entry and leave the running
+      // retry with no writer at all, losing its progress on a crash.
+      _untrack(task.id);
     }
     // The record usually already exists (createDownload stored
     // it, possibly with mirrors and tags): keep it. A fresh record
@@ -159,8 +168,23 @@ class CheckpointWriter {
   /// building. Its snapshot says queued with zero bytes, so leaving it
   /// tracked rewrote the row it no longer owns — a cancelled download
   /// came back as queued on the next tick, and the startup after that
-  /// downloaded it again. No-op when the download is not tracked.
-  void untrack(String downloadId) => _untrack(downloadId);
+  /// downloaded it again.
+  ///
+  /// Pass [task] to untrack only that task. A retry for the same id
+  /// may already be tracked in its place, and an untrack that ignores
+  /// which task it is about would stop the running attempt's
+  /// checkpoints instead. No-op when the id is not tracked or [task]
+  /// is not the tracked one.
+  void untrack(String downloadId, {DownloadTask? task}) {
+    final tracked = _tracked[downloadId];
+    if (tracked == null) {
+      return;
+    }
+    if (task != null && !identical(tracked.task, task)) {
+      return;
+    }
+    _untrack(downloadId);
+  }
 
   /// Finalizes a tracked download as completed. Call only after its
   /// final file exists: the scheduler emits its completed events
