@@ -3423,6 +3423,47 @@ exit 1
       expect(store.getDownload(second.id), isNotNull);
     });
 
+    test('a run that finishes as the engine shuts down keeps its row',
+        () async {
+      // yt-dlp exited 0 and wrote the final file, and the downloader
+      // reported it — but the app quits before the engine handles the
+      // event. Dropping it leaves the row downloading for a download
+      // that is finished, so the next startup treats it as
+      // interrupted and downloads the file again from the beginning.
+      final fake = await makeFakeYtDlp(slowScript);
+      final downloader = _ScriptedDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      final created = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitFor(() => downloader.controllers.containsKey(created.id));
+      final finished = File(p.join(tempDir.path, 'live.mp4'))
+        ..writeAsBytesSync([1, 2, 3]);
+      downloader.controllers[created.id]!.add(
+        DownloadEvent.completed(
+          downloadId: created.id,
+          filePath: finished.path,
+        ),
+      );
+      await engine.dispose();
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      addTearDown(store.close);
+      final record = store.getDownload(created.id);
+      expect(
+        record?.status,
+        DownloadStatus.completed,
+        reason: 'the finished download would be re-downloaded on the next '
+            'startup',
+      );
+      expect(record?.fileName, 'live.mp4');
+    });
+
     test('recovery does not spawn after the engine is disposed', () async {
       // Recovery runs unawaited when the engine opens, so the app can
       // quit while it still resolves the tools. dispose() kills the

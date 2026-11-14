@@ -235,18 +235,29 @@ class YtDlpDownloader {
     if (running.shuttingDown) {
       // Engine shutdown: close the stream without an event. The
       // record stays non-terminal so recovery resumes it.
-      running.cookieFile?.delete();
-      _running.remove(running.downloadId);
-      unawaited(running.controller.close());
-      running.done.complete();
-      return;
+      //
+      // Unless the process already finished: exit 0 means the file
+      // was transferred and yt-dlp only has to report it. Dropping
+      // that leaves a finished download recorded as downloading, and
+      // the next startup downloads it again from the beginning — the
+      // "reaches 100% then starts over" symptom. A finished run is
+      // reported like any other; nothing here needs shutting down.
+      if (exitCode != 0) {
+        running.cookieFile?.delete();
+        _running.remove(running.downloadId);
+        unawaited(running.controller.close());
+        running.done.complete();
+        return;
+      }
     }
-    if (!running.paused && !running.cancelled) {
+    if (!running.paused && !running.cancelled && !running.shuttingDown) {
       // Normal exit: drain the output so the final printed path and
       // the last progress lines are not lost. After a pause/cancel
       // the process was killed and a child may hold the pipe open,
       // so the streams are not awaited there (those lines are not
-      // needed for a paused/cancelled download).
+      // needed for a paused/cancelled download). Same under
+      // shutdown, where a grandchild may hold the pipe open forever:
+      // the finished run is reported from the path on disk instead.
       await stdoutDone.future;
       await stderrDone.future;
     }
@@ -777,9 +788,19 @@ class YtDlpDownloader {
   /// (engine shutdown). Their records stay non-terminal so recovery
   /// resumes them on restart.
   Future<void> shutdown() async {
-    for (final running in _running.values.toList()) {
+    final runs = _running.values.toList();
+    for (final running in runs) {
       running.shuttingDown = true;
       running.process?.kill();
     }
+    // Wait for every run to settle before returning. A run that has
+    // already exited still has an outcome to report (see _run), and
+    // the caller is about to drop the event subscriptions: returning
+    // before that event is delivered loses a finished download. The
+    // timeout only covers a process that ignores the kill signal —
+    // the caller must be able to finish shutting down regardless.
+    await Future.wait([
+      for (final running in runs) running.done.future,
+    ]).timeout(const Duration(seconds: 2), onTimeout: () => const []);
   }
 }

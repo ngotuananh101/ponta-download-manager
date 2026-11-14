@@ -125,6 +125,12 @@ class PdmEngine implements DownloadEngine {
   final DownloadTransport _transport;
   var _disposed = false;
 
+  /// True from the moment [dispose] closes the store. Separate from
+  /// [_disposed]: shutdown starts long before the store closes, and
+  /// the yt-dlp events that land in that window still have a row to
+  /// settle (a run reporting completion has its file on disk).
+  var _storeClosed = false;
+
   /// Lazily resolved external tools (injected in tests).
   ExternalTools? _externalTools;
 
@@ -478,13 +484,27 @@ class PdmEngine implements DownloadEngine {
   /// store record the same way the scheduler's writer does for
   /// native downloads.
   void _onYtDlpEvent(DownloadEvent event) {
-    if (_disposed) {
-      // dispose() drains these subscriptions one by one. A run that
-      // finishes in that window delivers a terminal event, and
-      // handling it prunes the subscription from the map dispose() is
-      // iterating: the loop threw and shutdown stopped before the
-      // store was closed. A shut-down engine has no row to update and
+    if (_storeClosed) {
+      // The app has finished shutting down: no row left to settle and
       // no consumer for the event.
+      return;
+    }
+    if (_disposed) {
+      // Shutdown is under way. The event stream is closed or about to
+      // be, so nothing is forwarded — but a run that already finished
+      // has its file on disk, and its row has to say so. Dropping that
+      // leaves the record downloading, and the next startup downloads
+      // the finished file again. Only terminal outcomes are settled:
+      // a pause or cancel arriving here is an artefact of the
+      // teardown, not a user intent.
+      event.when(
+        progress: (_, _, _, _) {},
+        stateChanged: (_, _) {},
+        completed: (downloadId, filePath) =>
+            _recordYtDlpCompleted(downloadId, filePath),
+        failed: (downloadId, code, message) =>
+            _recordYtDlpFailed(downloadId, code, message),
+      );
       return;
     }
     _events.add(event);
@@ -513,39 +533,48 @@ class PdmEngine implements DownloadEngine {
         }
       },
       completed: (downloadId, filePath) {
-        final record = _store.getDownload(downloadId);
-        if (record != null) {
-          final file = File(filePath);
-          final size =
-              file.existsSync() ? file.lengthSync() : record.totalBytes;
-          // The file name is the real file yt-dlp produced, which
-          // may differ from the playlist name (live.m3u8 -> live.mp4).
-          // destinationPath is derived from directory + fileName, so
-          // it follows automatically.
-          _store.upsertDownload(
-            record.copyWith(
-              status: DownloadStatus.completed,
-              fileName: p.basename(filePath),
-              downloadedBytes: size,
-              totalBytes: size,
-            ),
-          );
-        }
+        _recordYtDlpCompleted(downloadId, filePath);
         _pruneYtDlpSub(downloadId);
       },
       failed: (downloadId, code, message) {
-        final record = _store.getDownload(downloadId);
-        if (record != null) {
-          _store.upsertDownload(
-            record.copyWith(
-              status: DownloadStatus.failed,
-              errorCode: code,
-              errorMessage: message,
-            ),
-          );
-        }
+        _recordYtDlpFailed(downloadId, code, message);
         _pruneYtDlpSub(downloadId);
       },
+    );
+  }
+
+  /// Stores the finished file of a yt-dlp run: the file name is the
+  /// real file yt-dlp produced, which may differ from the playlist
+  /// name (live.m3u8 -> live.mp4), and destinationPath is derived
+  /// from directory + fileName, so it follows automatically.
+  void _recordYtDlpCompleted(String downloadId, String filePath) {
+    final record = _storedRecord(downloadId);
+    if (record == null) {
+      return;
+    }
+    final file = File(filePath);
+    final size = file.existsSync() ? file.lengthSync() : record.totalBytes;
+    _store.upsertDownload(
+      record.copyWith(
+        status: DownloadStatus.completed,
+        fileName: p.basename(filePath),
+        downloadedBytes: size,
+        totalBytes: size,
+      ),
+    );
+  }
+
+  void _recordYtDlpFailed(String downloadId, String code, String message) {
+    final record = _storedRecord(downloadId);
+    if (record == null) {
+      return;
+    }
+    _store.upsertDownload(
+      record.copyWith(
+        status: DownloadStatus.failed,
+        errorCode: code,
+        errorMessage: message,
+      ),
     );
   }
 
@@ -1507,6 +1536,7 @@ class PdmEngine implements DownloadEngine {
     }
     _limiter.dispose();
     _transport.close();
+    _storeClosed = true;
     _store.close();
   }
 
@@ -1745,6 +1775,19 @@ class PdmEngine implements DownloadEngine {
   /// callers.
   DownloadRecord? _liveRecord(String downloadId) {
     if (_disposed) return null;
+    return _store.getDownload(downloadId);
+  }
+
+  /// The stored record for [downloadId] while the store is still
+  /// open, or null once [dispose] closed it.
+  ///
+  /// For event handlers only: they run after [_disposed] is set but
+  /// before the store closes, and a terminal event of a finished run
+  /// still has to settle its row (see [_onYtDlpEvent]). Unlike
+  /// [_liveRecord], this does not pretend a disposing engine has no
+  /// row — an action must not write one.
+  DownloadRecord? _storedRecord(String downloadId) {
+    if (_storeClosed) return null;
     return _store.getDownload(downloadId);
   }
 

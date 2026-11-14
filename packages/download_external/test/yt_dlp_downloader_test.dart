@@ -300,6 +300,48 @@ void main() {
     );
   });
 
+  test('a run that exits 0 before shutdown still reports completion',
+      () async {
+    // yt-dlp exited 0 and wrote the final file, and the exit code
+    // completed — but shutdown lands before _run resumes from it. The
+    // shutdown branch used to close the stream with no event at all:
+    // the engine kept the row downloading and the next startup
+    // downloaded the finished file again. A run that already finished
+    // has nothing left to shut down.
+    final fake = _FakeProcess();
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final finalFile = File(p.join(outDir.path, 'live.mp4'));
+    final downloader = YtDlpDownloader(
+      ytDlpPath: 'yt-dlp',
+      ffmpegDir: tmp.path,
+      processStarter: (String exe, List<String> args) async => fake,
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/live.m3u8',
+          outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+        )
+        .listen(events.add, onDone: done.complete);
+    await Future<void>.delayed(Duration.zero);
+    await finalFile.writeAsBytes([1, 2, 3]);
+    fake.addStdout(finalFile.path);
+    fake.completeExit(0);
+    // Shutdown runs before the exit code's microtask resumes _run.
+    unawaited(downloader.shutdown());
+    fake.closeStreams();
+    await done.future.timeout(const Duration(seconds: 5));
+    final completed = events.whereType<DownloadCompleted>();
+    expect(
+      completed,
+      hasLength(1),
+      reason: 'shutdown dropped the completion of a run that had finished',
+    );
+    expect(completed.single.filePath, finalFile.path);
+  });
+
   test('pause kills the process and emits paused, keeping the partial',
       () async {
     final fake = await makeFake('yt-dlp', _slowScript);
