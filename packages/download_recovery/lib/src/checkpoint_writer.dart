@@ -203,7 +203,16 @@ class CheckpointWriter {
     // fields the writer itself owns come from the task and the
     // tracked record.
     final stored = store.getDownload(task.id);
-    final base = stored ?? tracked.record;
+    if (stored == null) {
+      // The row was deleted while its sink was finalizing (the
+      // scheduler removes the job before it awaits the rename, so a
+      // delete in that window is a no-op there). Falling back to the
+      // in-memory snapshot would write the deleted download straight
+      // back: it reappears as completed and the UI is told so.
+      _untrack(task.id);
+      return;
+    }
+    final base = stored;
     // A paused record is a deliberate user state that the task itself
     // may not know about yet: the scheduler parks a job paused before
     // run() is ever called, so the task still reports queued. Writing

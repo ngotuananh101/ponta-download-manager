@@ -253,7 +253,18 @@ class YtDlpDownloader {
     await stdoutSub.cancel();
     await stderrSub.cancel();
     if (running.cancelled) {
-      deleteOutput(running.outputTemplate);
+      // The process may have exited successfully already: the cancel
+      // then lands while the output is still draining, too late to
+      // stop the transfer. Deleting the file here would throw away a
+      // finished download — and an engine-side delete keeps the file
+      // by default, so the row would vanish along with its output.
+      // Nothing is thrown away unless the run really was stopped.
+      final finished =
+          exitCode == 0 &&
+          (running.finalPath ?? _globFinalPath(running)) != null;
+      if (!finished) {
+        deleteOutput(running.outputTemplate);
+      }
       _finish(
         running,
         DownloadEvent.stateChanged(

@@ -720,6 +720,36 @@ void main() {
       task.cancel();
       await run;
     });
+
+    test('a delete while the sink finalizes is not undone', () async {
+      // The scheduler removes the job from its running set, then
+      // awaits the sink rename before it announces completion. A
+      // delete landing in that window removes the row from the store;
+      // the writer used to fall back to its in-memory snapshot and
+      // write the row straight back — a deleted download reappeared as
+      // completed, and the UI was told so.
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      final task = DownloadTask(
+        transport: _FakeTransport(data: bytesOf(64)),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+        retryDelay: const Duration(milliseconds: 10),
+      );
+      writer.track(task, directory: '/tmp', fileName: 'f.bin');
+      // What deleteDownload does, while the scheduler finalizes.
+      store.deleteDownload('dl-1');
+      writer.complete('dl-1');
+      expect(
+        store.getDownload('dl-1'),
+        isNull,
+        reason: 'the checkpoint writer resurrected a deleted download',
+      );
+    });
   });
 
   group('Recovery', () {

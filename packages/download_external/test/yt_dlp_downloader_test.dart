@@ -255,6 +255,51 @@ void main() {
     expect(failed.code, 'yt-dlp-spawn-failed');
   });
 
+  test('a cancel while the finished run drains keeps the finished file',
+      () async {
+    // yt-dlp exited 0 and wrote the final file, but the run is still
+    // draining stdout/stderr. A delete of the row (or a cancel) that
+    // lands in that window must not throw the finished file away: the
+    // process succeeded, and the engine is about to keep the record's
+    // file. Only a run that is really still transferring is wiped.
+    final fake = _FakeProcess();
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final finalFile = File(p.join(outDir.path, 'live.mp4'));
+    final downloader = YtDlpDownloader(
+      ytDlpPath: 'yt-dlp',
+      ffmpegDir: tmp.path,
+      processStarter: (String exe, List<String> args) async => fake,
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/live.m3u8',
+          outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+        )
+        .listen(events.add, onDone: done.complete);
+    await Future<void>.delayed(Duration.zero);
+    await finalFile.writeAsBytes([1, 2, 3]);
+    // Exit 0 with the final file written, but keep the pipes open:
+    // the run is suspended in the drain when the cancel arrives.
+    fake.completeExit(0);
+    await Future<void>.delayed(Duration.zero);
+    unawaited(downloader.cancel('dl-1'));
+    fake.closeStreams();
+    await done.future.timeout(const Duration(seconds: 5));
+    expect(
+      finalFile.existsSync(),
+      isTrue,
+      reason: 'the cancel deleted the file the finished run produced',
+    );
+    expect(
+      events.whereType<DownloadCompleted>(),
+      isEmpty,
+      reason: 'a cancelled run must not also report completion',
+    );
+  });
+
   test('pause kills the process and emits paused, keeping the partial',
       () async {
     final fake = await makeFake('yt-dlp', _slowScript);
