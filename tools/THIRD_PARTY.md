@@ -1,10 +1,11 @@
 # Third-party tools bundled with PDM
 
-PDM bundles two external command-line tools so it can download HLS
-(.m3u8) and DASH (.mpd) streams. They are **not committed to git**;
-fetch them with `tools/fetch_external_tools.sh` before building. The
-script records each binary's version in a `<name>.version` file next
-to it.
+PDM bundles three external command-line tools: ffmpeg and yt-dlp for
+downloading HLS (.m3u8) and DASH (.mpd) streams and for extracting
+video sites, and quickjs as the JavaScript runtime yt-dlp needs for
+YouTube. They are **not committed to git**; fetch them with
+`tools/fetch_external_tools.sh` before building. The script records
+each binary's version in a `<name>.version` file next to it.
 
 ## ffmpeg
 
@@ -33,6 +34,21 @@ to it.
 - **Source:** GitHub releases, https://github.com/yt-dlp/yt-dlp
   (`yt-dlp_linux` / `yt-dlp.exe` standalone binaries). The fetch
   script verifies each against the release's `SHA2-256SUMS`.
+
+## quickjs (quickjs-ng)
+
+- **What it does:** the JavaScript runtime yt-dlp uses to solve
+  YouTube's player challenges. Without it yt-dlp cannot produce most
+  YouTube formats and fails with "Requested format is not available".
+  yt-dlp looks the binary up by the exact name `qjs` (`qjs.exe` on
+  Windows) when given `--js-runtimes quickjs:<dir>`.
+- **License:** MIT.
+- **Source:** GitHub releases, https://github.com/quickjs-ng/quickjs,
+  tag `v0.18.0` (`qjs-linux-x86_64` / `qjs-windows-x86_64.exe`). Both
+  are bare executables (no archive), and the fetch script pins each
+  asset's SHA-256.
+- **Optional at runtime:** PDM still downloads HLS/DASH and other
+  sites when qjs is missing; only YouTube extraction degrades.
 
 ## Mirrors
 

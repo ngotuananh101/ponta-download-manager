@@ -85,6 +85,31 @@ function fileNameForProbe(probe, format) {
   return sanitizeFileName(probe.title || 'video') + '.' + format.ext;
 }
 
+// Maps a raw yt-dlp failure to copy the user can act on. YouTube's
+// two common failures are opaque to anyone who has not read yt-dlp's
+// source: the player challenge needs a JavaScript runtime ("Requested
+// format is not available"), and the bot check wants a signed-in
+// session. Anything else is passed through unchanged, so a bug report
+// keeps the real error.
+function probeErrorMessage(message) {
+  const text = String(message || '');
+  if (/Requested format is not available/i.test(text)) {
+    return (
+      'YouTube could not be read by the bundled downloader. ' +
+      'Update PDM and try again; if it still fails, restart the app.'
+    );
+  }
+  if (
+    /not a bot|LOGIN_REQUIRED|Sign in to confirm/i.test(text)
+  ) {
+    return (
+      'YouTube wants you to sign in before it will serve this video. ' +
+      'Sign in to YouTube in this browser, then try again.'
+    );
+  }
+  return text;
+}
+
 // Maps a background probe reply ({ok, probe} or {ok: false, code,
 // message}) to a render state. `null` is never passed here — the
 // loading state is a separate explicit state (see renderProbe).
@@ -96,9 +121,10 @@ function probeState(reply) {
         message: 'Could not reach the PDM app. Start the app and try again.',
       };
     }
+    const raw = (reply && reply.message) || 'Could not check this page.';
     return {
       state: 'error',
-      message: (reply && reply.message) || 'Could not check this page.',
+      message: probeErrorMessage(raw),
     };
   }
   const probe = reply.probe;
@@ -127,7 +153,8 @@ function probeState(reply) {
     }
     return {
       state: 'error',
-      message: probe.errorMessage || 'Could not check this page.',
+      message: probeErrorMessage(probe.errorMessage) ||
+        'Could not check this page.',
     };
   }
   return {
@@ -203,6 +230,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatLabel,
     sanitizeFileName,
     fileNameForProbe,
+    probeErrorMessage,
     probeState,
     probeView,
   };

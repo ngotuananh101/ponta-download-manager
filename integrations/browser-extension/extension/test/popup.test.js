@@ -248,6 +248,51 @@ test('probeState maps replies to states', () => {
   );
 });
 
+const FORMAT_UNAVAILABLE =
+  'ERROR: [youtube] LftM_19IToM: Requested format is not available. ' +
+  'Use --list-formats for a list of available formats';
+
+test('probeState explains the YouTube JS-runtime failure', () => {
+  // The raw yt-dlp line tells the user nothing they can act on; the
+  // popup should say what is wrong and that updating the app fixes it.
+  const state = probeState({
+    ok: false,
+    code: 'yt-dlp-probe-failed',
+    message: FORMAT_UNAVAILABLE,
+  });
+  assert.equal(state.state, 'error');
+  assert.match(state.message, /YouTube/);
+  assert.match(state.message, /update|restart/i);
+  assert.doesNotMatch(state.message, /--list-formats/);
+});
+
+test('probeState explains the bot-check failure', () => {
+  const state = probeState({
+    ok: false,
+    code: 'yt-dlp-probe-failed',
+    message:
+      'ERROR: [youtube] abc: Sign in to confirm you’re not a bot. ' +
+      'Use --cookies-from-browser or --cookies for the authentication.',
+  });
+  assert.equal(state.state, 'error');
+  assert.match(state.message, /YouTube/);
+  assert.match(state.message, /sign in|log in/i);
+  assert.doesNotMatch(state.message, /--cookies/);
+});
+
+test('probeState keeps the message for an unrelated failure', () => {
+  // A failure the popup does not understand is still shown verbatim,
+  // so the user (and a bug report) keeps the real error.
+  assert.equal(
+    probeState({
+      ok: false,
+      code: 'yt-dlp-probe-failed',
+      message: 'ERROR: unable to download webpage',
+    }).message,
+    'ERROR: unable to download webpage',
+  );
+});
+
 test('error state marks the status line', () => {
   const doc = fakeDoc();
   probeView(doc, {state: 'error', message: 'boom'}, () => {});

@@ -15,7 +15,7 @@ apps/engine/           Standalone Dart engine (CLI only: the download subcommand
 packages/download_api/ Public engine API: models, commands, events
 packages/download_*/   Engine packages (see docs/architecture.md §14, §21)
 integrations/          Browser extension + native host
-tools/                 fetch_external_tools.sh (ffmpeg + yt-dlp, not committed)
+tools/                 fetch_external_tools.sh (ffmpeg + yt-dlp + quickjs, not committed)
 docs/                  architecture.md, plans
 ```
 
@@ -29,8 +29,8 @@ subcommand for headless use; there is no engine daemon.
 Flutter SDK 3.47+ / Dart SDK 3.13+ (verified: Flutter 3.50.0, Dart 3.14.0).
 Linux desktop toolchain for `flutter run -d linux` / `flutter build linux`.
 Bundled tools: run `tools/fetch_external_tools.sh` once before building —
-ffmpeg + yt-dlp are fetched into `apps/desktop/bundle/bin/` and are not
-committed (see `tools/THIRD_PARTY.md`).
+ffmpeg, yt-dlp and quickjs are fetched into `apps/desktop/bundle/bin/` and
+are not committed (see `tools/THIRD_PARTY.md`).
 
 ## Commands
 

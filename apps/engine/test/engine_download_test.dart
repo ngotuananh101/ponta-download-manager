@@ -2641,6 +2641,30 @@ exit 0
         await engine.probeYtDlp(url);
         expect(probeLogLines(), hasLength(2));
       });
+      test('probeYtDlp enables the resolved JavaScript runtimes', () async {
+        // YouTube extraction needs a JS runtime; the engine must hand
+        // the resolved quickjs (plus node and bun) to yt-dlp or the
+        // probe fails with "Requested format is not available".
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(
+          externalTools: ExternalTools(
+            ffmpegPath: p.join(tempDir.path, 'ffmpeg'),
+            ytDlpPath: fake,
+            qjsPath: p.join(tempDir.path, 'qjs'),
+          ),
+        );
+        addTearDown(engine.dispose);
+        final result = await engine.probeYtDlp(
+          'https://www.youtube.com/watch?v=test123',
+        );
+        expect(result.supported, isTrue);
+        final line = probeLogLines().single;
+        expect(line, contains('--js-runtimes'));
+        expect(line, contains('quickjs:${p.join(tempDir.path, 'qjs')}'));
+        expect(line, contains('node'));
+        expect(line, contains('bun'));
+      });
+
       test('probeYtDlp does not cache a failed probe', () async {
         const failingProbeScript = r'''#!/bin/sh
 echo "$@" >> "$(dirname "$0")/probe.log"

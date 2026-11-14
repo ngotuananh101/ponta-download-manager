@@ -219,6 +219,7 @@ class PdmEngine implements DownloadEngine {
     _ytDlp = YtDlpDownloader(
       ytDlpPath: tools.ytDlpPath!,
       ffmpegDir: p.dirname(tools.ffmpegPath!),
+      jsRuntimes: tools.ytDlpJsRuntimeArgs,
     );
     return _ytDlp;
   }

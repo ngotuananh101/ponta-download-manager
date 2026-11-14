@@ -697,6 +697,66 @@ void main() {
       expect(calls.single, isNot(contains('--referer')));
     });
 
+    test('probe enables the configured JavaScript runtimes', () async {
+      // YouTube needs an external runtime to solve the player
+      // challenges; without one yt-dlp reports "Requested format is
+      // not available".
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        jsRuntimes: const ['quickjs:/app/bin/qjs', 'node', 'bun'],
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          return fake;
+        },
+      );
+      fake.addStdout(probeJson());
+      fake.closeStreams();
+      fake.completeExit(0);
+      final result = await downloader.probe(
+        url: 'https://www.youtube.com/watch?v=xyz',
+      );
+      expect(result.supported, isTrue);
+      final args = calls.single;
+      // One flag per runtime, each value kept as one argument so a
+      // path with a colon (a Windows drive letter) survives.
+      expect(
+        [
+          for (var i = 0; i < args.length; i++)
+            if (args[i] == '--js-runtimes') args[i + 1],
+        ],
+        ['quickjs:/app/bin/qjs', 'node', 'bun'],
+      );
+    });
+
+    test('probe keeps -J as its first argument', () async {
+      // Fake yt-dlp scripts in the engine tests branch on "$1" = -J.
+      downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        jsRuntimes: const ['node'],
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          return fake;
+        },
+      );
+      fake.addStdout(probeJson());
+      fake.closeStreams();
+      fake.completeExit(0);
+      await downloader.probe(url: 'https://www.youtube.com/watch?v=xyz');
+      expect(calls.single.first, '-J');
+      expect(calls.single.last, 'https://www.youtube.com/watch?v=xyz');
+    });
+
+    test('probe passes no --js-runtimes when none is configured',
+        () async {
+      fake.addStdout(probeJson());
+      fake.closeStreams();
+      fake.completeExit(0);
+      await downloader.probe(url: 'https://www.youtube.com/watch?v=xyz');
+      expect(calls.single, isNot(contains('--js-runtimes')));
+    });
+
     test('probe writes cookies to a temp Netscape file and deletes it',
         () async {
       String? cookiePath;
@@ -906,6 +966,45 @@ void main() {
       expect(args[args.indexOf('-f') + 1], '137+140');
       expect(args, contains('--cookies'));
       expect(args, contains('--referer'));
+      expect(args.last, 'https://www.youtube.com/watch?v=xyz');
+    });
+
+    test('start enables the configured JavaScript runtimes', () async {
+      // The download run needs the runtime too: the chosen format's
+      // signature still has to be solved after the probe.
+      final fake = _FakeProcess();
+      final calls = <List<String>>[];
+      final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+      final finalPath = p.join(outDir.path, 'live.mp4');
+      File(finalPath).writeAsStringSync('x');
+      final downloader = YtDlpDownloader(
+        ytDlpPath: 'yt-dlp',
+        ffmpegDir: tmp.path,
+        jsRuntimes: const ['quickjs:/app/bin/qjs', 'node', 'bun'],
+        processStarter: (String exe, List<String> args) async {
+          calls.add(args);
+          fake.addStdout(finalPath);
+          fake.closeStreams();
+          fake.completeExit(0);
+          return fake;
+        },
+      );
+      await downloader
+          .start(
+            downloadId: 'dl-1',
+            url: 'https://www.youtube.com/watch?v=xyz',
+            outputTemplate: p.join(outDir.path, 'live.%(ext)s'),
+            format: '137+140',
+          )
+          .toList();
+      final args = calls.single;
+      expect(
+        [
+          for (var i = 0; i < args.length; i++)
+            if (args[i] == '--js-runtimes') args[i + 1],
+        ],
+        ['quickjs:/app/bin/qjs', 'node', 'bun'],
+      );
       expect(args.last, 'https://www.youtube.com/watch?v=xyz');
     });
 

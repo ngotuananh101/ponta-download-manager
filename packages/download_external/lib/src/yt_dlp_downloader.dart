@@ -71,12 +71,26 @@ class YtDlpDownloader {
   YtDlpDownloader({
     required this.ytDlpPath,
     required this.ffmpegDir,
+    this.jsRuntimes = const [],
     ProcessStarter? processStarter,
   }) : _processStarter = processStarter ?? Process.start;
 
   final String ytDlpPath;
   final String ffmpegDir;
+
+  /// JavaScript runtimes (yt-dlp `--js-runtimes` values, e.g.
+  /// `quickjs:/app/bin/qjs`, `node`, `bun`) enabled for both the probe
+  /// and the download. YouTube only yields most formats when one of
+  /// them can solve the player challenges.
+  final List<String> jsRuntimes;
   final ProcessStarter _processStarter;
+
+  /// The `--js-runtimes` flags for one run. Each value stays a single
+  /// argument: the separator is `:`, so splitting would truncate a
+  /// Windows path like `C:\app\bin\qjs`.
+  List<String> get _jsRuntimeArgs => [
+    for (final runtime in jsRuntimes) ...['--js-runtimes', runtime],
+  ];
 
   final _running = <String, _RunningDownload>{};
 
@@ -142,6 +156,7 @@ class YtDlpDownloader {
       '--ffmpeg-location',
       ffmpegDir,
       '--newline',
+      ..._jsRuntimeArgs,
       '--print',
       'after_move:filepath',
       // Progress goes to stdout, but --print suppresses it unless
@@ -359,6 +374,7 @@ class YtDlpDownloader {
       final args = <String>[
         '-J',
         '--no-playlist',
+        ..._jsRuntimeArgs,
         if (cookieFile != null) ...[
           '--cookies',
           cookieFile.file.path,

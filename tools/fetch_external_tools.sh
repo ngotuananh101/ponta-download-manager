@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fetches the external binaries PDM bundles (ffmpeg + yt-dlp) into
-# apps/desktop/bundle/bin/. The binaries are NOT committed to git;
-# run this once before building, and again after a clean checkout.
+# Fetches the external binaries PDM bundles (ffmpeg, yt-dlp, quickjs)
+# into apps/desktop/bundle/bin/. The binaries are NOT committed to
+# git; run this once before building, and again after a clean
+# checkout.
 #
 # Usage:
 #   tools/fetch_external_tools.sh [--force] [linux|windows|all]
@@ -48,6 +49,21 @@ FFMPEG_LINUX_URL="$FFMPEG_RELEASE/ffmpeg-linux-x64.gz"
 FFMPEG_LINUX_SHA256="bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa"
 FFMPEG_WINDOWS_URL="$FFMPEG_RELEASE/ffmpeg-win32-x64.gz"
 FFMPEG_WINDOWS_SHA256="8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77"
+
+# Pinned quickjs-ng build (MIT). yt-dlp needs an external JavaScript
+# runtime to solve YouTube's player challenges; without one most
+# YouTube formats come back as "Requested format is not available".
+# quickjs-ng publishes bare executables (no archive), so the download
+# needs no unzip/tar, and the binary must be named exactly qjs / qjs.exe
+# -- that is the name yt-dlp looks for in --js-runtimes quickjs:<dir>.
+# The digests are the ones GitHub publishes for each asset; bump the
+# tag, both URLs and both digests together.
+QJS_TAG="v0.18.0"
+QJS_RELEASE="https://github.com/quickjs-ng/quickjs/releases/download/$QJS_TAG"
+QJS_LINUX_URL="$QJS_RELEASE/qjs-linux-x86_64"
+QJS_LINUX_SHA256="85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d"
+QJS_WINDOWS_URL="$QJS_RELEASE/qjs-windows-x86_64.exe"
+QJS_WINDOWS_SHA256="ff03398d74ea6e6bd3a8e58058f7003225abcac229d7d57775b7aaae812a49c7"
 
 FORCE=0
 WANT_LINUX=0
@@ -226,6 +242,17 @@ fetch_linux() {
     record_version "$BIN_DIR/yt-dlp" --version
     echo "yt-dlp -> $BIN_DIR/yt-dlp"
   fi
+
+  # --- qjs (quickjs-ng, pinned GitHub asset) ---
+  # quickjs-ng's qjs answers --version with its version and exit 0.
+  if [ "$FORCE" -eq 0 ] && linux_usable "$BIN_DIR/qjs" --version; then
+    echo "qjs already present, skipping"
+  else
+    download "$QJS_LINUX_URL" "$BIN_DIR/qjs" "$QJS_LINUX_SHA256"
+    chmod +x "$BIN_DIR/qjs"
+    record_version "$BIN_DIR/qjs" --version
+    echo "qjs -> $BIN_DIR/qjs"
+  fi
 }
 
 fetch_windows() {
@@ -261,6 +288,16 @@ fetch_windows() {
       "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" \
       "$BIN_DIR/yt-dlp.exe" "$want"
     echo "yt-dlp.exe -> $BIN_DIR/yt-dlp.exe"
+  fi
+
+  # --- qjs.exe (quickjs-ng, pinned GitHub asset) ---
+  # Cannot be executed on a Linux host, so it is only checked for
+  # content, like ffmpeg.exe and yt-dlp.exe.
+  if [ "$FORCE" -eq 0 ] && windows_usable "$BIN_DIR/qjs.exe"; then
+    echo "qjs.exe already present, skipping"
+  else
+    download "$QJS_WINDOWS_URL" "$BIN_DIR/qjs.exe" "$QJS_WINDOWS_SHA256"
+    echo "qjs.exe -> $BIN_DIR/qjs.exe"
   fi
 }
 
