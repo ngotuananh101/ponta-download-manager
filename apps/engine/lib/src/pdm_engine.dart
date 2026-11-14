@@ -612,6 +612,14 @@ class PdmEngine implements DownloadEngine {
             request.maxConnections ?? config.maxConnectionsPerDownload,
       );
       _store.upsertDownload(record);
+      // Announce the new row before yt-dlp produces anything. The
+      // scheduler branch emits stateChanged(queued) from enqueue(); the
+      // UI only learns about a download created elsewhere (the browser
+      // extension, over IPC) from an engine event, so without this the
+      // row stayed hidden until the first progress line arrived.
+      _events.add(
+        DownloadEvent.stateChanged(downloadId: id, status: record.status),
+      );
       // The yt-dlp branch stores the browser headers and the chosen
       // format in memory, like the scheduler branch stores headers:
       // retry/resume re-send them, and they never reach the store.

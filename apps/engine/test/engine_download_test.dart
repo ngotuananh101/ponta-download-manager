@@ -2742,6 +2742,63 @@ exit 0
         expect(downloadLine, isNot(contains('+bestaudio')));
       });
 
+      test('a yt-dlp download emits queued before the first progress',
+          () async {
+        // The browser extension creates downloads over IPC, outside the
+        // UI's datasource, so the UI learns about a new row only from an
+        // engine event (it refreshes an unknown id on any event). The
+        // scheduler branch emits stateChanged(queued) as soon as it
+        // enqueues; the yt-dlp branch used to emit nothing until yt-dlp
+        // printed its first progress line, so the row appeared seconds
+        // later, when the download had already started.
+        const script = r'''#!/bin/sh
+echo 'PDMPLAN|["137"]|[5000000]|[]|137|NA|5000000'
+echo 'PDMPROGRESS|downloading|137|500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|finished|137|5000000|5000000|NA|NA'
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+        final fake = await makeFakeYtDlp(script);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        final seen = <DownloadEvent>[];
+        final subscription = engine.events.listen(seen.add);
+        addTearDown(subscription.cancel);
+
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://www.youtube.com/watch?v=test123',
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        // The queued event must be observable straight away, before any
+        // progress: that is what makes the row appear as soon as the
+        // browser hands the download over.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(seen, isNotEmpty);
+        expect(
+          seen.first,
+          isA<DownloadStateChanged>()
+              .having((e) => e.downloadId, 'downloadId', info.id)
+              .having((e) => e.status, 'status', DownloadStatus.queued),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+      });
+
       test('retryDownload reuses the chosen format', () async {
         final fake = await makeFakeYtDlp(probeScript);
         final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
