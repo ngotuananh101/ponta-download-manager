@@ -44,8 +44,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The whole Release bundle: pdm.exe, data/, lib/, bin/ (ffmpeg + yt-dlp,
-; installed by the Windows CMakeLists bundle/bin rule), icudtl.dat.
+; The whole Release bundle: pdm.exe, data/, lib/, bin/ (external tools
+; and pdm-native-host.exe), extension/, icudtl.dat. CMake ships the host
+; and extension; PDM registers the host in the current user's HKCU on launch,
+; not in an elevated installer account's registry.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

@@ -4,6 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pdm/core/services/linux_desktop_service.dart';
 
 void main() {
+  test('AppImage desktop entry points at the durable image, not its mount', () async {
+    final home = Directory.systemTemp.createTempSync('pdm-appimage-desktop-');
+    addTearDown(() => home.deleteSync(recursive: true));
+    await LinuxDesktopService.ensureDesktopIntegration(
+      customXdgDataHome: home, isReleaseBuild: true,
+      environment: {'APPIMAGE': '/opt/apps/PDM.AppImage'},
+    );
+    final desktop = File('${home.path}/applications/com.ponta.pdm.desktop').readAsStringSync();
+    expect(desktop, contains('Exec="/opt/apps/PDM.AppImage" %u'));
+  });
+
   test('re-installs the icon when the bundled icon changed', () async {
     final tempDir = await Directory.systemTemp.createTemp('pdm-icon-');
     try {

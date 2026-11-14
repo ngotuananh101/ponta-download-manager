@@ -10,7 +10,10 @@
 
   Files.wxs is generated (WiX has no wildcard include); it defines
   FilesComponentGroup with one Component per file, nested Directory
-  elements mirroring the Release bundle layout (data/, lib/, bin/).
+  elements mirroring the Release bundle layout (data/, lib/, bin/, extension/).
+  bin/pdm-native-host.exe and extension/ are copied by CMake and harvested
+  with the rest of the bundle. Native messaging registration is per-user
+  at app launch, not an elevated MSI custom action.
   UpgradeCode below is fixed forever: changing it breaks upgrades.
   ProductVersion comes from -d ProductVersion (<version>.<build>,
   e.g. 0.1.0.1); the Package Id is generated per build (Id="*").

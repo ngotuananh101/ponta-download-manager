@@ -35,3 +35,28 @@ test('the manifest requests the cookies permission', () => {
     `permissions are ${manifest.permissions.join(', ')}`,
   );
 });
+
+test('the manifest pins the extension id with a public key', () => {
+  // Without a "key", Chrome derives the id from the unpacked folder's
+  // path, so the id was different on every machine and the native host
+  // manifest (allowed_origins) had to be written by hand. With "key",
+  // the id is SHA-256(public key) and identical everywhere — the app
+  // can register the host for a known id.
+  assert.equal(typeof manifest.key, 'string');
+  const der = Buffer.from(manifest.key, 'base64');
+  assert.ok(der.length >= 128, `public key is ${der.length} bytes`);
+  assert.equal(chromeExtensionId(der), 'hiojpajnfchdajfiegibmklalpgndono');
+});
+
+// Chromium: components/crx_file/id_util.cc — SHA-256 of the DER
+// SubjectPublicKeyInfo, first 16 bytes, each hex nibble mapped 0-f to
+// a-p.
+function chromeExtensionId(der) {
+  const digest = require('node:crypto').createHash('sha256').update(der).digest();
+  return Array.from(digest.subarray(0, 16))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .split('')
+    .map((c) => String.fromCharCode('a'.charCodeAt(0) + parseInt(c, 16)))
+    .join('');
+}

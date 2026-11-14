@@ -36,32 +36,35 @@ String? appPathFromDesktopContent(String content) {
 
 /// Default location of the .desktop file the app installs on Linux
 /// (via LinuxDesktopService).
-String defaultDesktopFilePath() {
-  final xdgDataHome = Platform.environment['XDG_DATA_HOME'];
-  final base =
-      xdgDataHome ??
-      p.join(Platform.environment['HOME'] ?? '.', '.local', 'share');
+String defaultDesktopFilePath({Map<String, String>? environment}) {
+  final env = environment ?? Platform.environment;
+  final xdgDataHome = env['XDG_DATA_HOME'];
+  final base = xdgDataHome != null && xdgDataHome.isNotEmpty
+      ? xdgDataHome
+      : p.join(env['HOME'] ?? '.', '.local', 'share');
   return p.join(base, 'applications', 'com.ponta.pdm.desktop');
 }
 
 /// Launches the PDM desktop app when it is not running, and waits
 /// for its IPC endpoint (token + socket, or token + port file on
-/// Windows) to appear. Linux only: the app binary is resolved from
-/// the .desktop file the app installs itself, or from the
-/// PDM_APP_PATH environment variable.
+/// Windows) to appear. Resolves the app from PDM_APP_PATH, the bundled
+/// binary beside the host's bin directory, or the installed .desktop file.
 class AppLauncher {
   AppLauncher({
     required this.socketPath,
     this.desktopFilePath,
+    String? hostExecutablePath,
     this.environment,
     Future<void> Function(String path)? processStarter,
     this.timeout = const Duration(seconds: 15),
     bool? isWindows,
-  }) : _processStarter = processStarter ?? _defaultStarter,
+  }) : hostExecutablePath = hostExecutablePath ?? Platform.resolvedExecutable,
+       _processStarter = processStarter ?? _defaultStarter,
        _isWindows = isWindows ?? Platform.isWindows;
 
   final String socketPath;
   final String? desktopFilePath;
+  final String hostExecutablePath;
   final Map<String, String>? environment;
   final Duration timeout;
   final Future<void> Function(String path) _processStarter;
@@ -75,15 +78,27 @@ class AppLauncher {
 
   String get _portPath => portFilePath(socketPath);
 
-  /// The app binary path: PDM_APP_PATH first, then the Exec= line of
-  /// the installed .desktop file. Null when neither is available.
+  /// The app binary path: PDM_APP_PATH first, then an existing bundled
+  /// sibling (../pdm[.exe]), then the installed .desktop file's Exec= line.
+  /// Null when none is available.
   String? resolveAppPath() {
     final env = environment ?? Platform.environment;
     final fromEnv = env['PDM_APP_PATH'];
     if (fromEnv != null && fromEnv.isNotEmpty) {
       return fromEnv;
     }
-    final desktopPath = desktopFilePath ?? defaultDesktopFilePath();
+    final bundledPath = p.normalize(
+      p.join(
+        p.dirname(hostExecutablePath),
+        '..',
+        _isWindows ? 'pdm.exe' : 'pdm',
+      ),
+    );
+    if (File(bundledPath).existsSync()) {
+      return bundledPath;
+    }
+    final desktopPath =
+        desktopFilePath ?? defaultDesktopFilePath(environment: env);
     final file = File(desktopPath);
     if (!file.existsSync()) {
       return null;
@@ -157,9 +172,7 @@ class AppLauncher {
   }
 
   Future<Socket> _probeTcp() async {
-    final port = int.tryParse(
-      (await File(_portPath).readAsString()).trim(),
-    );
+    final port = int.tryParse((await File(_portPath).readAsString()).trim());
     if (port == null) {
       throw const FormatException('No port in port file');
     }

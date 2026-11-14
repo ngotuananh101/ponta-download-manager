@@ -89,6 +89,15 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bundle/bin")
     COMPONENT Runtime)
 endif()
 
+# Bundle the browser extension sources: this is the folder the app points
+# "Load unpacked" at on Windows, and the id in its manifest is the one the
+# native host manifest whitelists. It comes straight from the repo -- the
+# extension is source, not a fetched binary.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../../integrations/browser-extension/extension"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime
+  PATTERN "test" EXCLUDE)
+
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 

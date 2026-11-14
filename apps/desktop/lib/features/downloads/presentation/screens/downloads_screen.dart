@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdm/app/about_dialog.dart';
 import 'package:pdm/app/app_header.dart';
+import 'package:pdm/app/browser_integration_dialog.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/core/services/drop_target_channel.dart';
@@ -325,6 +326,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 _menuItem('paste-file', 'Paste urls from file'),
                 _exportImportSubmenu(),
                 const PopupMenuDivider(),
+                _menuItem('browser-integration', 'Browser integration'),
                 _menuItem('about', 'About'),
                 _menuItem('quit', 'Quit'),
               ],
@@ -471,6 +473,8 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         await _pasteUrlsFromClipboard();
       case 'paste-file':
         await _pasteUrlsFromFile();
+      case 'browser-integration':
+        await showBrowserIntegrationDialog(context: context);
       case 'about':
         await showPdmAboutDialog(context: context);
       case 'quit':

@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdm/app/app.dart';
+import 'package:pdm/app/browser_integration_dialog.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/core/services/window_service.dart';
@@ -52,25 +53,26 @@ Widget app({
   SaveTextFile? saveFile,
   Future<String?> Function()? pickFile,
   Future<void> Function()? quitApp,
+  BrowserIntegrationSnapshot? browserIntegration,
 }) {
   return ProviderScope(
     overrides: [
       downloadsProvider.overrideWith((ref) => Stream.value(downloads)),
-      if (actions != null)
-        downloadsActionsProvider.overrideWithValue(actions),
+      if (actions != null) downloadsActionsProvider.overrideWithValue(actions),
       if (settingsPath != null)
         fileConflictSettingsProvider.overrideWithValue(
           FileConflictSettings(filePath: settingsPath),
         ),
-      if (fileOpener != null)
-        fileOpenerProvider.overrideWithValue(fileOpener),
+      if (fileOpener != null) fileOpenerProvider.overrideWithValue(fileOpener),
       if (directoryPicker != null)
         directoryPickerProvider.overrideWithValue(directoryPicker),
-      if (saveFile != null)
-        saveFileProvider.overrideWithValue(saveFile),
-      if (pickFile != null)
-        pickFileProvider.overrideWithValue(pickFile),
+      if (saveFile != null) saveFileProvider.overrideWithValue(saveFile),
+      if (pickFile != null) pickFileProvider.overrideWithValue(pickFile),
       if (quitApp != null) quitAppProvider.overrideWithValue(quitApp),
+      if (browserIntegration != null)
+        browserIntegrationStatusProvider.overrideWith(
+          (ref) async => browserIntegration,
+        ),
       // The native library behind DropTarget is not bundled in a test
       // VM, so the screen renders without the native target here.
       dropTargetEnabledProvider.overrideWithValue(false),
@@ -92,6 +94,7 @@ Future<void> pumpApp(
   SaveTextFile? saveFile,
   Future<String?> Function()? pickFile,
   Future<void> Function()? quitApp,
+  BrowserIntegrationSnapshot? browserIntegration,
   Size size = const Size(950, 650),
 }) async {
   tester.view.physicalSize = size;
@@ -108,6 +111,7 @@ Future<void> pumpApp(
       saveFile: saveFile,
       pickFile: pickFile,
       quitApp: quitApp,
+      browserIntegration: browserIntegration,
     ),
   );
   await tester.pumpAndSettle();
@@ -1893,8 +1897,9 @@ void main() {
     expect(items.every((item) => item.height == 32), isTrue);
   });
 
-  testWidgets('the right-side menu uses xs text in compact rows',
-      (tester) async {
+  testWidgets('the right-side menu uses xs text in compact rows', (
+    tester,
+  ) async {
     await pumpApp(tester);
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
@@ -1903,6 +1908,7 @@ void main() {
     expect(find.text('Paste urls from clipboard'), findsOneWidget);
     expect(find.text('Paste urls from file'), findsOneWidget);
     expect(find.text('Export/Import'), findsOneWidget);
+    expect(find.text('Browser integration'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Quit'), findsOneWidget);
     final menuText = tester.widget<Text>(find.text('Pause all'));
@@ -1910,9 +1916,10 @@ void main() {
     final items = tester.widgetList<PopupMenuItem<String>>(
       find.byType(PopupMenuItem<String>),
     );
-    expect(items.length, 7);
+    expect(items.length, 8);
     expect(items.every((item) => item.height == 32), isTrue);
-    // Pause/Resume | paste actions | Export/Import | About, Quit.
+    // Pause/Resume | paste actions | Export/Import | Browser
+    // integration, About, Quit.
     final dividers = find.byType(PopupMenuDivider);
     expect(dividers, findsNWidgets(2));
     expect(
@@ -1929,6 +1936,10 @@ void main() {
     );
     expect(
       tester.getCenter(dividers.at(1)).dy,
+      lessThan(tester.getCenter(find.text('Browser integration')).dy),
+    );
+    expect(
+      tester.getCenter(find.text('Browser integration')).dy,
       lessThan(tester.getCenter(find.text('About')).dy),
     );
   });
@@ -2273,6 +2284,25 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(PdmDialog), findsNothing);
+  });
+
+  testWidgets('Browser integration opens the status dialog', (tester) async {
+    // The dialog re-reads the profiles, so stub the provider instead of
+    // letting it walk the real home directory.
+    await pumpApp(
+      tester,
+      browserIntegration: const BrowserIntegrationSnapshot(statuses: []),
+    );
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Browser integration'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(PdmDialog);
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('Browser integration')),
+      findsWidgets,
+    );
   });
 
   testWidgets('Quit calls the quit action', (tester) async {

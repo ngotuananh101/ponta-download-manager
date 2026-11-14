@@ -104,6 +104,7 @@ StartupWMClass=$appId
     String? customExecPath,
     Directory? customXdgDataHome,
     bool? isReleaseBuild,
+    Map<String, String>? environment,
   }) async {
     if (!Platform.isLinux) return null;
     if (!(isReleaseBuild ?? kReleaseMode)) return null;
@@ -132,7 +133,11 @@ StartupWMClass=$appId
       }
 
       // 2. Resolve target execution path
-      final execPath = customExecPath ?? Platform.resolvedExecutable;
+      final appImage = (environment ?? Platform.environment)['APPIMAGE'];
+      final execPath = customExecPath ??
+          (appImage != null && appImage.isNotEmpty && p.isAbsolute(appImage)
+              ? appImage
+              : Platform.resolvedExecutable);
 
       // 3. Create or update .desktop file
       final desktopFile = File(p.join(appsDir.path, '$appId.desktop'));

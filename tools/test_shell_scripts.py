@@ -7,6 +7,7 @@ fake tools on PATH, so no network and no real binaries are involved.
 """
 import gzip
 import hashlib
+import json
 import os
 import shutil
 import stat
@@ -37,9 +38,10 @@ def run_script(script, *, cwd, args=(), env_extra=None):
     )
 
 
-def test_install_creates_local_bin_when_missing(tmp_path):
-    """Review 34: install.sh must mkdir -p ~/.local/bin before
-    `dart compile exe -o ~/.local/bin/pdm-native-host`."""
+def install_layout(tmp_path, browsers=("google-chrome",), firefox=True):
+    """A temp repo with the install script, a fake dart and a home whose
+    browser config dirs are pre-created (the script only registers
+    browsers that are actually installed)."""
     root = tmp_path / "pdm"
     host_bin = root / "integrations" / "browser-extension" / "host" / "bin"
     host_bin.mkdir(parents=True)
@@ -51,6 +53,10 @@ def test_install_creates_local_bin_when_missing(tmp_path):
     )
     home = tmp_path / "home"
     home.mkdir()
+    for browser in browsers:
+        (home / ".config" / browser).mkdir(parents=True)
+    if firefox:
+        (home / ".mozilla").mkdir()
     fakebin = tmp_path / "fakebin"
     fakebin.mkdir()
     # A fake dart that only writes the -o output file (like the real
@@ -66,13 +72,20 @@ def test_install_creates_local_bin_when_missing(tmp_path):
           prev="$arg"
         done
         [ -n "$out" ] || exit 1
+        mkdir -p "$(dirname "$out")"
         printf 'fake host\\n' > "$out"
         """,
     )
+    return root, dest, home, fakebin
+
+
+def test_install_creates_local_bin_when_missing(tmp_path):
+    """Review 34: install.sh must mkdir -p ~/.local/bin before
+    `dart compile exe -o ~/.local/bin/pdm-native-host`."""
+    root, dest, home, fakebin = install_layout(tmp_path)
     result = run_script(
         dest,
         cwd=root,
-        args=["abcdefghijklmnop"],
         env_extra={
             "HOME": str(home),
             "PATH": f"{fakebin}:{os.environ['PATH']}",
@@ -88,12 +101,131 @@ def test_install_creates_local_bin_when_missing(tmp_path):
         / "com.ponta.pdm.json"
     )
     assert chrome_manifest.is_file()
-    assert "chrome-extension://abcdefghijklmnop/" in chrome_manifest.read_text()
     firefox_manifest = (
         home / ".mozilla" / "native-messaging-hosts" / "com.ponta.pdm.json"
     )
     assert firefox_manifest.is_file()
     assert "pdm@ponta.dev" in firefox_manifest.read_text()
+
+
+def test_install_uses_the_pinned_chrome_extension_id(tmp_path):
+    """The id comes from the public key pinned in the extension manifest,
+    so it is the same on every machine and the script takes no id
+    argument (a mistyped id used to register a host Chrome never calls)."""
+    root, dest, home, fakebin = install_layout(tmp_path)
+
+    result = run_script(
+        dest,
+        cwd=root,
+        env_extra={
+            "HOME": str(home),
+            "PATH": f"{fakebin}:{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = (
+        home
+        / ".config"
+        / "google-chrome"
+        / "NativeMessagingHosts"
+        / "com.ponta.pdm.json"
+    ).read_text()
+    assert "chrome-extension://hiojpajnfchdajfiegibmklalpgndono/" in manifest
+
+
+def test_install_only_registers_browsers_that_are_installed(tmp_path):
+    """Creating ~/.config/microsoft-edge for a machine without Edge makes
+    Edge look installed to anything that scans that directory."""
+    root, dest, home, fakebin = install_layout(
+        tmp_path, browsers=("BraveSoftware/Brave-Browser",)
+    )
+
+    result = run_script(
+        dest,
+        cwd=root,
+        env_extra={
+            "HOME": str(home),
+            "PATH": f"{fakebin}:{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (home / ".config" / "google-chrome").exists()
+    assert (
+        home
+        / ".config"
+        / "BraveSoftware"
+        / "Brave-Browser"
+        / "NativeMessagingHosts"
+        / "com.ponta.pdm.json"
+    ).is_file()
+
+
+def test_install_points_the_manifest_at_a_given_host_binary(tmp_path):
+    """The release bundle ships <bundle>/bin/pdm-native-host: the script
+    registers that path instead of compiling a second copy, so the
+    install and the app's own startup registration agree."""
+    root, dest, home, fakebin = install_layout(tmp_path)
+    bundled = tmp_path / "opt" / "pdm" / "bin" / "pdm-native-host"
+    write_executable(bundled, "#!/bin/sh\nexit 0\n")
+
+    result = run_script(
+        dest,
+        cwd=root,
+        args=["--host", bundled],
+        env_extra={
+            "HOME": str(home),
+            "PATH": f"{fakebin}:{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = (
+        home
+        / ".config"
+        / "google-chrome"
+        / "NativeMessagingHosts"
+        / "com.ponta.pdm.json"
+    ).read_text()
+    assert f'"path": "{bundled}"' in manifest
+    # No second copy compiled into ~/.local/bin.
+    assert not (home / ".local" / "bin" / "pdm-native-host").exists()
+
+
+def test_install_handles_quotes_in_the_host_path(tmp_path):
+    root, dest, home, fakebin = install_layout(tmp_path)
+    bundled = tmp_path / 'quoted "app"' / 'bin' / 'pdm-native-host'
+    write_executable(bundled, "#!/bin/sh\nexit 0\n")
+    result = run_script(
+        dest, cwd=root, args=["--host", bundled],
+        env_extra={"HOME": str(home), "PATH": f"{fakebin}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = home / '.config/google-chrome/NativeMessagingHosts/com.ponta.pdm.json'
+    assert json.loads(manifest.read_text())['path'] == str(bundled)
+
+
+def test_install_rejects_a_missing_host_binary(tmp_path):
+    """A manifest pointing at nothing makes connectNative fail with a
+    generic error; refusing early names the real problem."""
+    root, dest, home, fakebin = install_layout(tmp_path)
+
+    result = run_script(
+        dest,
+        cwd=root,
+        args=["--host", tmp_path / "nope" / "pdm-native-host"],
+        env_extra={
+            "HOME": str(home),
+            "PATH": f"{fakebin}:{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode != 0
+    assert "pdm-native-host" in result.stderr
+    assert not (
+        home / ".config" / "google-chrome" / "NativeMessagingHosts"
+    ).exists()
 
 
 def test_fetch_skips_binaries_that_already_work(tmp_path):

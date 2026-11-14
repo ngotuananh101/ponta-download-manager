@@ -116,6 +116,16 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bundle/bin")
     USE_SOURCE_PERMISSIONS)
 endif()
 
+# Bundle the browser extension sources. The app loads this folder into every
+# Chromium profile it finds (unpacked, location 4), and it is what the
+# "Load unpacked" step on Windows points at. It comes straight from the
+# repo -- the extension is source, not a fetched binary -- and the release
+# build is what makes the folder exist next to the executable.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../../integrations/browser-extension/extension"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime
+  PATTERN "test" EXCLUDE)
+
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 

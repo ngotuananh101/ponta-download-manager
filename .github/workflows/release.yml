@@ -91,6 +91,13 @@ jobs:
         shell: bash
         run: bash tools/fetch_external_tools.sh windows
 
+      # The browser extension's native messaging host. CMake copies
+      # bundle/bin into <bundle>/bin, which is where the app looks for
+      # pdm-native-host.exe when it registers the host with each browser.
+      - name: Build native messaging host
+        shell: bash
+        run: bash tools/build_native_host.sh windows
+
       - name: Build Windows
         working-directory: apps/desktop
         run: flutter build windows --release
@@ -180,6 +187,12 @@ jobs:
 
       - name: Fetch external tools
         run: bash tools/fetch_external_tools.sh linux
+
+      # The browser extension's native messaging host. CMake copies
+      # bundle/bin into <bundle>/bin, which is where the app looks for
+      # pdm-native-host when it registers the host with each browser.
+      - name: Build native messaging host
+        run: bash tools/build_native_host.sh linux
 
       - name: Build Linux
         working-directory: apps/desktop

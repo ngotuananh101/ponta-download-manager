@@ -30,7 +30,10 @@ Flutter SDK 3.47+ / Dart SDK 3.13+ (verified: Flutter 3.50.0, Dart 3.14.0).
 Linux desktop toolchain for `flutter run -d linux` / `flutter build linux`.
 Bundled tools: run `tools/fetch_external_tools.sh` once before building —
 ffmpeg, yt-dlp and quickjs are fetched into `apps/desktop/bundle/bin/` and
-are not committed (see `tools/THIRD_PARTY.md`).
+are not committed (see `tools/THIRD_PARTY.md`). Also run
+`bash tools/build_native_host.sh linux` (or `windows` on Windows) before a
+release build to ship the native messaging host. The release workflow does
+both steps automatically.
 
 ## Commands
 
@@ -79,6 +82,22 @@ Artifacts (all for x64):
 
 The installers are unsigned (no code signing certificate yet): Windows
 shows a SmartScreen warning on first run.
+
+## Browser integration
+
+Release bundles ship the extension and native messaging host. On first
+launch PDM registers the host for the current user's detected browsers;
+no `install.sh` or extension-id copying is needed. On Linux it can also
+add the unpacked extension while a Chromium browser is closed, provided the
+user has already enabled Developer mode. PDM never enables Developer mode
+or re-enables a disabled extension. If the browser is running, quit it and
+choose **Menu → Browser integration → Check again**. This profile-based
+setup is best-effort; **Load unpacked** may still be needed.
+Windows still requires enabling Developer mode and **Load unpacked** once;
+Firefox requires a signed add-on (not yet published). PDM does not bypass
+browser authentication or install force policies. See
+[`integrations/browser-extension/README.md`](integrations/browser-extension/README.md)
+for platform limits and development setup.
 
 ## Notes
 

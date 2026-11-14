@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:logging/logging.dart';
 import 'package:pdm/app/app.dart';
 import 'package:pdm/app/startup_error_app.dart';
+import 'package:pdm/core/services/browser_extension_installer.dart';
+import 'package:pdm/core/services/browser_integration_service.dart';
 import 'package:pdm/core/services/linux_desktop_service.dart';
 import 'package:pdm/core/services/window_api.dart';
 import 'package:pdm/core/services/window_service.dart';
@@ -23,6 +26,17 @@ Future<void> main(List<String> args) async {
 
 Future<void> _startApp(List<String> args) async {
   await LinuxDesktopService.ensureDesktopIntegration();
+
+  // Persistent AppImage assets must not point into a transient mount.
+  // Optional browser setup cannot prevent the engine/UI from starting.
+  try {
+    final paths = await BrowserIntegrationService.prepareBundlePaths();
+    await BrowserIntegrationService.ensureNativeHosts(hostBinaryPath: paths.hostPath);
+    await BrowserExtensionInstaller.install(extensionDirectory: paths.extensionPath);
+  } catch (error) {
+    // The integration dialog retries and reports the concrete failure.
+    Logger('BrowserIntegration').warning('Browser setup failed: $error');
+  }
 
   // The engine runs in this process: open it, start the IPC server
   // for the browser extension, and start the tray + window listener
@@ -58,9 +72,6 @@ Future<void> _startApp(List<String> args) async {
   });
 
   runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const PdmApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const PdmApp()),
   );
 }

@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Ponta Download Manager",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjdQ6C8/wpTvUPpjdLhahlx3yabVYFw+3jVLEmzJjqH3T0ADnGV5/IXEyjrCCtasyEmsKNGGdMXDpoU8Nucz1RSqlv9wOe+gYmJpZSZD3bMGlnEOOXWPKKJ/vcC6AY1u+xDPfQg7llqq9+T+3i6pfqB4RWB0VCJ5rXq1CeYdE5gcEYnCZLx6B6A2/pBfhmgAI63RBRvARvqe0dPdXoi4w4vF9ZIY21zDX9r4+q4F/ds/ENTL/JdBHGENUijDnVbwljPYjMFZLbKn26rf8+5sivxSDLIcccALSxNuRWA81Bpo7ohwWwAxu5aysOmjROzYnFY0WgXZt9FXavM0XxeqU0QIDAQAB",
   "description": "Send downloads to the PDM desktop engine.",
   "icons": {
     "16": "icons/icon16.png",
@@ -9,16 +10,32 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["contextMenus", "nativeMessaging", "notifications", "downloads", "storage", "tabs", "cookies"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging",
+    "notifications",
+    "downloads",
+    "storage",
+    "tabs",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
