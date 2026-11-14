@@ -2150,6 +2150,53 @@ exit 1
       expect(engine.ytDlpSubscriptionCount, 0);
     });
 
+    test('cancelling a paused yt-dlp download announces cancelled',
+        () async {
+      // A paused yt-dlp download has no live run, so the downloader's
+      // cancel() has nothing to kill and emits nothing. The engine then
+      // writes cancelled to the store, and the UI (which reads state
+      // only from events) would keep showing Paused forever.
+      final fake = await makeFakeYtDlp(slowScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      await engine.pauseDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.paused,
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      await engine.cancelDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.cancelled,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.cancelled),
+      );
+    });
+
     test('a cancelled playlist download drops its event subscription',
         () async {
       final fake = await makeFakeYtDlp(slowScript);
@@ -2517,6 +2564,64 @@ exit 1
         expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
       });
 
+      test('resuming a paused yt-dlp download announces the new state',
+          () async {
+        // The UI only learns a download's state from engine events, and
+        // it deliberately holds a paused row at Paused when progress
+        // arrives, so one in-flight chunk after a pause cannot revive
+        // it. Resuming therefore has to announce the new state before
+        // the resumed run's first progress line; otherwise the row
+        // stays "Paused 93%" while the bytes keep climbing, even though
+        // the transfer is running again.
+        final fake = await makeFakeYtDlp(slowScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        await engine.pauseDownload(info.id);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.paused,
+        );
+
+        // Subscribe only once the pause has fully settled, so every
+        // event seen below belongs to the resume.
+        final seen = <DownloadEvent>[];
+        final subscription = engine.events.listen(seen.add);
+        addTearDown(subscription.cancel);
+        await engine.resumeDownload(info.id);
+        final done = await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(done.fileName, 'live.mp4');
+        expect(seen, isNotEmpty);
+        expect(
+          seen.first,
+          isA<DownloadStateChanged>()
+              .having((e) => e.downloadId, 'downloadId', info.id)
+              .having((e) => e.status, 'status', DownloadStatus.queued),
+        );
+      });
+
       test('a paused yt-dlp download stays paused after a restart',
           () async {
         final fake = await makeFakeYtDlp(slowScript);
@@ -2796,6 +2901,45 @@ exit 0
           engine,
           info.id,
           (d) => d.status == DownloadStatus.completed,
+        );
+      });
+
+      test('retrying a yt-dlp download announces the new state', () async {
+        // Same reason as resume: the UI holds a failed row at Failed
+        // when progress arrives (a late chunk from the failed run must
+        // not revive it), so a retry has to announce queued before the
+        // restarted run's first progress line or the row stays
+        // "Failed" while the transfer is visibly running again.
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: url,
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        final seen = <DownloadEvent>[];
+        final subscription = engine.events.listen(seen.add);
+        addTearDown(subscription.cancel);
+        await engine.retryDownload(info.id);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(
+          seen.first,
+          isA<DownloadStateChanged>()
+              .having((e) => e.downloadId, 'downloadId', info.id)
+              .having((e) => e.status, 'status', DownloadStatus.queued),
         );
       });
 

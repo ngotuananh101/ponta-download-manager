@@ -192,6 +192,13 @@ class PdmEngine implements DownloadEngine {
   bool _isYtDlpDownload(DownloadRecord record) =>
       _isStreamingPlaylist(record.url) || record.id.startsWith('yt-');
 
+  /// True when the download reached an end state of its own, so no
+  /// user action may move it again (pause/cancel/resume are no-ops).
+  static bool _isTerminalStatus(DownloadStatus status) =>
+      status == DownloadStatus.completed ||
+      status == DownloadStatus.failed ||
+      status == DownloadStatus.cancelled;
+
   /// Advances the yt-dlp id counter past [id] (e.g. 'yt-7'), so a
   /// later generated id never collides with one already in the store.
   void _reserveYtId(String id) {
@@ -713,6 +720,18 @@ class PdmEngine implements DownloadEngine {
         );
       }
       _updateStatus(downloadId, DownloadStatus.queued);
+      // Announce the new state before yt-dlp prints anything. The UI
+      // deliberately holds a paused row at Paused when progress
+      // arrives (an in-flight chunk must not revive it), so without
+      // this event the row stayed "Paused 93%" while the resumed
+      // transfer's bytes kept climbing. The scheduler branch already
+      // emits stateChanged(queued) from resume().
+      _events.add(
+        DownloadEvent.stateChanged(
+          downloadId: downloadId,
+          status: DownloadStatus.queued,
+        ),
+      );
       _startYtDlp(record, downloader);
       return;
     }
@@ -725,11 +744,34 @@ class PdmEngine implements DownloadEngine {
     _requestHeaders.remove(downloadId);
     _ytDlpFormats.remove(downloadId);
     final record = _store.getDownload(downloadId);
-    if (record != null && _isYtDlpDownload(record)) {
-      await _ytDlp?.cancel(downloadId);
-      _updateStatus(downloadId, DownloadStatus.cancelled);
+    // A finished download is not cancelled: cancelling it would rewrite
+    // a completed/failed record to cancelled (and lose the error) for a
+    // transfer that is already over.
+    if (record != null && _isTerminalStatus(record.status)) {
       return;
     }
+    if (record != null && _isYtDlpDownload(record)) {
+      // A live run emits its own cancelled state from the downloader.
+      // A paused (or not yet started) one has no live run, so
+      // YtDlpDownloader.cancel has nothing to kill and emits nothing:
+      // without the event below the store said cancelled while the UI
+      // kept showing Paused.
+      final hadLiveRun = _ytDlpSubs.containsKey(downloadId);
+      await _ytDlp?.cancel(downloadId);
+      _updateStatus(downloadId, DownloadStatus.cancelled);
+      if (!hadLiveRun) {
+        _events.add(
+          DownloadEvent.stateChanged(
+            downloadId: downloadId,
+            status: DownloadStatus.cancelled,
+          ),
+        );
+      }
+      return;
+    }
+    // The scheduler emits cancelled for every job it still holds
+    // (running, paused, starting or pending), so no event is added
+    // here.
     _scheduler.cancel(downloadId);
     _updateStatus(downloadId, DownloadStatus.cancelled);
   }
@@ -773,6 +815,15 @@ class PdmEngine implements DownloadEngine {
           mirrors: record.mirrors,
           tags: record.tags,
           createdAt: record.createdAt,
+        ),
+      );
+      // Announce the restart before the first progress line, for the
+      // same reason as resume: the UI keeps a failed row at Failed
+      // when progress arrives.
+      _events.add(
+        DownloadEvent.stateChanged(
+          downloadId: record.id,
+          status: DownloadStatus.queued,
         ),
       );
       _startYtDlp(record, downloader);

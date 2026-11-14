@@ -213,7 +213,22 @@ class DownloadScheduler {
       return;
     }
     if (_starting.contains(id)) {
+      // The factory is still building the task, so the job cannot be
+      // parked in _pausedRunning yet. Record the intent and tell the
+      // consumer now: _start parks the job without emitting (no other
+      // event would follow until a resume), so a silent intent would
+      // leave the row showing Queued for a download that will not run.
       _pausedWhileStarting.add(id);
+      final info = _infos[id];
+      if (info != null) {
+        _infos[id] = info.copyWith(status: DownloadStatus.paused);
+      }
+      _emit(
+        DownloadEvent.stateChanged(
+          downloadId: id,
+          status: DownloadStatus.paused,
+        ),
+      );
       return;
     }
     final queued = _findPending(id);
@@ -290,6 +305,21 @@ class DownloadScheduler {
           started: paused.started,
           subscription: paused.subscription,
           runStarted: paused.runStarted,
+        ),
+      );
+      // Announce the move back to the queue. A consumer sees the state
+      // only from these events, so without it a row stayed Paused until
+      // the job actually started: never when the slots were full, and
+      // late even with a free slot (the task's own queued status is a
+      // no-op). The _pending branch below emits for the same reason.
+      final info = _infos[id];
+      if (info != null) {
+        _infos[id] = info.copyWith(status: DownloadStatus.queued);
+      }
+      _emit(
+        DownloadEvent.stateChanged(
+          downloadId: id,
+          status: DownloadStatus.queued,
         ),
       );
       _pump();

@@ -382,6 +382,105 @@ void main() {
       expect(infoOf(scheduler, a).downloadedBytes, 4096);
     });
 
+    test('resume emits queued before the download restarts', () async {
+      // The engine's store is updated by the engine, but the UI only
+      // learns a state from scheduler events. Resuming a job that was
+      // paused while running must therefore announce queued: the slot
+      // may still be taken (nothing else will emit), and even with a
+      // free slot the task's own queued status is a no-op, so the row
+      // would sit at Paused until the first progress arrives.
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 50),
+      );
+      final scheduler = _makeScheduler(transport, maxConcurrent: 1);
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      final b = scheduler.enqueue(
+        url: 'http://example.test/b',
+        fileName: 'b.bin',
+        maxConnections: 1,
+      );
+      await waitFor(() => infoOf(scheduler, a).downloadedBytes > 0);
+      scheduler.pause(a);
+      // The only slot is now busy with b, so the resumed job has to
+      // wait in _pending: no other event can move the row.
+      await waitFor(
+        () => transport.startedUrls.contains('http://example.test/b'),
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = scheduler.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      scheduler.resume(a);
+      // The broadcast stream delivers asynchronously.
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.queued),
+      );
+      await waitForStatus(scheduler, b, DownloadStatus.completed);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+    });
+
+    test('pausing a download still starting emits paused', () async {
+      // pause() returns early while the task is being built (the id is
+      // parked in _pausedWhileStarting) and _start then moves it to the
+      // paused set without an event, so the UI would keep showing
+      // Queued for a download that will not start until resumed.
+      final transport = _FakeTransport(data: bytesOf(4096));
+      final factoryStarted = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          if (!factoryStarted.isCompleted) {
+            factoryStarted.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: job.maxConnections,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      await factoryStarted.future.timeout(const Duration(seconds: 5));
+      final seen = <DownloadEvent>[];
+      final subscription = scheduler.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      scheduler.pause(a);
+      releaseFactory.complete();
+      // The parked job never starts, so nothing else can correct the
+      // snapshot: once the factory has drained, both the snapshot and
+      // the event stream must already say paused.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.paused),
+      );
+      expect(infoOf(scheduler, a).status, DownloadStatus.paused);
+      expect(infoOf(scheduler, a).downloadedBytes, 0);
+      // The parked job must still be resumable afterwards.
+      scheduler.resume(a);
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+    });
+
     test('a pause during a failing start does not stick to the retry',
         () async {
       final transport = _FakeTransport(data: bytesOf(1024));
