@@ -2481,6 +2481,311 @@ exit 1
       );
     });
 
+    test('a resume that a retry overtakes does not delete its output',
+        () async {
+      // A retry and a resume both await the downloader lookup before
+      // touching anything. The later call is the user's current intent,
+      // so the earlier one must abort before it deletes the output or
+      // starts a process. A retry that wakes up after the resume started
+      // a run used to wipe that run's partial and reset the row.
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      // The paused download's partial: the losing retry deletes it.
+      final partial = File(p.join(tempDir.path, 'live.m3u8.partial'));
+      partial.writeAsStringSync('half');
+      final retry = engine.retryDownload(info.id);
+      final resume = engine.resumeDownload(info.id);
+      await Future.wait([retry, resume]);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      expect(
+        downloader.deleteOutputCalls,
+        0,
+        reason: 'the retry deleted the output the resume had just started on',
+      );
+      expect(partial.existsSync(), isTrue);
+      expect(File(runsLog).readAsLinesSync().length, 1);
+      await engine.cancelDownload(info.id);
+    });
+
+    test('a cancel that overtakes a resume with no run still cancels',
+        () async {
+      // Both pause a paused row's start and its resume resolve the
+      // downloader. With the tools not yet created, the resume's await
+      // runs before the cancel is even issued: the cancel must bump the
+      // intent before its own await and the resume must see it, or a
+      // process starts for a row the user just stopped.
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      final resume = engine.resumeDownload(info.id);
+      final cancel = engine.cancelDownload(info.id);
+      await Future.wait([resume, cancel]);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+      expect(engine.ytDlpSubscriptionCount, 0);
+      expect(
+        File(runsLog).existsSync() ? File(runsLog).readAsLinesSync() : const [],
+        isEmpty,
+      );
+    });
+
+    test('retrying a cancelled yt-dlp download starts it again', () async {
+      // The row menu does not offer Retry on a cancelled download, but
+      // the API does, and it worked before the race fixes: a retry
+      // restarts the download. Using the stored status to detect "a
+      // cancel landed during the retry" made every retry of a
+      // cancelled row a silent no-op.
+      final fake = await makeFakeYtDlp(successScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      await engine.cancelDownload(info.id);
+      final cancelled = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(cancelled.status, DownloadStatus.cancelled);
+      await engine.retryDownload(info.id);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      expect(File(p.join(tempDir.path, 'live.mp4')).existsSync(), isTrue);
+    });
+
+    test('a cancel that overtakes a retry of a finished download keeps the file',
+        () async {
+      // Retry on a completed download replaces its file, and that retry
+      // also waits for the downloader. A cancel landing in that window
+      // is the later intent: the retry must not delete the finished
+      // file nor start a second download for a row the user just
+      // stopped. There is nothing to stop yet, so the row keeps its
+      // completed status.
+      final fake = await makeFakeYtDlp(successScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final finished = File(p.join(tempDir.path, 'live.mp4'));
+      expect(finished.existsSync(), isTrue);
+      final retry = engine.retryDownload(info.id);
+      await engine.cancelDownload(info.id);
+      await retry;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.completed);
+      expect(finished.existsSync(), isTrue,
+          reason: 'the cancelled retry deleted the finished file');
+      expect(
+        File(runsLog).readAsLinesSync().length,
+        1,
+        reason: 'the cancelled retry started a second yt-dlp run',
+      );
+    });
+
+    test('cancelling a run that fails while the cancel waits announces it',
+        () async {
+      // With a live run the downloader emits its own terminal event, so
+      // the engine does not announce anything. But the run can end as
+      // failed inside the window the cancel waits in: the engine then
+      // rewrites the record to cancelled, and without an event the UI
+      // stays on Failed forever.
+      const slowFailScript = r'''#!/bin/sh
+sleep 0.4
+echo "ERROR: unable to download video data" >&2
+exit 1
+''';
+      final fake = await makeFakeYtDlp(slowFailScript);
+      final cancelEntered = Completer<void>();
+      final releaseCancel = Completer<void>();
+      final downloader = _StallingCancelDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        onCancel: (_) async {
+          if (!cancelEntered.isCompleted) {
+            cancelEntered.complete();
+          }
+          await releaseCancel.future;
+        },
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      final cancel = engine.cancelDownload(info.id);
+      await cancelEntered.future;
+      // The run ends on its own while the cancel is still stalled.
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.failed,
+      );
+      releaseCancel.complete();
+      await cancel;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(after.status, DownloadStatus.cancelled);
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.cancelled),
+        reason: 'the store says cancelled but the UI was never told',
+      );
+    });
+
+    test('a pause during startup recovery wins', () async {
+      // Recovery runs unawaited when the engine opens. A pause issued
+      // while it resolves the tools is the user's later intent; the
+      // recovery must not start a transfer the user just stopped.
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      store.upsertDownload(
+        DownloadRecord(
+          id: 'yt-1',
+          url: 'https://example.com/live.m3u8',
+          fileName: 'live.m3u8',
+          directory: tempDir.path,
+          status: DownloadStatus.downloading,
+        ),
+      );
+      store.close();
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final engine = openEngine(
+        ytDlpDownloader: _LoggingStartDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+          logPath: runsLog,
+        ),
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      addTearDown(engine.dispose);
+      // Recovery suspends at its first await inside the factory, so this
+      // pause runs before it continues.
+      await engine.pauseDownload('yt-1');
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final after = (await engine.listDownloads())
+          .firstWhere((d) => d.id == 'yt-1');
+      expect(after.status, DownloadStatus.paused);
+      // There is no live run to announce the pause, and the UI learns
+      // state only from events: without this one the row it is showing
+      // as Downloading never changes.
+      expect(
+        seen.whereType<DownloadStateChanged>().map((e) => e.status),
+        contains(DownloadStatus.paused),
+      );
+      expect(engine.ytDlpSubscriptionCount, 0);
+      expect(File(runsLog).existsSync(), isFalse,
+          reason: 'recovery started a run for a download the user paused');
+    });
+
+    test('a delete that overtakes a retry keeps the finished file', () async {
+      // deleteDownload removed the row only after awaiting the
+      // downloader and the run teardown, so a retry suspended in that
+      // window still saw the record, deleted the finished file and
+      // started a run for a row the user had already deleted.
+      final fake = await makeFakeYtDlp(successScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.completed,
+      );
+      final finished = File(p.join(tempDir.path, 'live.mp4'));
+      final retry = engine.retryDownload(info.id);
+      await engine.deleteDownload(info.id);
+      await retry;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(await engine.listDownloads(), isEmpty);
+      expect(finished.existsSync(), isTrue,
+          reason: 'the retry deleted the file of a deleted row');
+      expect(
+        File(runsLog).readAsLinesSync().length,
+        1,
+        reason: 'the retry started a run for a deleted row',
+      );
+    });
+
     test('cancelling a paused yt-dlp download announces cancelled',
         () async {
       // A paused yt-dlp download has no live run, so the downloader's
@@ -2525,6 +2830,43 @@ exit 1
       expect(
         seen.whereType<DownloadStateChanged>().map((e) => e.status),
         contains(DownloadStatus.cancelled),
+      );
+    });
+
+    test('cancelling a live yt-dlp run announces cancelled once', () async {
+      // The downloader announces its own cancelled state, so the engine
+      // must not add a second one: the UI would flash the same row
+      // twice. Checking the count, not just membership, pins that.
+      final fake = await makeFakeYtDlp(slowScript);
+      final engine = openEngine(
+        ytDlpDownloader: YtDlpDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+        ),
+      );
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+        ),
+      );
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      final seen = <DownloadEvent>[];
+      final subscription = engine.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      await engine.cancelDownload(info.id);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        seen
+            .whereType<DownloadStateChanged>()
+            .where((e) => e.status == DownloadStatus.cancelled)
+            .length,
+        1,
       );
     });
 
@@ -2903,10 +3245,12 @@ exit 1
           'yt-1',
           (d) => d.status == DownloadStatus.failed,
         );
-        expect(
-          seen.whereType<DownloadStateChanged>().map((e) => e.status),
-          contains(DownloadStatus.failed),
-        );
+        // A bare state change moves the row to Failed but carries no
+        // reason (the UI sets errorMessage only from a `failed`
+        // event), so the user would see Failed with nothing else.
+        final failure = seen.whereType<DownloadFailed>().single;
+        expect(failure.code, 'external-tools-missing');
+        expect(failure.message, isNotEmpty);
       });
 
       test('an m3u8 url without the tools throws external-tools-missing',

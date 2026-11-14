@@ -132,12 +132,19 @@ class PdmEngine implements DownloadEngine {
   StreamSubscription<DownloadEvent>? _schedulerSub;
   final _ytDlpSubs = <String, StreamSubscription<DownloadEvent>>{};
 
-  /// yt-dlp downloads whose retry has begun but whose run is not
-  /// registered in [_ytDlpSubs] yet. A second retry in that window
-  /// would delete the output the first run is writing and then start a
-  /// process against it, so a retry claims the id here before its first
-  /// await.
-  final _ytDlpStarting = <String>{};
+  /// Monotonic per-download sequence of yt-dlp intents (pause, resume,
+  /// cancel, retry, delete, startup recovery).
+  ///
+  /// Every action bumps it synchronously before its first await, and a
+  /// start-like action re-reads it after each await. That is what makes
+  /// the later user action win: a resume or retry still resolving the
+  /// tools when a cancel, pause, delete or another start is issued sees
+  /// a newer sequence and aborts before it deletes an output or spawns
+  /// a process. The sequence is not derived from the stored status: a
+  /// retry of an already-cancelled row is legitimate, and a cancel of a
+  /// completed row changes no status but must still stop a retry that
+  /// began before it.
+  final _intentSeq = <String, int>{};
 
   /// Counter for yt-dlp download ids (`yt-N`), a separate id space
   /// from the scheduler's `dl-N` so the two can never collide.
@@ -701,7 +708,18 @@ class PdmEngine implements DownloadEngine {
       return;
     }
     if (_isYtDlpDownload(record)) {
+      // The pause is a stop intent: a start that is still resolving
+      // the tools (startup recovery is the common case) must not
+      // spawn a run after it. Claim the intent before the first await
+      // so that start sees a newer intent and gives up.
+      final seq = _claimIntent(downloadId);
+      final hadLiveRun = _ytDlpSubs.containsKey(downloadId);
       await _ytDlp?.pause(downloadId);
+      if (!_intentCurrent(downloadId, seq)) {
+        // A later cancel, delete or retry took over: it owns the
+        // outcome and this pause must not write over it.
+        return;
+      }
       // The pause waits for the downloader to tear the run down, and
       // the run can reach a terminal state in that window: a short
       // stream finishes between the status check above and the kill,
@@ -713,6 +731,17 @@ class PdmEngine implements DownloadEngine {
         return;
       }
       _updateStatus(downloadId, DownloadStatus.paused);
+      if (!hadLiveRun) {
+        // A live run announces its own paused state; with none, the
+        // store would say paused while the UI still showed the row
+        // running, since it learns state only from events.
+        _events.add(
+          DownloadEvent.stateChanged(
+            downloadId: downloadId,
+            status: DownloadStatus.paused,
+          ),
+        );
+      }
       return;
     }
     _scheduler.pause(downloadId);
@@ -729,13 +758,15 @@ class PdmEngine implements DownloadEngine {
       return;
     }
     if (_isYtDlpDownload(record)) {
+      // Every start is an intent of its own, recorded before the first
+      // await. A pause, cancel or delete issued while the tools resolve
+      // bumps the sequence, and any *other* start still resolving sees
+      // that and gives up. This resume re-checks the store instead of
+      // its own sequence: every stop action writes its status
+      // synchronously before it awaits, so the store is the record of
+      // "a later stop already happened".
+      _claimIntent(downloadId);
       final downloader = await _ytDlpDownloader();
-      // A cancel, pause or delete can land while the tools resolve.
-      // Re-read the store: the row the user stopped must not be
-      // revived, and a deleted one must not be started at all. The
-      // later action is the user's current intent, so it wins. This
-      // also makes a second resume of the same row a no-op: the first
-      // one has already written queued by the time this check runs.
       final current = _store.getDownload(downloadId);
       if (current == null || current.status != DownloadStatus.paused) {
         return;
@@ -778,11 +809,22 @@ class PdmEngine implements DownloadEngine {
     if (record != null &&
         (record.status == DownloadStatus.completed ||
             record.status == DownloadStatus.cancelled)) {
+      // Even as a status no-op the intent matters: a retry of a
+      // completed row is in flight and would replace the finished
+      // file. Bumping the sequence stops it before it deletes
+      // anything. A cancelled row's own retry is issued after this
+      // call, so it claims a newer sequence and still runs.
+      _claimIntent(downloadId);
       return;
     }
     _requestHeaders.remove(downloadId);
     _ytDlpFormats.remove(downloadId);
     if (record != null && _isYtDlpDownload(record)) {
+      // The cancel is the stop intent: claim it before the first await
+      // so a resume or retry still resolving the tools gives up
+      // instead of spawning a run for a row the user just stopped. The
+      // status write below is what this cancel itself checks against.
+      _claimIntent(downloadId);
       // A live run emits its own cancelled state from the downloader.
       // A paused (or not yet started) one has no live run, so
       // YtDlpDownloader.cancel has nothing to kill and emits nothing:
@@ -792,12 +834,9 @@ class PdmEngine implements DownloadEngine {
       if (!hadLiveRun) {
         // With no live run there is no progress or terminal event to
         // wait for and no run whose completion must win, so the status
-        // can be written now, before the first await. That is what makes
-        // the cancel stick: a resume or retry suspended while it
-        // resolves the tools re-reads the store when it continues and
-        // must not start a run for a row the user already stopped.
-        // Writing it after the await let that start slip through and
-        // spawn a transfer for a cancelled row.
+        // can be written now, before the first await. Writing it after
+        // the await let a resume that was resolving the tools slip
+        // through and spawn a transfer for a cancelled row.
         _updateStatus(downloadId, DownloadStatus.cancelled);
         _events.add(
           DownloadEvent.stateChanged(
@@ -810,8 +849,9 @@ class PdmEngine implements DownloadEngine {
       // The cancel waits for the run to be torn down, and the run can
       // reach a terminal state in that window (the process exits with
       // the final file while the kill is in flight). Its own event
-      // already told the UI the download finished; rewriting the store
-      // to cancelled would leave the two disagreeing.
+      // already told the UI the download finished or was cancelled;
+      // rewriting the store to cancelled would leave the two
+      // disagreeing.
       final current = _store.getDownload(downloadId);
       if (current != null &&
           (current.status == DownloadStatus.completed ||
@@ -819,6 +859,18 @@ class PdmEngine implements DownloadEngine {
         return;
       }
       _updateStatus(downloadId, DownloadStatus.cancelled);
+      if (hadLiveRun) {
+        // The run ended as failed (its event left the UI on Failed)
+        // or was killed before it could announce anything. Either
+        // way the last event the UI saw is not cancelled, so it must
+        // be told: the store now says cancelled.
+        _events.add(
+          DownloadEvent.stateChanged(
+            downloadId: downloadId,
+            status: DownloadStatus.cancelled,
+          ),
+        );
+      }
       return;
     }
     // The scheduler emits cancelled for every job it still holds
@@ -840,62 +892,62 @@ class PdmEngine implements DownloadEngine {
       // row and hand yt-dlp the same output again: the transfer
       // restarts mid-flight (the "100% then download again" report)
       // and the running process would race the new one for the file.
-      if (_ytDlpSubs.containsKey(record.id) ||
-          !_ytDlpStarting.add(record.id)) {
-        // Running already, or another retry is between its check and
-        // its start: a second run would share the output.
+      if (_ytDlpSubs.containsKey(record.id)) {
         return;
       }
-      try {
-        final downloader = await _ytDlpDownloader();
-        // A cancel or delete that landed while the tools resolved wins:
-        // its output is already gone and its status is the one to keep.
-        // A completed record is a legitimate retry target (it replaces
-        // the finished file), so only a cancelled or missing one stops
-        // the retry.
-        final current = _store.getDownload(record.id);
-        if (current == null ||
-            current.status == DownloadStatus.cancelled) {
-          return;
-        }
-        if (downloader == null) {
-          throw const DownloadError(
-            'external-tools-missing',
-            'ffmpeg and yt-dlp are required to retry this download.',
-          );
-        }
-        downloader.deleteOutput(_ytDlpTemplate(record));
-        final ytPartial = File(record.partialPath);
-        if (ytPartial.existsSync()) {
-          ytPartial.deleteSync();
-        }
-        _store.upsertDownload(
-          DownloadRecord(
-            id: record.id,
-            url: record.url,
-            fileName: record.fileName,
-            directory: record.directory,
-            status: DownloadStatus.queued,
-            priority: record.priority,
-            maxConnections: record.maxConnections,
-            mirrors: record.mirrors,
-            tags: record.tags,
-            createdAt: record.createdAt,
-          ),
-        );
-        // Announce the restart before the first progress line, for the
-        // same reason as resume: the UI keeps a failed row at Failed
-        // when progress arrives.
-        _events.add(
-          DownloadEvent.stateChanged(
-            downloadId: record.id,
-            status: DownloadStatus.queued,
-          ),
-        );
-        _startYtDlp(record, downloader);
-      } finally {
-        _ytDlpStarting.remove(record.id);
+      // The retry is an intent of its own, claimed before the first
+      // await. A cancel, pause, delete or another retry that lands
+      // while the tools resolve bumps the sequence, and the earlier
+      // retry then gives up before it deletes an output or spawns a
+      // run: two retries still start only one.
+      final seq = _claimIntent(record.id);
+      final downloader = await _ytDlpDownloader();
+      if (!_intentCurrent(record.id, seq)) {
+        // A later pause, cancel, delete or retry owns the row: it may
+        // already be writing the output this retry would delete.
+        return;
       }
+      // Re-read the store too: a replaced or deleted record must not
+      // be resurrected under the retry's id.
+      final current = _store.getDownload(record.id);
+      if (current == null) {
+        return;
+      }
+      if (downloader == null) {
+        throw const DownloadError(
+          'external-tools-missing',
+          'ffmpeg and yt-dlp are required to retry this download.',
+        );
+      }
+      downloader.deleteOutput(_ytDlpTemplate(record));
+      final ytPartial = File(record.partialPath);
+      if (ytPartial.existsSync()) {
+        ytPartial.deleteSync();
+      }
+      _store.upsertDownload(
+        DownloadRecord(
+          id: record.id,
+          url: record.url,
+          fileName: record.fileName,
+          directory: record.directory,
+          status: DownloadStatus.queued,
+          priority: record.priority,
+          maxConnections: record.maxConnections,
+          mirrors: record.mirrors,
+          tags: record.tags,
+          createdAt: record.createdAt,
+        ),
+      );
+      // Announce the restart before the first progress line, for the
+      // same reason as resume: the UI keeps a failed row at Failed
+      // when progress arrives.
+      _events.add(
+        DownloadEvent.stateChanged(
+          downloadId: record.id,
+          status: DownloadStatus.queued,
+        ),
+      );
+      _startYtDlp(record, downloader);
       return;
     }
     final partial = File(record.partialPath);
@@ -953,6 +1005,12 @@ class PdmEngine implements DownloadEngine {
       return;
     }
     if (_isYtDlpDownload(record)) {
+      // Delete the record before the first await. A resume or retry
+      // suspended while the tools resolve re-reads the store when it
+      // continues: a row that is already gone stops it before it
+      // deletes output or spawns a run. Leaving the delete for after
+      // the await let that start slip through.
+      _store.deleteDownload(downloadId);
       final downloader = await _ytDlpDownloader();
       await downloader?.cancel(downloadId);
       if (deleteFile) {
@@ -1385,7 +1443,15 @@ class PdmEngine implements DownloadEngine {
   /// before the user could act, so their later action is the intent
   /// that must stick.
   Future<void> _resumeYtDlp(DownloadRecord record) async {
+    // Claim the recovery's intent synchronously, before its first
+    // await. Recovery starts on its own at open, before the user can
+    // act; any later pause, cancel, delete or start bumps the sequence
+    // and wins.
+    final seq = _claimIntent(record.id);
     final downloader = await _ytDlpDownloader();
+    if (!_intentCurrent(record.id, seq)) {
+      return;
+    }
     final current = _store.getDownload(record.id);
     if (current == null) {
       // Deleted while the tools were resolving.
@@ -1408,11 +1474,14 @@ class PdmEngine implements DownloadEngine {
       );
       // The UI learns state only from events, and the initial snapshot
       // showed this row queued: without this event it would sit there
-      // as a download that never starts.
+      // as a download that never starts. A `failed` event (not just a
+      // state change) is what carries the error message, so the row
+      // does not show Failed with an empty reason.
       _events.add(
-        DownloadEvent.stateChanged(
+        DownloadEvent.failed(
           downloadId: record.id,
-          status: DownloadStatus.failed,
+          code: 'external-tools-missing',
+          message: 'ffmpeg and yt-dlp are required to download streams.',
         ),
       );
       return;
@@ -1539,6 +1608,24 @@ class PdmEngine implements DownloadEngine {
       _store.upsertDownload(record.copyWith(status: status));
     }
   }
+
+  /// Records a new intent for [downloadId] and returns its sequence.
+  ///
+  /// Synchronous by design: every action calls this before its first
+  /// await, so an action that is still resolving knows, the moment it
+  /// resumes, whether a later action took the download over.
+  int _claimIntent(String downloadId) {
+    final next = (_intentSeq[downloadId] ?? 0) + 1;
+    _intentSeq[downloadId] = next;
+    return next;
+  }
+
+  /// True when [seq] is still the latest intent for [downloadId]: no
+  /// pause, resume, cancel, retry, delete or recovery has been issued
+  /// since. A finishing action that sees false must not touch the
+  /// store, the output or the run: the newer action owns the outcome.
+  bool _intentCurrent(String downloadId, int seq) =>
+      _intentSeq[downloadId] == seq;
 
   void _throwIfDisposed() {
     if (_disposed) {
