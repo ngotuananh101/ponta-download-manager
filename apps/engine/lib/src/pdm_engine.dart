@@ -907,6 +907,16 @@ class PdmEngine implements DownloadEngine {
         // already be writing the output this retry would delete.
         return;
       }
+      if (_ytDlpSubs.containsKey(record.id)) {
+        // The sequence still says this retry is the latest intent, yet
+        // a resume claimed *before* it has just started a run: its
+        // await resumed first and wrote the store. Deleting the output
+        // now would wipe the file that run is writing, and resetting
+        // the row would make the store claim a fresh 0% download while
+        // the process keeps transferring (the "100% then download
+        // again" report).
+        return;
+      }
       // Re-read the store too: a replaced or deleted record must not
       // be resurrected under the retry's id.
       final current = _store.getDownload(record.id);

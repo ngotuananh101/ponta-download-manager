@@ -2525,6 +2525,52 @@ exit 1
       await engine.cancelDownload(info.id);
     });
 
+    test('a retry that overtakes a resume does not delete the live run',
+        () async {
+      // The mirror ordering of the test above: the resume is issued
+      // first and starts a run while the retry is still resolving the
+      // tools. The retry must not delete the output that run is
+      // writing, nor reset the row to queued: _startYtDlp would then
+      // refuse the duplicate id, leaving the store claiming a fresh
+      // 0% download while the live process keeps transferring.
+      final fake = await makeFakeYtDlp(slowScript);
+      final runsLog = p.join(tempDir.path, 'runs.log');
+      final downloader = _LoggingStartDownloader(
+        ytDlpPath: fake,
+        ffmpegDir: tempDir.path,
+        logPath: runsLog,
+      );
+      final engine = openEngine(ytDlpDownloader: downloader);
+      addTearDown(engine.dispose);
+      final info = await engine.createDownload(
+        CreateDownloadRequest(
+          url: 'https://example.com/live.m3u8',
+          destination: p.join(tempDir.path, 'live.m3u8'),
+          paused: true,
+        ),
+      );
+      final resume = engine.resumeDownload(info.id);
+      final retry = engine.retryDownload(info.id);
+      await Future.wait([resume, retry]);
+      await waitForInfo(
+        engine,
+        info.id,
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      expect(
+        downloader.deleteOutputCalls,
+        0,
+        reason: 'the retry deleted the output of the run the resume started',
+      );
+      expect(engine.ytDlpSubscriptionCount, 1);
+      expect(File(runsLog).readAsLinesSync().length, 1);
+      final listed = (await engine.listDownloads())
+          .firstWhere((d) => d.id == info.id);
+      expect(listed.downloadedBytes, greaterThan(0),
+          reason: 'the retry reset the row while its run kept going');
+      await engine.cancelDownload(info.id);
+    });
+
     test('a cancel that overtakes a resume with no run still cancels',
         () async {
       // Both pause a paused row's start and its resume resolve the
