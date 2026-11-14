@@ -3215,6 +3215,93 @@ exit 1
       );
     });
 
+    test('a pause still resolving when the engine is disposed does not throw',
+        () async {
+      // The app quits while a pause is waiting for the run to be torn
+      // down. dispose() closes the store; the pause resuming afterwards
+      // used to read it and throw an unhandled StateError out of a
+      // fire-and-forget UI action.
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      store.upsertDownload(
+        DownloadRecord(
+          id: 'yt-1',
+          url: 'https://example.com/live.m3u8',
+          fileName: 'live.m3u8',
+          directory: tempDir.path,
+          status: DownloadStatus.downloading,
+        ),
+      );
+      store.close();
+      final fake = await makeFakeYtDlp(slowScript);
+      final pauseEntered = Completer<void>();
+      final releasePause = Completer<void>();
+      final engine = openEngine(
+        ytDlpDownloader: _StallingPauseDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+          onPause: (_) async {
+            if (!pauseEntered.isCompleted) {
+              pauseEntered.complete();
+            }
+            await releasePause.future;
+          },
+        ),
+      );
+      // Recovery starts the run; wait for it so the pause has a live
+      // downloader to wait on.
+      await waitForInfo(
+        engine,
+        'yt-1',
+        (d) => d.status == DownloadStatus.downloading,
+      );
+      final pause = engine.pauseDownload('yt-1');
+      await pauseEntered.future;
+      // Shut down completely first, so the store is closed before the
+      // pause resumes.
+      await engine.dispose();
+      releasePause.complete();
+      await pause;
+    });
+
+    test('a resume still resolving when the engine is disposed does not throw',
+        () async {
+      // Same window, but through a path that re-reads the store instead
+      // of the intent sequence. The store is closed by the time the
+      // resume continues, and reading it throws out of a
+      // fire-and-forget UI action.
+      final store = DownloadStore.open(p.join(tempDir.path, 'pdm.db'));
+      store.upsertDownload(
+        DownloadRecord(
+          id: 'yt-1',
+          url: 'https://example.com/live.m3u8',
+          fileName: 'live.m3u8',
+          directory: tempDir.path,
+          status: DownloadStatus.paused,
+        ),
+      );
+      store.close();
+      final fake = await makeFakeYtDlp(slowScript);
+      final resolveEntered = Completer<void>();
+      final releaseResolve = Completer<void>();
+      final engine = openEngine(
+        resolveExternalTools: () async {
+          if (!resolveEntered.isCompleted) {
+            resolveEntered.complete();
+          }
+          await releaseResolve.future;
+          return ExternalTools(
+            ffmpegPath: p.join(tempDir.path, 'ffmpeg'),
+            ytDlpPath: fake,
+          );
+        },
+      );
+      final resume = engine.resumeDownload('yt-1');
+      await resolveEntered.future;
+      await engine.dispose();
+      releaseResolve.complete();
+      await resume;
+    });
+
     test('recovery does not spawn after the engine is disposed', () async {
       // Recovery runs unawaited when the engine opens, so the app can
       // quit while it still resolves the tools. dispose() kills the

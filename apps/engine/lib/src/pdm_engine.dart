@@ -783,7 +783,7 @@ class PdmEngine implements DownloadEngine {
       // and its completed event lands in the store. Writing paused
       // here would overwrite a finished download (and deny the user
       // the file it just produced).
-      final current = _store.getDownload(downloadId);
+      final current = _liveRecord(downloadId);
       if (current != null && _isTerminalStatus(current.status)) {
         return;
       }
@@ -828,7 +828,7 @@ class PdmEngine implements DownloadEngine {
       // rename, move or URL change writes only the store) must be the
       // one the run uses, or yt-dlp fetches the address the user
       // replaced.
-      final current = _store.getDownload(downloadId);
+      final current = _liveRecord(downloadId);
       if (current == null || current.status != DownloadStatus.paused) {
         return;
       }
@@ -921,7 +921,7 @@ class PdmEngine implements DownloadEngine {
       // already told the UI the download finished or was cancelled;
       // rewriting the store to cancelled would leave the two
       // disagreeing.
-      final current = _store.getDownload(downloadId);
+      final current = _liveRecord(downloadId);
       if (current != null &&
           (current.status == DownloadStatus.completed ||
               current.status == DownloadStatus.cancelled)) {
@@ -1003,7 +1003,7 @@ class PdmEngine implements DownloadEngine {
       // (a rename or move updates only the store, not this action) must
       // be retried as it is now. Deleting the old template would leave
       // the renamed file orphaned and write the old name back.
-      final current = _store.getDownload(record.id);
+      final current = _liveRecord(record.id);
       if (current == null) {
         // Deleted while the tools were resolving.
         return;
@@ -1557,7 +1557,7 @@ class PdmEngine implements DownloadEngine {
     if (!_intentCurrent(record.id, seq)) {
       return;
     }
-    final current = _store.getDownload(record.id);
+    final current = _liveRecord(record.id);
     if (current == null) {
       // Deleted while the tools were resolving.
       return;
@@ -1708,10 +1708,23 @@ class PdmEngine implements DownloadEngine {
   }
 
   void _updateStatus(String id, DownloadStatus status) {
-    final record = _store.getDownload(id);
+    final record = _liveRecord(id);
     if (record != null) {
       _store.upsertDownload(record.copyWith(status: status));
     }
+  }
+
+  /// The stored record for [downloadId], or null once the engine has
+  /// been disposed.
+  ///
+  /// Every action awaits at least once, and the app can quit during
+  /// that await: [dispose] closes the store, so reading it afterwards
+  /// throws out of a fire-and-forget UI action. A disposed engine has
+  /// no row to act on, which is what null already means to the
+  /// callers.
+  DownloadRecord? _liveRecord(String downloadId) {
+    if (_disposed) return null;
+    return _store.getDownload(downloadId);
   }
 
   /// Records a new intent for [downloadId] and returns its sequence.
