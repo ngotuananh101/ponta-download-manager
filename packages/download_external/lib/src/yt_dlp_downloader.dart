@@ -194,6 +194,16 @@ class YtDlpDownloader {
       return;
     }
     running.process = process;
+    // A pause, cancel or shutdown can land while the process is still
+    // spawning. At that moment [running.process] was null, so there was
+    // nothing to kill and the intent was silently lost: the run then
+    // continued to completion after the caller had already been told it
+    // stopped. Now that the process exists, honour the intent; the
+    // normal exit path below emits the matching event and completes
+    // [running.done], which is what pause()/cancel() wait on.
+    if (running.paused || running.cancelled || running.shuttingDown) {
+      process.kill();
+    }
     // Wait for the output streams to drain, not just for exitCode:
     // exitCode can complete before the last stdout lines (including
     // the printed final path) have been delivered to the listener.

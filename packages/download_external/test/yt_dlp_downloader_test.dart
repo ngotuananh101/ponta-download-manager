@@ -283,6 +283,52 @@ void main() {
     expect(File(p.join(outDir.path, 'live.mp4')).existsSync(), isFalse);
   });
 
+  test('pausing while the process is still spawning kills the spawned run',
+      () async {
+    final fake = _FakeProcess();
+    final spawned = Completer<void>();
+    final release = Completer<void>();
+    final downloader = YtDlpDownloader(
+      ytDlpPath: 'yt-dlp',
+      ffmpegDir: tmp.path,
+      processStarter: (String exe, List<String> args) async {
+        if (!spawned.isCompleted) {
+          spawned.complete();
+        }
+        await release.future;
+        return fake;
+      },
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/live.m3u8',
+          outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
+        )
+        .listen(events.add, onDone: done.complete);
+    await spawned.future;
+    // The process does not exist yet, so there is nothing to kill at
+    // this instant. The pause must still win once it does.
+    final pause = downloader.pause('dl-1');
+    release.complete();
+    // If the pause is lost, the run simply finishes on its own.
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 100)).then((_) {
+        if (!fake.killed) {
+          fake.closeStreams();
+          fake.completeExit(0);
+        }
+      }),
+    );
+    await pause.timeout(const Duration(seconds: 5));
+    await done.future.timeout(const Duration(seconds: 5));
+    expect(fake.killed, isTrue);
+    final state = events.whereType<DownloadStateChanged>().single;
+    expect(state.status, DownloadStatus.paused);
+  });
+
   test('cancel kills the process, deletes the output and emits cancelled',
       () async {
     final fake = await makeFake('yt-dlp', _slowScript);
