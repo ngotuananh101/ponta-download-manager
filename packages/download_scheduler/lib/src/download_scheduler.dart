@@ -297,6 +297,24 @@ class DownloadScheduler {
   /// a slot is free.
   void resume(String id) {
     _throwIfDisposed();
+    // A pause that landed while the task was still being built is
+    // recorded as an intent, not as a job in _pausedRunning, so the
+    // branches below cannot see it. Dropping it here is what makes the
+    // resume effective: _start parks the job when the flag is still
+    // set, and nothing else would ever start it again.
+    if (_pausedWhileStarting.remove(id)) {
+      final info = _infos[id];
+      if (info != null) {
+        _infos[id] = info.copyWith(status: DownloadStatus.queued);
+      }
+      _emit(
+        DownloadEvent.stateChanged(
+          downloadId: id,
+          status: DownloadStatus.queued,
+        ),
+      );
+      return;
+    }
     final paused = _pausedRunning.remove(id);
     if (paused != null) {
       _pending.add(

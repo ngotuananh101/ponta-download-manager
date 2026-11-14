@@ -481,6 +481,57 @@ void main() {
       await waitForStatus(scheduler, a, DownloadStatus.completed);
     });
 
+    test('resuming while the task is still starting is not lost', () async {
+      // pause() records the intent in _pausedWhileStarting because the
+      // factory is still building the task. Resume must cancel that
+      // intent: _start parks the job as paused when the flag is still
+      // there, so a swallowed resume leaves a download the user asked
+      // to resume stuck at Paused with nothing left to wake it.
+      final transport = _FakeTransport(data: bytesOf(4096));
+      final factoryStarted = Completer<void>();
+      final releaseFactory = Completer<void>();
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 1,
+        taskFactory: (job) async {
+          if (!factoryStarted.isCompleted) {
+            factoryStarted.complete();
+            await releaseFactory.future;
+          }
+          final sink = _NullSink();
+          return ScheduledTask(
+            DownloadTask(
+              transport: transport,
+              sink: sink,
+              url: Uri.parse(job.url),
+              id: job.id,
+              maxConnections: job.maxConnections,
+            ),
+            sink,
+          );
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final a = scheduler.enqueue(
+        url: 'http://example.test/a',
+        fileName: 'a.bin',
+        maxConnections: 1,
+      );
+      await factoryStarted.future.timeout(const Duration(seconds: 5));
+      final seen = <DownloadEvent>[];
+      final subscription = scheduler.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      scheduler.pause(a);
+      scheduler.resume(a);
+      releaseFactory.complete();
+      // The job must be running (or already done), never parked.
+      await waitForStatus(scheduler, a, DownloadStatus.completed);
+      final finalStatus = seen
+          .whereType<DownloadStateChanged>()
+          .map((e) => e.status)
+          .lastOrNull;
+      expect(finalStatus, isNot(DownloadStatus.paused));
+    });
+
     test('a pause during a failing start does not stick to the retry',
         () async {
       final transport = _FakeTransport(data: bytesOf(1024));
