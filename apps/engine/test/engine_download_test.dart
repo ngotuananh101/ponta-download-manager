@@ -156,6 +156,24 @@ class _StallingPauseDownloader extends YtDlpDownloader {
   }
 }
 
+/// The cancel twin of [_StallingPauseDownloader]: the test holds the
+/// downloader's cancel so the run can finish while the engine awaits.
+class _StallingCancelDownloader extends YtDlpDownloader {
+  _StallingCancelDownloader({
+    required super.ytDlpPath,
+    required super.ffmpegDir,
+    required this.onCancel,
+  });
+
+  final Future<void> Function(String downloadId) onCancel;
+
+  @override
+  Future<void> cancel(String downloadId) async {
+    await onCancel(downloadId);
+    return super.cancel(downloadId);
+  }
+}
+
 void main() {
   group('parseCliArgs flags', () {
     const url = 'http://example.test/f.bin';
@@ -2612,6 +2630,52 @@ exit 1
         expect(await engine.listDownloads(), isEmpty);
       });
 
+      test('a download that completes during cancelDownload stays completed',
+          () async {
+        // Mirrors the pause case: cancel waits for the run to tear
+        // down, and a short stream can exit with its final file in
+        // that window. Its completed event already reached the UI, so
+        // the store must not be rewritten to cancelled underneath.
+        final fake = await makeFakeYtDlp(finishDuringPauseScript);
+        final cancelEntered = Completer<void>();
+        final releaseCancel = Completer<void>();
+        final downloader = _StallingCancelDownloader(
+          ytDlpPath: fake,
+          ffmpegDir: tempDir.path,
+          onCancel: (_) async {
+            if (!cancelEntered.isCompleted) {
+              cancelEntered.complete();
+            }
+            await releaseCancel.future;
+          },
+        );
+        final engine = openEngine(ytDlpDownloader: downloader);
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.downloading,
+        );
+        final cancel = engine.cancelDownload(info.id);
+        await cancelEntered.future;
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        releaseCancel.complete();
+        await cancel;
+        final after = (await engine.listDownloads())
+            .firstWhere((d) => d.id == info.id);
+        expect(after.status, DownloadStatus.completed);
+      });
+
       test('a yt-dlp download pauses and resumes', () async {
         final fake = await makeFakeYtDlp(slowScript);
         final engine = openEngine(
@@ -3027,6 +3091,46 @@ exit 0
           isA<DownloadStateChanged>()
               .having((e) => e.downloadId, 'downloadId', info.id)
               .having((e) => e.status, 'status', DownloadStatus.queued),
+        );
+      });
+
+      test('cancelling a finished yt-dlp download keeps its chosen format',
+          () async {
+        // Cancel is offered for every selected row, including finished
+        // ones, and it is a no-op there. It must stay a true no-op: the
+        // headers and format kept for a retry are the only memory of
+        // what the user picked, so dropping them means the next retry
+        // silently downloads a different stream (or without cookies).
+        final fake = await makeFakeYtDlp(probeScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        const url = 'https://www.youtube.com/watch?v=test123';
+        await engine.probeYtDlp(url);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: url,
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        await engine.cancelDownload(info.id);
+        await engine.retryDownload(info.id);
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        final downloadLines =
+            probeLogLines().where((l) => !l.startsWith('-J')).toList();
+        expect(downloadLines, hasLength(2));
+        expect(
+          downloadLines.every((l) => l.contains('-f 137+bestaudio')),
+          isTrue,
         );
       });
 

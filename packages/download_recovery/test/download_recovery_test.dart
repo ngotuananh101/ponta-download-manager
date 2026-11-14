@@ -498,6 +498,42 @@ void main() {
       expect(record.priority, 1);
     });
 
+    test('a checkpoint does not overwrite a stored paused status', () async {
+      // The scheduler pauses a job by parking it before its run()
+      // starts, so the task itself still reports queued. A checkpoint
+      // taken then must not rewrite the store to queued: the store's
+      // paused status is what lets the user resume the download, and
+      // losing it strands the job (resume is a no-op for queued).
+      final tempDir = await Directory.systemTemp.createTemp(
+        'pdm-recovery-test-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final store = DownloadStore.inMemory();
+      addTearDown(store.close);
+      final writer = CheckpointWriter(store);
+      addTearDown(writer.dispose);
+      final task = DownloadTask(
+        transport: _FakeTransport(data: bytesOf(1024)),
+        sink: _MemorySink(),
+        url: Uri.parse('http://example.test/f.bin'),
+        id: 'dl-1',
+        maxConnections: 1,
+      );
+      writer.track(task, directory: tempDir.path, fileName: 'f.bin');
+      // The engine recorded the pause while the task was still being
+      // created; the task never ran, so it still says queued.
+      store.upsertDownload(
+        store.getDownload('dl-1')!.copyWith(status: DownloadStatus.paused),
+      );
+      expect(task.status, DownloadStatus.queued);
+      writer.flush();
+      expect(store.getDownload('dl-1')!.status, DownloadStatus.paused);
+    });
+
     test('does not report completed before the download is finalized',
         () async {
       final tempDir = await Directory.systemTemp.createTemp(

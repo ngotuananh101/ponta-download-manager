@@ -751,15 +751,17 @@ class PdmEngine implements DownloadEngine {
 
   @override
   Future<void> cancelDownload(String downloadId) async {
-    _requestHeaders.remove(downloadId);
-    _ytDlpFormats.remove(downloadId);
     final record = _store.getDownload(downloadId);
     // A finished download is not cancelled: cancelling it would rewrite
     // a completed/failed record to cancelled (and lose the error) for a
-    // transfer that is already over.
+    // transfer that is already over. It is a no-op, including the
+    // in-memory headers and format: those are the only record of what
+    // the user picked, and retry reuses them.
     if (record != null && _isTerminalStatus(record.status)) {
       return;
     }
+    _requestHeaders.remove(downloadId);
+    _ytDlpFormats.remove(downloadId);
     if (record != null && _isYtDlpDownload(record)) {
       // A live run emits its own cancelled state from the downloader.
       // A paused (or not yet started) one has no live run, so
@@ -768,6 +770,15 @@ class PdmEngine implements DownloadEngine {
       // kept showing Paused.
       final hadLiveRun = _ytDlpSubs.containsKey(downloadId);
       await _ytDlp?.cancel(downloadId);
+      // The cancel waits for the run to be torn down, and the run can
+      // reach a terminal state in that window (the process exits with
+      // the final file while the kill is in flight). Its own event
+      // already told the UI the download finished; rewriting the store
+      // to cancelled would leave the two disagreeing.
+      final current = _store.getDownload(downloadId);
+      if (current != null && _isTerminalStatus(current.status)) {
+        return;
+      }
       _updateStatus(downloadId, DownloadStatus.cancelled);
       if (!hadLiveRun) {
         _events.add(

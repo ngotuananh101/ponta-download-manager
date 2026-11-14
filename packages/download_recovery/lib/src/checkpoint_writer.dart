@@ -204,8 +204,19 @@ class CheckpointWriter {
     // tracked record.
     final stored = store.getDownload(task.id);
     final base = stored ?? tracked.record;
+    // A paused record is a deliberate user state that the task itself
+    // may not know about yet: the scheduler parks a job paused before
+    // run() is ever called, so the task still reports queued. Writing
+    // that queued over the stored paused loses the only thing that
+    // makes the download resumable (resumeDownload only acts on a
+    // paused record), leaving the row stuck with no way back.
+    final current = base.status;
+    final effective =
+        status == DownloadStatus.queued && current == DownloadStatus.paused
+        ? DownloadStatus.paused
+        : status;
     final record = base.copyWith(
-      status: status,
+      status: effective,
       downloadedBytes: task.downloadedBytes,
       totalBytes: task.totalBytes,
       eTag: task.eTag,
