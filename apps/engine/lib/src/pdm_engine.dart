@@ -69,6 +69,7 @@ class PdmEngine implements DownloadEngine {
     required BandwidthLimiter limiter,
     required DownloadTransport transport,
     ExternalTools? externalTools,
+    Future<ExternalTools> Function()? resolveExternalTools,
     YtDlpDownloader? ytDlpDownloader,
   })  : _store = store,
         _scheduler = scheduler,
@@ -76,6 +77,7 @@ class PdmEngine implements DownloadEngine {
         _limiter = limiter,
         _transport = transport,
         _externalTools = externalTools,
+        _resolveExternalTools = resolveExternalTools ?? ExternalTools.resolve,
         _ytDlp = ytDlpDownloader;
 
   factory PdmEngine.open({
@@ -83,6 +85,7 @@ class PdmEngine implements DownloadEngine {
     String? databasePath,
     BandwidthLimiter? limiter,
     ExternalTools? externalTools,
+    Future<ExternalTools> Function()? resolveExternalTools,
     YtDlpDownloader? ytDlpDownloader,
   }) {
     final dbPath = databasePath ?? defaultDatabasePath();
@@ -104,6 +107,7 @@ class PdmEngine implements DownloadEngine {
       limiter: bandwidthLimiter,
       transport: HttpTransport(),
       externalTools: externalTools,
+      resolveExternalTools: resolveExternalTools,
       ytDlpDownloader: ytDlpDownloader,
     );
     engine._schedulerSub = engine._scheduler.events.listen(
@@ -123,6 +127,9 @@ class PdmEngine implements DownloadEngine {
 
   /// Lazily resolved external tools (injected in tests).
   ExternalTools? _externalTools;
+
+  /// How the tools are resolved when they were not injected.
+  final Future<ExternalTools> Function() _resolveExternalTools;
 
   /// Lazily created yt-dlp downloader (injected in tests).
   YtDlpDownloader? _ytDlp;
@@ -228,16 +235,28 @@ class PdmEngine implements DownloadEngine {
   /// The yt-dlp downloader, resolved lazily (tools are only needed
   /// when a playlist URL is added). Returns null when ffmpeg or
   /// yt-dlp is missing.
-  Future<YtDlpDownloader?> _ytDlpDownloader() async {
+  ///
+  /// Concurrent callers share one resolution. Two playlist downloads
+  /// added before the tools resolve each used to build their own
+  /// downloader, and the second became the one the engine holds: the
+  /// first run was then invisible to pause, cancel and dispose, which
+  /// kept transferring after the UI said cancelled.
+  Future<YtDlpDownloader?> _ytDlpDownloader() {
+    return _ytDlpResolution ??= _resolveYtDlpDownloader();
+  }
+
+  Future<YtDlpDownloader?>? _ytDlpResolution;
+
+  Future<YtDlpDownloader?> _resolveYtDlpDownloader() async {
     if (_ytDlp != null) {
       return _ytDlp;
     }
-    final tools = _externalTools ?? await ExternalTools.resolve();
+    final tools = _externalTools ?? await _resolveExternalTools();
     _externalTools = tools;
     if (!tools.available) {
       return null;
     }
-    _ytDlp = YtDlpDownloader(
+    _ytDlp ??= YtDlpDownloader(
       ytDlpPath: tools.ytDlpPath!,
       ffmpegDir: p.dirname(tools.ffmpegPath!),
       jsRuntimes: tools.ytDlpJsRuntimeArgs,
@@ -314,6 +333,13 @@ class PdmEngine implements DownloadEngine {
   /// refuses the duplicate id anyway, so this keeps the call a no-op
   /// instead of an unhandled error.
   void _startYtDlp(DownloadRecord record, YtDlpDownloader downloader) {
+    if (_disposed) {
+      // Every start path awaits before it gets here (the tools, the
+      // run teardown). Once the engine shut down, the downloader was
+      // shut down with it: a process spawned now would belong to
+      // nothing and outlive the app.
+      return;
+    }
     if (_ytDlpSubs.containsKey(record.id)) {
       return;
     }
@@ -345,6 +371,19 @@ class PdmEngine implements DownloadEngine {
       orElse: () => false,
     );
     if (failedOver) return;
+    // The task reports a failure twice: stateChanged(failed), then a
+    // failed event with the message. When a failover is coming it is
+    // the failed event that is swallowed, so forwarding this state
+    // change would leave the UI on Failed with no reason until the
+    // mirror's queued event arrives. Hold it back too: the failed
+    // event that follows is the one that decides.
+    if (event.maybeWhen(
+      stateChanged: (downloadId, status) =>
+          status == DownloadStatus.failed && _canFailOver(downloadId),
+      orElse: () => false,
+    )) {
+      return;
+    }
     _events.add(event);
     event.when(
       progress: (_, _, _, _) {},
@@ -363,6 +402,15 @@ class PdmEngine implements DownloadEngine {
         _writer.fail(downloadId, code, message);
       },
     );
+  }
+
+  /// True when a failure of [downloadId] has a mirror left to try, so
+  /// the failure is not the row's outcome and must not be announced.
+  bool _canFailOver(String downloadId) {
+    final record = _store.getDownload(downloadId);
+    if (record == null) return false;
+    if (_isStreamingPlaylist(record.url)) return false;
+    return (_mirrorIndex[downloadId] ?? -1) + 1 < record.mirrors.length;
   }
 
   /// Tries the next mirror URL for a failed download. Returns true
@@ -594,22 +642,27 @@ class PdmEngine implements DownloadEngine {
       }
     }
     final destPath = p.join(directory, fileName);
-    switch (request.conflictPolicy) {
-      case FileConflictPolicy.overwrite:
-        // Proceed: the sink rename at the end replaces the file.
-        break;
-      case FileConflictPolicy.rename:
-        fileName = p.basename(
-          resolveUniquePath(destPath, isTaken: _isDestinationTaken),
-        );
-      case null:
-        if (File(destPath).existsSync()) {
-          throw DownloadError(
-            'file-exists',
-            'Destination already exists: $destPath',
+    String resolveName(String candidatePath) {
+      switch (request.conflictPolicy) {
+        case FileConflictPolicy.overwrite:
+          // Proceed: the sink rename at the end replaces the file.
+          return p.basename(candidatePath);
+        case FileConflictPolicy.rename:
+          return p.basename(
+            resolveUniquePath(candidatePath, isTaken: _isDestinationTaken),
           );
-        }
+        case null:
+          if (File(candidatePath).existsSync()) {
+            throw DownloadError(
+              'file-exists',
+              'Destination already exists: $candidatePath',
+            );
+          }
+          return p.basename(candidatePath);
+      }
     }
+
+    fileName = resolveName(destPath);
     if (_isStreamingPlaylist(request.url) || request.ytDlpFormat != null) {
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
@@ -619,6 +672,10 @@ class PdmEngine implements DownloadEngine {
           'They are bundled with PDM; check the app bundle.',
         );
       }
+      // Resolve the conflict again: the check above ran before the
+      // tools were awaited, so another playlist download added in that
+      // window saw the same free name and both would write one file.
+      fileName = resolveName(p.join(directory, fileName));
       final id = 'yt-${++_ytCounter}';
       final record = DownloadRecord(
         id: id,
@@ -767,6 +824,10 @@ class PdmEngine implements DownloadEngine {
       // "a later stop already happened".
       _claimIntent(downloadId);
       final downloader = await _ytDlpDownloader();
+      // Re-read the record: an edit made while the tools resolved (a
+      // rename, move or URL change writes only the store) must be the
+      // one the run uses, or yt-dlp fetches the address the user
+      // replaced.
       final current = _store.getDownload(downloadId);
       if (current == null || current.status != DownloadStatus.paused) {
         return;
@@ -790,7 +851,7 @@ class PdmEngine implements DownloadEngine {
           status: DownloadStatus.queued,
         ),
       );
-      _startYtDlp(record, downloader);
+      _startYtDlp(current, downloader);
       return;
     }
     _scheduler.resume(downloadId);
@@ -823,8 +884,9 @@ class PdmEngine implements DownloadEngine {
       // The cancel is the stop intent: claim it before the first await
       // so a resume or retry still resolving the tools gives up
       // instead of spawning a run for a row the user just stopped. The
-      // status write below is what this cancel itself checks against.
-      _claimIntent(downloadId);
+      // sequence is re-read after the await below, because the row can
+      // be taken over in that window too.
+      final seq = _claimIntent(downloadId);
       // A live run emits its own cancelled state from the downloader.
       // A paused (or not yet started) one has no live run, so
       // YtDlpDownloader.cancel has nothing to kill and emits nothing:
@@ -846,6 +908,13 @@ class PdmEngine implements DownloadEngine {
         );
       }
       await _ytDlp?.cancel(downloadId);
+      if (!_intentCurrent(downloadId, seq)) {
+        // A retry (or another start) claimed the row while this cancel
+        // waited for the run to be torn down: it is the later intent
+        // and may already be transferring. Writing cancelled over it
+        // would lock the UI on Cancelled under a live run.
+        return;
+      }
       // The cancel waits for the run to be torn down, and the run can
       // reach a terminal state in that window (the process exits with
       // the final file while the kill is in flight). Its own event
@@ -930,10 +999,13 @@ class PdmEngine implements DownloadEngine {
         // again" report).
         return;
       }
-      // Re-read the store too: a replaced or deleted record must not
-      // be resurrected under the retry's id.
+      // Re-read the store: a record edited while the tools resolved
+      // (a rename or move updates only the store, not this action) must
+      // be retried as it is now. Deleting the old template would leave
+      // the renamed file orphaned and write the old name back.
       final current = _store.getDownload(record.id);
       if (current == null) {
+        // Deleted while the tools were resolving.
         return;
       }
       if (downloader == null) {
@@ -942,23 +1014,23 @@ class PdmEngine implements DownloadEngine {
           'ffmpeg and yt-dlp are required to retry this download.',
         );
       }
-      downloader.deleteOutput(_ytDlpTemplate(record));
-      final ytPartial = File(record.partialPath);
+      downloader.deleteOutput(_ytDlpTemplate(current));
+      final ytPartial = File(current.partialPath);
       if (ytPartial.existsSync()) {
         ytPartial.deleteSync();
       }
       _store.upsertDownload(
         DownloadRecord(
-          id: record.id,
-          url: record.url,
-          fileName: record.fileName,
-          directory: record.directory,
+          id: current.id,
+          url: current.url,
+          fileName: current.fileName,
+          directory: current.directory,
           status: DownloadStatus.queued,
-          priority: record.priority,
-          maxConnections: record.maxConnections,
-          mirrors: record.mirrors,
-          tags: record.tags,
-          createdAt: record.createdAt,
+          priority: current.priority,
+          maxConnections: current.maxConnections,
+          mirrors: current.mirrors,
+          tags: current.tags,
+          createdAt: current.createdAt,
         ),
       );
       // Announce the restart before the first progress line, for the
@@ -966,11 +1038,11 @@ class PdmEngine implements DownloadEngine {
       // when progress arrives.
       _events.add(
         DownloadEvent.stateChanged(
-          downloadId: record.id,
+          downloadId: current.id,
           status: DownloadStatus.queued,
         ),
       );
-      _startYtDlp(record, downloader);
+      _startYtDlp(current, downloader);
       return;
     }
     final partial = File(record.partialPath);
@@ -1033,6 +1105,11 @@ class PdmEngine implements DownloadEngine {
       // continues: a row that is already gone stops it before it
       // deletes output or spawns a run. Leaving the delete for after
       // the await let that start slip through.
+      //
+      // The delete is also an intent of its own: a pause or cancel
+      // suspended in an await re-reads the sequence when it continues
+      // and must not announce a status for a row that is gone.
+      _claimIntent(downloadId);
       _store.deleteDownload(downloadId);
       final downloader = await _ytDlpDownloader();
       await downloader?.cancel(downloadId);
@@ -1445,9 +1522,13 @@ class PdmEngine implements DownloadEngine {
       return ScheduledTask(task, sink);
     } catch (e) {
       // The task never started, so no events will update the store.
-      // Mark the record failed here so it does not stay queued forever.
+      // Mark the record failed here so it does not stay queued forever
+      // — unless the user cancelled the row while the factory was
+      // running: the scheduler already announced cancelled for it, and
+      // the failure of a start nobody waits for any more must not put
+      // Failed on a row the user dismissed.
       final record = _store.getDownload(job.id);
-      if (record != null) {
+      if (record != null && record.status != DownloadStatus.cancelled) {
         _store.upsertDownload(
           record.copyWith(
             status: DownloadStatus.failed,
