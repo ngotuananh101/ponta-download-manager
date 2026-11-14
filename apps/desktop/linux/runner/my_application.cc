@@ -99,6 +99,22 @@ static gboolean window_draw_cb(GtkWidget* widget, cairo_t* cr,
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // A second launch forwards `activate` to the running instance instead of
+  // starting a process of its own (the application is registered as unique;
+  // see my_application_new). Present the window that instance already has:
+  // a second window would run a second engine over the same download
+  // database, recover its records and start its own yt-dlp runs for them.
+  // Close-to-tray hides the window rather than destroying it, so it is
+  // still found here.
+  GList* existing = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (existing != nullptr) {
+    GtkWindow* window = GTK_WINDOW(existing->data);
+    gtk_window_deiconify(window);
+    gtk_window_present(window);
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -215,7 +231,14 @@ static gboolean my_application_local_command_line(GApplication* application,
     return TRUE;
   }
 
-  g_application_activate(application);
+  // With a single instance registered (see my_application_new), a second
+  // launch is remote: g_application_activate forwards the activation to the
+  // running instance over D-Bus and this process exits without creating a
+  // second engine. `--minimized` means the tray, not the window, so it must
+  // not pop the window up either: nothing is forwarded in that case.
+  if (!g_application_get_is_remote(application) || !self->start_minimized) {
+    g_application_activate(application);
+  }
   *exit_status = 0;
 
   return TRUE;
@@ -266,5 +289,5 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_DEFAULT_FLAGS, nullptr));
 }

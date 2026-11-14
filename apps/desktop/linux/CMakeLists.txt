@@ -7,7 +7,15 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "pdm")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.example.pdm")
+#
+# This is also the name a second launch uses to find the running
+# instance (GApplication's unique mode) and the WM_CLASS GTK sets from
+# it. It must be PDM's own id, not the `flutter create` default: the
+# default would make two different apps built from the template look
+# like the same instance, and it does not match the installed
+# .desktop file (StartupWMClass=com.ponta.pdm), so the dock/task
+# switcher could not associate the window with it.
+set(APPLICATION_ID "com.ponta.pdm")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

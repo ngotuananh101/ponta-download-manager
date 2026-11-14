@@ -284,7 +284,17 @@ class PdmEngine implements DownloadEngine {
 
   /// Starts a yt-dlp download for [record] and wires its events into
   /// the engine event stream and the store.
+  ///
+  /// A record that already has a live run is not started again: the
+  /// second process would write the same output file and restart the
+  /// transfer from the beginning, which the user sees as a download
+  /// that reaches 100% and then downloads again. The downloader
+  /// refuses the duplicate id anyway, so this keeps the call a no-op
+  /// instead of an unhandled error.
   void _startYtDlp(DownloadRecord record, YtDlpDownloader downloader) {
+    if (_ytDlpSubs.containsKey(record.id)) {
+      return;
+    }
     final headers = _headersFor(record.id, record.url);
     final sub = downloader
         .start(
@@ -723,6 +733,13 @@ class PdmEngine implements DownloadEngine {
       return;
     }
     if (_isYtDlpDownload(record)) {
+      // A retry of a download that is still running would reset the
+      // row and hand yt-dlp the same output again: the transfer
+      // restarts mid-flight (the "100% then download again" report)
+      // and the running process would race the new one for the file.
+      if (_ytDlpSubs.containsKey(record.id)) {
+        return;
+      }
       final downloader = await _ytDlpDownloader();
       if (downloader == null) {
         throw const DownloadError(

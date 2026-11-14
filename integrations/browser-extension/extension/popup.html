@@ -17,13 +17,10 @@
   .toggle input:checked + .switch::after { left: 14px; background: #141415; }
   .toggle input:focus-visible + .switch { outline: 2px solid #73cefc; outline-offset: 2px; }
   #probe { border-bottom: 1px solid #333; padding: 8px 12px; }
+  #probe:has(#probe-status[hidden]):has(#probe-title[hidden]) { display: none; }
   #probe-status { margin: 0; color: #9a9a9a; font-size: 12px; }
   #probe-status.error { color: #ff6b6b; }
   #probe-title { margin: 0 0 6px; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #probe-formats { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
-  #probe-formats li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #333; }
-  #probe-formats li:last-child { border-bottom: none; }
-  #probe-formats .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
   #list li { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 12px; border-bottom: 1px solid #333; }
   #list li:last-child { border-bottom: none; }
@@ -50,7 +47,6 @@
 <section id="probe">
   <p id="probe-status" hidden></p>
   <h2 id="probe-title" hidden></h2>
-  <ul id="probe-formats" hidden></ul>
 </section>
 <ul id="list"></ul>
 <p id="empty" hidden>No video or audio found on this page.</p>

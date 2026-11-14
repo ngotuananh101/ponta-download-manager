@@ -37,6 +37,12 @@ class _RunningDownload {
   bool paused = false;
   bool cancelled = false;
 
+  /// Folds the per-stream progress lines of this run into one
+  /// monotonic download progress (see [YtDlpProgressTracker]). yt-dlp
+  /// downloads a `<video>+bestaudio` pick as two passes that each print
+  /// 0→100%, so the raw percent cannot be shown as-is.
+  final progress = YtDlpProgressTracker();
+
   /// True when the engine is shutting down: the process is killed
   /// but no terminal event is emitted, so the record stays
   /// non-terminal and recovery resumes it on restart.
@@ -142,6 +148,16 @@ class YtDlpDownloader {
       // --progress is also given. Without it the UI sees no
       // progress at all (the row stays queued until it completes).
       '--progress',
+      // The default `[download] NN% of ...` lines are per stream: a
+      // `<video>+bestaudio` pick prints two full 0→100% passes, which
+      // reads as the download restarting at 100%. The template names
+      // the stream each update belongs to, and the plan print names
+      // all the streams up front, so the run can be folded into one
+      // monotonic progress (see _onStdout).
+      '--progress-template',
+      ytDlpProgressTemplate,
+      '--print',
+      ytDlpStreamPlanPrint,
       '-o',
       running.outputTemplate,
       if (format != null && format.isNotEmpty) ...['-f', format],
@@ -506,8 +522,41 @@ class YtDlpDownloader {
   }
 
   void _onStdout(_RunningDownload running, String line) {
-    final progress = parseYtDlpProgress(line);
-    if (progress != null) {
+    final update = parseYtDlpStreamProgress(line);
+    if (update != null) {
+      final progress = running.progress.update(update);
+      running.controller.add(
+        DownloadEvent.progress(
+          downloadId: running.downloadId,
+          downloadedBytes: progress.downloadedBytes,
+          totalBytes: progress.totalBytes,
+          bytesPerSecond: progress.bytesPerSecond,
+        ),
+      );
+      return;
+    }
+    final plan = parseYtDlpStreamPlan(line);
+    if (plan != null) {
+      // The plan can print before or after the first progress line;
+      // applying it either way makes every update count against the
+      // whole run.
+      running.progress.applyPlan(plan);
+      return;
+    }
+    // Older yt-dlp builds (and a run where the template did not print)
+    // still emit the classic line; it carries no stream id, so it is
+    // folded in as the current stream.
+    final classic = parseYtDlpProgress(line);
+    if (classic != null) {
+      final progress = running.progress.update(
+        YtDlpStreamUpdate(
+          formatId: '',
+          finished: false,
+          downloadedBytes: classic.downloadedBytes,
+          totalBytes: classic.totalBytes,
+          bytesPerSecond: classic.bytesPerSecond,
+        ),
+      );
       running.controller.add(
         DownloadEvent.progress(
           downloadId: running.downloadId,

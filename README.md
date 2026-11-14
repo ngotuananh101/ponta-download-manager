@@ -82,6 +82,9 @@ shows a SmartScreen warning on first run.
 
 ## Notes
 
-- The app id is the `flutter create` default (`com.example.pdm`).
-  Change it later with the template rename approach if needed.
+- The app id is `com.ponta.pdm`, matching the installed `.desktop` file
+  (`StartupWMClass`) and the native messaging host. It is also what makes a
+  second launch a remote activation of the running instance (Linux: GApplication
+  unique mode; Windows: a named mutex) instead of a second app over the same
+  download database.
 - Generated files (`*.freezed.dart`, `*.g.dart`) are committed.

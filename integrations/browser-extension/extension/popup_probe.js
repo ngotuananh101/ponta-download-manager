@@ -1,6 +1,7 @@
-// PDM popup probe helpers: pure functions for the yt-dlp probe section
-// of the popup (status line + formats list). Kept pure so node tests can
-// drive them with a fake DOM, mirroring content.js.
+// PDM popup probe helpers: pure functions for the yt-dlp probe rows
+// of the popup (status line + formats, rendered into the popup's one
+// list). Kept pure so node tests can drive them with a fake DOM,
+// mirroring content.js.
 
 function formatBytes(bytes) {
   if (bytes == null || Number.isNaN(bytes)) {
@@ -28,6 +29,12 @@ function formatKind(format) {
     return 'video-only';
   }
   return 'audio-only';
+}
+
+// The badge a format row shares with a page-media row: a format with a
+// video track is a video, an audio-only one is audio.
+function formatBadge(format) {
+  return formatKind(format) === 'audio-only' ? 'audio' : 'video';
 }
 
 // '1080p · video only · mp4 · 100.0 MiB',
@@ -129,26 +136,30 @@ function probeState(reply) {
   };
 }
 
-// Renders a probe state into the popup's probe section. `state` is
-// either {state: 'loading'} or a probeState() result. `onDownload` is
-// called with {format, fileName} when a format's Download button is
-// clicked; it marks the button Sent and is responsible for sending the
-// ytdlp.download message.
-function renderProbe(doc, state, onDownload) {
+// Renders a probe state into the popup's header status line and its
+// one list. `state` is either {state: 'loading'} or a probeState()
+// result. `onDownload` is called with {format, fileName} when a
+// format's Download button is clicked; it marks the button Sent and
+// is responsible for sending the ytdlp.download message.
+//
+// The rows are appended to `#list`, after any page-media rows already
+// there, so yt-dlp formats and scanned media read as one list. The
+// returned array holds the rows that were appended (empty for a
+// non-formats state), so the caller can place them above the media
+// rows instead of below them.
+function probeView(doc, state, onDownload) {
   const statusEl = doc.getElementById('probe-status');
   const titleEl = doc.getElementById('probe-title');
-  const listEl = doc.getElementById('probe-formats');
-  if (!statusEl || !titleEl || !listEl) {
-    return;
+  if (!statusEl || !titleEl) {
+    return [];
   }
-  listEl.innerHTML = '';
+  const rows = [];
   if (state.state === 'loading') {
     statusEl.className = '';
     statusEl.hidden = false;
     statusEl.textContent = 'Checking this page for downloads…';
     titleEl.hidden = true;
-    listEl.hidden = true;
-    return;
+    return rows;
   }
   if (state.state === 'formats') {
     const probe = state.probe;
@@ -156,9 +167,11 @@ function renderProbe(doc, state, onDownload) {
     statusEl.hidden = true;
     titleEl.hidden = !probe.title;
     titleEl.textContent = probe.title || '';
-    listEl.hidden = false;
     for (const format of probe.formats) {
       const row = doc.createElement('li');
+      const badge = doc.createElement('span');
+      badge.className = 'badge ' + formatBadge(format);
+      badge.textContent = formatBadge(format);
       const label = doc.createElement('span');
       label.className = 'name';
       label.textContent = formatLabel(format);
@@ -170,26 +183,27 @@ function renderProbe(doc, state, onDownload) {
         button.textContent = 'Sent';
         onDownload({format, fileName: fileNameForProbe(probe, format)});
       });
-      row.append(label, button);
-      listEl.append(row);
+      row.append(badge, label, button);
+      rows.push(row);
     }
-    return;
+    return rows;
   }
   statusEl.className = state.state === 'error' ? 'error' : '';
   statusEl.hidden = false;
   statusEl.textContent = state.message;
   titleEl.hidden = true;
-  listEl.hidden = true;
+  return rows;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     formatBytes,
     formatKind,
+    formatBadge,
     formatLabel,
     sanitizeFileName,
     fileNameForProbe,
     probeState,
-    renderProbe,
+    probeView,
   };
 }

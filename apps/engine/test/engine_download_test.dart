@@ -2751,6 +2751,142 @@ exit 0
         );
       });
 
+      test('a two-stream yt-dlp download reports one monotonic progress',
+          () async {
+        // Mirrors a `<video>+bestaudio` pick: each stream prints its
+        // own 0→100%; the row must not restart at 100%, and the run
+        // only completes when yt-dlp exits with the final file.
+        const twoStreamScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo 'PDMPLAN|["137", "140"]|[5000000, 1000000]|[]|137+140|NA|6000000'
+echo 'PDMPROGRESS|downloading|137|500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|downloading|137|2500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|downloading|137|5000000|5000000|NA|1000000'
+echo 'PDMPROGRESS|finished|137|5000000|5000000|NA|NA'
+echo 'PDMPROGRESS|downloading|140|100000|1000000|NA|500000'
+echo 'PDMPROGRESS|downloading|140|1000000|1000000|NA|500000'
+echo 'PDMPROGRESS|finished|140|1000000|1000000|NA|NA'
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+        final fake = await makeFakeYtDlp(twoStreamScript);
+        final engine = openEngine(ytDlpDownloader: makeProbeDownloader(fake));
+        addTearDown(engine.dispose);
+        final progresses = <({int downloaded, int total})>[];
+        final subscription = engine.events.listen((event) {
+          if (event is DownloadProgress) {
+            progresses.add((
+              downloaded: event.downloadedBytes,
+              total: event.totalBytes,
+            ));
+          }
+        });
+        addTearDown(subscription.cancel);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://www.youtube.com/watch?v=test123',
+            destination: p.join(tempDir.path, 'video.mp4'),
+            ytDlpFormat: '137',
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) => d.status == DownloadStatus.completed,
+        );
+        expect(progresses, isNotEmpty);
+        var lastPercent = 0.0;
+        var reachedEnd = false;
+        for (final p in progresses) {
+          final percent =
+              p.total <= 0 ? 0.0 : p.downloaded * 100 / p.total;
+          // Never backwards: a second stream restarting at 0% is the
+          // "downloads again once it hits 100%" symptom.
+          expect(percent, greaterThanOrEqualTo(lastPercent - 0.01));
+          // Once the run is at the end it must stay there: a drop back
+          // after the merge starts would read as a new download.
+          if (reachedEnd) {
+            expect(percent, closeTo(100, 0.01));
+          }
+          reachedEnd = percent >= 100 - 0.01;
+          lastPercent = percent;
+        }
+        // The video stream finishing (5 of 6 MB) is not the whole run.
+        final videoDone = progresses.firstWhere(
+          (p) => p.downloaded == 5000000 && p.total == 6000000,
+        );
+        expect(videoDone.downloaded * 100 / videoDone.total, closeTo(83.3, 0.1));
+        expect(progresses.last.total, 6000000);
+        expect(progresses.last.downloaded, 6000000);
+      });
+
+      test(
+          'a yt-dlp download is not started twice while it is running',
+          () async {
+        // A second start for the same id (recovery racing a start, or a
+        // duplicate retry) must not spawn a second yt-dlp: two
+        // processes writing one output restart the download mid-flight.
+        const loggingSlowScript = r'''#!/bin/sh
+echo "run" >> "$(dirname "$0")/runs.log"
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo "[download]  10.0% of  100.00MiB at  1.00MiB/s ETA 01:30"
+mkdir -p "$(dirname "$final")"
+touch "$final.part"
+sleep 3
+echo "[download] 100% of  100.00MiB in 00:03"
+touch "$final"
+echo "$final"
+exit 0
+''';
+        final fake = await makeFakeYtDlp(loggingSlowScript);
+        final engine = openEngine(
+          ytDlpDownloader: YtDlpDownloader(
+            ytDlpPath: fake,
+            ffmpegDir: tempDir.path,
+          ),
+        );
+        addTearDown(engine.dispose);
+        final info = await engine.createDownload(
+          CreateDownloadRequest(
+            url: 'https://example.com/live.m3u8',
+            destination: p.join(tempDir.path, 'live.m3u8'),
+          ),
+        );
+        await waitForInfo(
+          engine,
+          info.id,
+          (d) =>
+              d.status == DownloadStatus.downloading &&
+              d.downloadedBytes > 0,
+        );
+        // Retrying a download that is still running must not spawn a
+        // second yt-dlp for the same output: two processes writing one
+        // file restart the transfer mid-flight, which is exactly the
+        // "reaches 100% and downloads again" report.
+        await engine.retryDownload(info.id);
+        await engine.retryDownload(info.id);
+        expect(engine.ytDlpSubscriptionCount, 1);
+        expect(
+          File(p.join(tempDir.path, 'runs.log')).readAsLinesSync().length,
+          1,
+        );
+        await engine.cancelDownload(info.id);
+      });
+
       test('probeYtDlp without the tools throws external-tools-missing',
           () async {
         final engine = openEngine(

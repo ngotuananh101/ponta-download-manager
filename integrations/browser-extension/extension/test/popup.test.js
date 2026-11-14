@@ -2,11 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   formatBytes,
+  formatBadge,
   formatLabel,
   sanitizeFileName,
   fileNameForProbe,
   probeState,
-  renderProbe,
+  probeView,
 } = require('../popup_probe.js');
 const {initPopup} = require('../popup.js');
 
@@ -49,13 +50,11 @@ function fakeDoc() {
     intercept: fakeEl('input'),
     'probe-status': fakeEl('p'),
     'probe-title': fakeEl('h2'),
-    'probe-formats': fakeEl('ul'),
   };
   // Mirror the initial hidden state of popup.html.
   byId.empty.hidden = true;
   byId['probe-status'].hidden = true;
   byId['probe-title'].hidden = true;
-  byId['probe-formats'].hidden = true;
   return {
     byId,
     getElementById: (id) => byId[id] || null,
@@ -65,7 +64,23 @@ function fakeDoc() {
 
 const TAB_URL = 'https://www.youtube.com/watch?v=abc123';
 
-function fakeChrome() {
+const CLIP = {
+  url: 'https://cdn.example.com/clip.mp4',
+  fileName: 'clip.mp4',
+  type: 'video',
+  referrer: TAB_URL,
+};
+
+const SONG = {
+  url: 'https://cdn.example.com/song.mp3',
+  fileName: 'song.mp3',
+  type: 'audio',
+  referrer: TAB_URL,
+};
+
+/// A fake chrome API. [media] is what media.list answers; the yt-dlp
+/// probe stays pending until [replyProbe] is called.
+function fakeChrome({media = [], tabUrl = TAB_URL} = {}) {
   const sent = [];
   const probeCallbacks = [];
   return {
@@ -75,7 +90,7 @@ function fakeChrome() {
     },
     tabs: {
       query: (query, cb) => {
-        cb([{url: TAB_URL}]);
+        cb(tabUrl == null ? [] : [{url: tabUrl}]);
       },
     },
     runtime: {
@@ -84,7 +99,7 @@ function fakeChrome() {
         if (message.type === 'ytdlp.probe') {
           probeCallbacks.push(cb);
         } else if (message.type === 'media.list') {
-          cb({items: []});
+          cb({items: media});
         } else if (message.type === 'intercept.get') {
           cb({enabled: true});
         } else if (cb) {
@@ -143,9 +158,9 @@ const supportedProbe = {
   ],
 };
 
-function openPopup() {
+function openPopup(options) {
   const doc = fakeDoc();
-  const chromeApi = fakeChrome();
+  const chromeApi = fakeChrome(options);
   initPopup(doc, chromeApi);
   return {doc, chromeApi};
 }
@@ -172,6 +187,12 @@ test('formatLabel shows resolution, ext and size', () => {
     formatLabel(supportedProbe.formats[2]),
     'medium · audio only · m4a · 4.0 MiB',
   );
+});
+
+test('formatBadge maps a format to the badge it shares with page media', () => {
+  assert.equal(formatBadge(supportedProbe.formats[0]), 'video');
+  assert.equal(formatBadge(supportedProbe.formats[1]), 'video');
+  assert.equal(formatBadge(supportedProbe.formats[2]), 'audio');
 });
 
 test('sanitizeFileName strips characters the host rejects', () => {
@@ -229,30 +250,26 @@ test('probeState maps replies to states', () => {
 
 test('error state marks the status line', () => {
   const doc = fakeDoc();
-  renderProbe(doc, {state: 'error', message: 'boom'}, () => {});
+  probeView(doc, {state: 'error', message: 'boom'}, () => {});
   assert.equal(doc.byId['probe-status'].className, 'error');
 });
 
 test('loading state has no error class', () => {
   const doc = fakeDoc();
-  renderProbe(doc, {state: 'loading'}, () => {});
+  probeView(doc, {state: 'loading'}, () => {});
   assert.equal(doc.byId['probe-status'].className, '');
 });
 
-test('renderProbe shows the loading state', () => {
+test('probeView shows the loading state and returns no rows', () => {
   const doc = fakeDoc();
-  let downloaded = null;
-  renderProbe(doc, {state: 'loading'}, (choice) => {
-    downloaded = choice;
-  });
+  const rows = probeView(doc, {state: 'loading'}, () => {});
   assert.equal(doc.byId['probe-status'].hidden, false);
   assert.match(doc.byId['probe-status'].textContent, /Checking/);
   assert.equal(doc.byId['probe-title'].hidden, true);
-  assert.equal(doc.byId['probe-formats'].hidden, true);
-  assert.equal(downloaded, null);
+  assert.deepEqual(rows, []);
 });
 
-test('loading state shows while the probe is pending', () => {
+test('the popup asks for the page media and probes the tab', () => {
   const {doc, chromeApi} = openPopup();
   assert.deepEqual(
     chromeApi.sent.map((m) => m.type),
@@ -260,23 +277,28 @@ test('loading state shows while the probe is pending', () => {
   );
   assert.equal(doc.byId['probe-status'].hidden, false);
   assert.match(doc.byId['probe-status'].textContent, /Checking/);
-  assert.equal(doc.byId['probe-formats'].children.length, 0);
+  assert.equal(doc.byId.list.children.length, 0);
 });
 
-test('formats render with the right labels', () => {
+test('formats render as rows of the one list', () => {
   const {doc, chromeApi} = openPopup();
   chromeApi.replyProbe({ok: true, probe: supportedProbe});
   assert.equal(doc.byId['probe-title'].hidden, false);
   assert.equal(doc.byId['probe-title'].textContent, 'My Video: Part 1/2');
   assert.equal(doc.byId['probe-status'].hidden, true);
-  const rows = doc.byId['probe-formats'].children;
+  const rows = doc.byId.list.children;
   assert.equal(rows.length, 3);
-  const labels = rows.map((row) => row.children[0].textContent);
-  assert.deepEqual(labels, [
-    '1080p · video only · mp4 · 100.0 MiB',
-    '360p · mp4 · 11.8 MiB',
-    'medium · audio only · m4a · 4.0 MiB',
-  ]);
+  assert.equal(rows[0].children[0].className, 'badge video');
+  assert.equal(rows[2].children[0].className, 'badge audio');
+  assert.deepEqual(
+    rows.map((row) => row.children[1].textContent),
+    [
+      '1080p · video only · mp4 · 100.0 MiB',
+      '360p · mp4 · 11.8 MiB',
+      'medium · audio only · m4a · 4.0 MiB',
+    ],
+  );
+  assert.equal(doc.byId.empty.hidden, true);
 });
 
 test('unsupported shows the not-supported message', () => {
@@ -287,7 +309,7 @@ test('unsupported shows the not-supported message', () => {
   });
   assert.equal(doc.byId['probe-status'].hidden, false);
   assert.match(doc.byId['probe-status'].textContent, /not support/i);
-  assert.equal(doc.byId['probe-formats'].children.length, 0);
+  assert.equal(doc.byId.list.children.length, 0);
 });
 
 test('unavailable shows the unavailable message', () => {
@@ -298,7 +320,7 @@ test('unavailable shows the unavailable message', () => {
   });
   assert.equal(doc.byId['probe-status'].hidden, false);
   assert.match(doc.byId['probe-status'].textContent, /unavailable/i);
-  assert.equal(doc.byId['probe-formats'].children.length, 0);
+  assert.equal(doc.byId.list.children.length, 0);
 });
 
 test('error shows the error message', () => {
@@ -312,14 +334,13 @@ test('error shows the error message', () => {
     doc.byId['probe-status'].textContent,
     'yt-dlp exited with code 1',
   );
-  assert.equal(doc.byId['probe-formats'].children.length, 0);
+  assert.equal(doc.byId.list.children.length, 0);
 });
 
 test("clicking a format's Download posts ytdlp.download with that formatId", () => {
   const {doc, chromeApi} = openPopup();
   chromeApi.replyProbe({ok: true, probe: supportedProbe});
-  const rows = doc.byId['probe-formats'].children;
-  const button = rows[0].children[1];
+  const button = doc.byId.list.children[0].children[2];
   assert.equal(button.textContent, 'Download');
   button.click();
   assert.equal(button.disabled, true);
@@ -334,35 +355,8 @@ test("clicking a format's Download posts ytdlp.download with that formatId", () 
   });
 });
 
-test('media badges carry the media type class', () => {
-  const doc = fakeDoc();
-  const chromeApi = fakeChrome();
-  chromeApi.runtime.sendMessage = (message, cb) => {
-    chromeApi.sent.push(message);
-    if (message.type === 'media.list') {
-      cb({
-        items: [
-          {
-            url: 'https://cdn.example.com/clip.mp4',
-            fileName: 'clip.mp4',
-            type: 'video',
-            referrer: TAB_URL,
-          },
-          {
-            url: 'https://cdn.example.com/song.mp3',
-            fileName: 'song.mp3',
-            type: 'audio',
-            referrer: TAB_URL,
-          },
-        ],
-      });
-    } else if (message.type === 'intercept.get') {
-      cb({enabled: true});
-    } else if (cb) {
-      cb({});
-    }
-  };
-  initPopup(doc, chromeApi);
+test('media rows carry the media type badge', () => {
+  const {doc} = openPopup({media: [CLIP, SONG]});
   assert.equal(doc.byId.list.children.length, 2);
   assert.equal(
     doc.byId.list.children[0].children[0].className,
@@ -374,58 +368,66 @@ test('media badges carry the media type class', () => {
   );
 });
 
+test('page media still lists when no format is found', () => {
+  const {doc, chromeApi} = openPopup({media: [CLIP]});
+  chromeApi.replyProbe({
+    ok: true,
+    probe: {supported: false, errorCode: 'yt-dlp-unsupported'},
+  });
+  assert.equal(doc.byId.list.children.length, 1);
+  assert.equal(doc.byId.list.children[0].children[1].textContent, 'clip.mp4');
+});
+
+test('yt-dlp formats and page media share the one list', () => {
+  const {doc, chromeApi} = openPopup({media: [CLIP]});
+  chromeApi.replyProbe({ok: true, probe: supportedProbe});
+  // Three yt-dlp formats on top, then the page's own media.
+  const rows = doc.byId.list.children;
+  assert.equal(rows.length, 4);
+  assert.equal(rows[3].children[1].textContent, 'clip.mp4');
+  assert.equal(doc.byId.empty.hidden, true);
+});
+
+test('the empty message shows only once every source answered', () => {
+  const {doc, chromeApi} = openPopup();
+  // Page scan empty, probe still loading: no empty message yet.
+  assert.equal(doc.byId.empty.hidden, true);
+  chromeApi.replyProbe({
+    ok: true,
+    probe: {supported: false, errorCode: 'yt-dlp-unsupported'},
+  });
+  assert.equal(doc.byId.empty.hidden, false);
+});
+
+test('page media alone keeps the empty message hidden', () => {
+  const {doc} = openPopup({media: [CLIP]});
+  assert.equal(doc.byId.empty.hidden, true);
+  assert.equal(doc.byId.list.children.length, 1);
+});
+
+test('page media renders while the probe is still loading', () => {
+  const {doc} = openPopup({media: [CLIP]});
+  const rows = doc.byId.list.children;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].children[1].textContent, 'clip.mp4');
+});
+
 test('probe is not sent for a non-http tab', () => {
-  const doc = fakeDoc();
-  const chromeApi = fakeChrome();
-  chromeApi.tabs.query = (query, cb) => {
-    cb([{url: 'chrome://extensions'}]);
-  };
-  initPopup(doc, chromeApi);
+  const {doc, chromeApi} = openPopup({tabUrl: 'chrome://extensions'});
   assert.equal(
     chromeApi.sent.some((m) => m.type === 'ytdlp.probe'),
     false,
   );
   assert.equal(doc.byId['probe-status'].hidden, true);
-  assert.equal(doc.byId['probe-formats'].hidden, true);
+  // Nothing can be found: the popup says so instead of staying blank.
+  assert.equal(doc.byId.empty.hidden, false);
 });
 
 test('probe is not sent when there is no active tab', () => {
-  const doc = fakeDoc();
-  const chromeApi = fakeChrome();
-  chromeApi.tabs.query = (query, cb) => {
-    cb([]);
-  };
-  initPopup(doc, chromeApi);
+  const {doc, chromeApi} = openPopup({tabUrl: null});
   assert.equal(
     chromeApi.sent.some((m) => m.type === 'ytdlp.probe'),
     false,
   );
   assert.equal(doc.byId['probe-status'].hidden, true);
-});
-
-test('media list still renders', () => {
-  const doc = fakeDoc();
-  const chromeApi = fakeChrome();
-  chromeApi.runtime.sendMessage = (message, cb) => {
-    chromeApi.sent.push(message);
-    if (message.type === 'media.list') {
-      cb({
-        items: [
-          {
-            url: 'https://cdn.example.com/clip.mp4',
-            fileName: 'clip.mp4',
-            type: 'video',
-            referrer: TAB_URL,
-          },
-        ],
-      });
-    } else if (message.type === 'intercept.get') {
-      cb({enabled: true});
-    } else if (cb) {
-      cb({});
-    }
-  };
-  initPopup(doc, chromeApi);
-  assert.equal(doc.byId.list.children.length, 1);
-  assert.equal(doc.byId.list.children[0].children[1].textContent, 'clip.mp4');
 });

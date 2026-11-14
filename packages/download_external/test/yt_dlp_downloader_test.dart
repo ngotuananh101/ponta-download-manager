@@ -59,6 +59,54 @@ touch "$stem-notes.txt"
 exit 0
 ''';
 
+// Mirrors a `<video>+bestaudio` yt-dlp run: one plan line, then two
+// streams, each printing its own 0→100% and finishing before the next
+// one starts. This is the shape that used to show as "100%, then the
+// download starts again".
+const _twoStreamScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo 'PDMPLAN|["137", "140"]|[5000000, 1000000]|[]|137+140|NA|6000000'
+echo 'PDMPROGRESS|downloading|137|500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|downloading|137|2500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|downloading|137|5000000|5000000|NA|1000000'
+echo 'PDMPROGRESS|finished|137|5000000|5000000|NA|NA'
+echo 'PDMPROGRESS|downloading|140|100000|1000000|NA|500000'
+echo 'PDMPROGRESS|downloading|140|1000000|1000000|NA|500000'
+echo 'PDMPROGRESS|finished|140|1000000|1000000|NA|NA'
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
+// The same two streams with the plan line missing (it races the first
+// progress line in practice): the run total is unknown, but the
+// percent still must not drop back when the second stream starts.
+const _twoStreamNoPlanScript = r'''#!/bin/sh
+out=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$arg"; fi
+  prev="$arg"
+done
+final=$(printf '%s' "$out" | sed 's/%(ext)s/mp4/')
+echo 'PDMPROGRESS|downloading|137|2500000|5000000|NA|1000000'
+echo 'PDMPROGRESS|finished|137|5000000|5000000|NA|NA'
+echo 'PDMPROGRESS|downloading|140|100000|1000000|NA|500000'
+echo 'PDMPROGRESS|downloading|140|1000000|1000000|NA|500000'
+echo 'PDMPROGRESS|finished|140|1000000|1000000|NA|NA'
+mkdir -p "$(dirname "$final")"
+touch "$final"
+echo "$final"
+exit 0
+''';
+
 
 /// A fake [Process] driven by the test: stdout/stderr lines are fed
 /// through [addStdout]/[addStderr], [exitCode] completes when
@@ -281,9 +329,107 @@ void main() {
       outputTemplate: p.join(tmp.path, 'live.%(ext)s'),
     );
     await events.toList();
-    final argv = await argvFile.readAsString();
+    final argv = (await argvFile.readAsString()).split('\n');
     expect(argv, contains('--progress'));
     expect(argv, contains('--print'));
+    // The machine-readable progress line and the plan line: without
+    // them one run of two streams reports each stream's own 0→100%.
+    expect(argv, contains(ytDlpProgressTemplate));
+    expect(argv, contains(ytDlpStreamPlanPrint));
+  });
+
+  test('two streams render as one monotonic run that completes', () async {
+    final fake = await makeFake('yt-dlp', _twoStreamScript);
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final downloader = YtDlpDownloader(
+      ytDlpPath: fake,
+      ffmpegDir: tmp.path,
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/watch?v=abc',
+          outputTemplate: p.join(outDir.path, 'fake.%(ext)s'),
+          format: '137+bestaudio',
+        )
+        .listen(events.add, onDone: done.complete);
+    await done.future.timeout(const Duration(seconds: 10));
+
+    final progresses = events.whereType<DownloadProgress>().toList();
+    expect(progresses, isNotEmpty);
+    // Percent never goes backwards, never claims 100% before done.
+    var last = 0.0;
+    for (final p in progresses) {
+      final percent = p.totalBytes <= 0
+          ? 0.0
+          : p.downloadedBytes * 100 / p.totalBytes;
+      expect(percent, greaterThanOrEqualTo(last - 0.01));
+      expect(p.downloadedBytes, lessThanOrEqualTo(p.totalBytes));
+      last = percent;
+    }
+    // One total for the whole run (both streams), not the last one's,
+    // and the run is only marked done by the completed event.
+    expect(progresses.last.totalBytes, 6000000);
+    expect(progresses.last.downloadedBytes, 6000000);
+    // The two per-stream "finished" lines may both land at 100%; what
+    // must not happen is a later *downloading* line dropping below the
+    // previous one.
+    final downloading =
+        events.whereType<DownloadProgress>().toList(growable: false);
+    expect(downloading.length, progresses.length);
+    expect(events.whereType<DownloadCompleted>().length, 1);
+  });
+
+  test('two streams without a plan never restart at 0%', () async {
+    final fake = await makeFake('yt-dlp', _twoStreamNoPlanScript);
+    final outDir = Directory(p.join(tmp.path, 'out'))..createSync();
+    final downloader = YtDlpDownloader(
+      ytDlpPath: fake,
+      ffmpegDir: tmp.path,
+    );
+    final events = <DownloadEvent>[];
+    final done = Completer<void>();
+    downloader
+        .start(
+          downloadId: 'dl-1',
+          url: 'https://example.com/watch?v=abc',
+          outputTemplate: p.join(outDir.path, 'fake.%(ext)s'),
+        )
+        .listen(events.add, onDone: done.complete);
+    await done.future.timeout(const Duration(seconds: 10));
+
+    final progresses = events.whereType<DownloadProgress>().toList();
+    // Until the first stream finishes, the row shows that stream's own
+    // percent, monotonic.
+    var lastPercent = 0.0;
+    var finishedFirst = false;
+    var lastBytes = 0;
+    for (final p in progresses) {
+      if (p.totalBytes < 0) {
+        // After the first stream finished the run total is unknowable
+        // without a plan: bytes keep counting, the percent rests at 0.
+        expect(finishedFirst, isTrue);
+        expect(p.downloadedBytes, greaterThanOrEqualTo(lastBytes));
+        lastBytes = p.downloadedBytes;
+        continue;
+      }
+      final percent = p.downloadedBytes * 100 / p.totalBytes;
+      expect(percent, greaterThanOrEqualTo(lastPercent - 0.01));
+      lastPercent = percent;
+      lastBytes = p.downloadedBytes;
+      // The stream's own 100% is reported as 99: only the completed
+      // event closes the run.
+      if (percent >= 99) {
+        finishedFirst = true;
+      }
+    }
+    expect(finishedFirst, isTrue);
+    final last = progresses.last;
+    expect(last.totalBytes, -1);
+    // Both streams' bytes are carried once they are in.
+    expect(last.downloadedBytes, 6000000);
   });
 
   test('starting the same download twice throws', () async {

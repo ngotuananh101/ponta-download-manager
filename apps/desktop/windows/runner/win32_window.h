@@ -7,6 +7,12 @@
 #include <memory>
 #include <string>
 
+// The window class this runner registers for its top-level window.
+// App-specific rather than Flutter's template default, so a second
+// launch can find the running instance's window by class without
+// matching an unrelated Flutter app built from the same template.
+inline constexpr wchar_t kWindowClassName[] = L"PONTA_PDM_WIN32_WINDOW";
+
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
 // rendering and input handling
