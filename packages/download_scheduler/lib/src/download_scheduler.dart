@@ -193,11 +193,13 @@ class DownloadScheduler {
     );
     // A new attempt for an id means the user (or a failover) replaced
     // whatever that id was doing. A paused attempt is not discarded by
-    // anything else: it sits in _pausedRunning with its task and sink
-    // alive, waiting for a resume. Leaving it there keeps two live
-    // tasks for one id — the paused one still holding its sink, and a
-    // later resume would start the attempt the row no longer belongs
-    // to.
+    // anything else: it waits for a resume, either parked in
+    // _pausedRunning with its task and sink alive, or still in _pending
+    // with its paused flag — a download created paused never leaves the
+    // queue, and neither does one paused while it waited for a slot.
+    // Leaving it there keeps two attempts for one id: the retried one
+    // starts, and a later resume() finds the stale one first and runs
+    // it as well, downloading the same file over the retry.
     final replaced = _pausedRunning.remove(jobId);
     if (replaced != null) {
       // Stop listening before cancelling the task. task.cancel() only
@@ -206,17 +208,26 @@ class DownloadScheduler {
       // one delivered here would put the row on Cancelled while the
       // new attempt is already transferring.
       unawaited(replaced.subscription.cancel());
+      // Either way the task no longer owns the id, so its owner must
+      // stop tracking it: a task that ran keeps checkpointing until it
+      // is told otherwise, and cancelling it makes it emit cancelled —
+      // which the owner would write to the row the new attempt now
+      // owns.
+      replaced.started.onAbandoned?.call();
       if (replaced.runStarted) {
-        // run() is live: cancelling it ends the task, and its own
-        // cancelled event settles its bookkeeping.
+        // run() is live: cancelling it stops the transfer.
         replaced.started.task.cancel();
       } else {
-        // run() was never called, so the task emits nothing: close its
-        // sink and tell its owner to stop tracking it, exactly like a
-        // cancelled job parked before its run.
+        // run() was never called, so the task emits nothing: close the
+        // sink it opened.
         unawaited(replaced.started.sink.close());
-        replaced.started.onAbandoned?.call();
       }
+    }
+    for (final queued in _pending.where(
+      (q) => q.job.id == jobId && q.paused,
+    ).toList()) {
+      _pending.remove(queued);
+      _discardQueued(queued);
     }
     _jobs[job.id] = job;
     _infos[job.id] = DownloadInfo(
@@ -265,8 +276,14 @@ class DownloadScheduler {
   /// inside that window; registering an already-superseded attempt
   /// would take the row over from the retry that owns it. The factory
   /// asks this after its await, before it touches any shared state.
+  ///
+  /// A cancelled start is not current either: the scheduler will throw
+  /// the built task away, and registering it would rewrite the row the
+  /// cancel settled — or, after a delete, put the deleted row back.
   bool isCurrentAttempt(DownloadJob job) =>
-      !_disposed && !_superseded(job);
+      !_disposed &&
+      !_superseded(job) &&
+      !_cancelledWhileStarting.contains(job.sequence);
 
   /// Pauses a running download (freeing its slot) or a queued one.
   void pause(String id) {
@@ -462,18 +479,7 @@ class DownloadScheduler {
     final queued = _findPending(id);
     if (queued != null) {
       _pending.remove(queued);
-      if (queued.started != null) {
-        unawaited(queued.subscription!.cancel());
-        queued.started!.task.cancel();
-        if (!queued.runStarted) {
-          // task.cancel() emits nothing before run(), and this task
-          // will never run: it is discarded, so its owner must stop
-          // tracking it. runStarted means the task owns its own
-          // terminal event instead.
-          unawaited(queued.started!.sink.close());
-          queued.started!.onAbandoned?.call();
-        }
-      }
+      _discardQueued(queued);
       _markCancelled(queued.job);
     }
   }
@@ -710,11 +716,16 @@ class DownloadScheduler {
           ),
         );
       } else {
+        // run() is called right below, so the entry must say so: a job
+        // parked before its run is resumed with runStarted false, and
+        // keeping that value would make cancel() treat a live task as
+        // never-started — it would close the sink underneath it and
+        // never call task.cancel().
         final running = _RunningJob(
           job,
           started,
           queued.subscription!,
-          runStarted: queued.runStarted,
+          runStarted: true,
         );
         _running[job.id] = running;
         _starting.remove(job.sequence);
@@ -812,8 +823,26 @@ class DownloadScheduler {
     // place. Removing and reporting by id alone settled the running
     // replacement, and its own sink was never finished.
     final entry = _running[job.id] ?? _pausedRunning[job.id];
-    final ownsEntry = entry != null && entry.job.sequence == job.sequence;
+    // The entry in _running can still be ours while the id is not: a
+    // replacement enqueued with every slot taken waits in _pending, and
+    // _jobs (which _superseded reads) already points at it. Reporting
+    // completed here would finish a job that has not started.
+    final superseded = _superseded(job);
+    final ownsEntry =
+        !superseded && entry != null && entry.job.sequence == job.sequence;
     if (ownsEntry) {
+      (_running.containsKey(job.id) ? _running : _pausedRunning)
+          .remove(job.id);
+      unawaited(
+        Future<void>.delayed(
+          Duration.zero,
+          () => entry.subscription.cancel(),
+        ),
+      );
+    } else if (entry != null && entry.job.sequence == job.sequence) {
+      // Superseded, but the entry is still this attempt's own: drop it
+      // so the replacement's start can take the slot, without settling
+      // the row.
       (_running.containsKey(job.id) ? _running : _pausedRunning)
           .remove(job.id);
       unawaited(
@@ -824,10 +853,8 @@ class DownloadScheduler {
       );
     }
     if (!ownsEntry) {
-      // This attempt no longer owns the id and is not merely late: a
-      // newer attempt replaced it while its factory was building, then
-      // that attempt owns the row and its own terminal event. The slot
-      // is free again, so pump.
+      // A newer attempt owns the id and its own terminal event. The
+      // slot is free again, so pump.
       _pump();
       return;
     }
@@ -874,22 +901,37 @@ class DownloadScheduler {
   }
 
   void _onTaskError(DownloadJob job, Object error) {
-    // Remove only this attempt's entry. A consumer of the failed event
-    // (the engine's mirror failover, or a retry) may already have
-    // enqueued a replacement for the same id — and that replacement can
-    // be running by now, because a task reports its failure before its
-    // run() future completes. Removing by id alone threw the live
-    // attempt away, so its sink was never finished and the row was
-    // marked failed while the new task kept transferring.
-    final running = _running[job.id];
-    if (running != null && identical(running.job.sequence, job.sequence)) {
-      _running.remove(job.id);
+    // Remove only this attempt's entry, wherever it is parked. A
+    // consumer of the failed event (the engine's mirror failover, or a
+    // retry) may already have enqueued a replacement for the same id —
+    // and that replacement can be running by now, because a task
+    // reports its failure before its run() future completes. Removing
+    // by id alone threw the live attempt away, so its sink was never
+    // finished and the row was marked failed while the new task kept
+    // transferring.
+    //
+    // The entry may also be in _pausedRunning: pausing moves it there
+    // while the task is still unwinding its in-flight request, and the
+    // failure lands afterwards. Leaving that entry means a dead task
+    // stays parked as resumable, and resume() re-enters it in the queue
+    // to run() a task whose stream has already closed.
+    final entry = _running[job.id] ?? _pausedRunning[job.id];
+    final ownsEntry = entry != null && entry.job.sequence == job.sequence;
+    if (ownsEntry) {
+      (_running.containsKey(job.id) ? _running : _pausedRunning)
+          .remove(job.id);
       unawaited(
         Future<void>.delayed(
           Duration.zero,
-          () => running.subscription.cancel(),
+          () => entry.subscription.cancel(),
         ),
       );
+    }
+    if (!_superseded(job)) {
+      // The row is still this attempt's to settle. When a newer attempt
+      // replaced it (it may still be building, so not visible in
+      // _running yet), that attempt owns the status and announces its
+      // own outcome.
       final info = _infos[job.id];
       if (info != null) {
         _infos[job.id] = info.copyWith(status: DownloadStatus.failed);
@@ -949,5 +991,26 @@ class DownloadScheduler {
       }
     }
     return null;
+  }
+
+  /// Drops a queued attempt that will never start. One whose task was
+  /// already built (paused after its start was cancelled, then retried)
+  /// still holds a subscription and a sink; a never-built one holds
+  /// nothing.
+  void _discardQueued(_QueuedJob queued) {
+    final started = queued.started;
+    if (started == null) {
+      return;
+    }
+    unawaited(queued.subscription?.cancel());
+    started.task.cancel();
+    if (queued.runStarted) {
+      // A built task that already ran owns its own terminal event.
+      return;
+    }
+    // task.cancel() emits nothing before run(), and this task will
+    // never run: it is discarded, so its owner must stop tracking it.
+    unawaited(started.sink.close());
+    started.onAbandoned?.call();
   }
 }
