@@ -477,6 +477,62 @@ void main() {
       expect(infoOf(scheduler, id).downloadedBytes, 4096);
     });
 
+    test('a retry of a paused attempt announces no cancelled for it',
+        () async {
+      // Discarding the paused attempt cancels its task so it stops
+      // writing. That cancellation emits its own cancelled event, and
+      // the UI learns state only from events: forwarding it would put
+      // the row on Cancelled while the retry is already transferring.
+      final seen = <DownloadEvent>[];
+      final transport = _FakeTransport(
+        data: bytesOf(4096),
+        chunkDelay: const Duration(milliseconds: 40),
+      );
+      final scheduler = DownloadScheduler(
+        maxConcurrent: 2,
+        taskFactory: (job) async {
+          final sink = _NullSink();
+          final task = DownloadTask(
+            transport: transport,
+            sink: sink,
+            url: Uri.parse(job.url),
+            id: job.id,
+            maxConnections: 1,
+            retryDelay: const Duration(milliseconds: 10),
+          );
+          return ScheduledTask(task, sink);
+        },
+      );
+      addTearDown(scheduler.dispose);
+      final id = scheduler.enqueue(
+        url: 'http://example.test/slow',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitFor(() => infoOf(scheduler, id).downloadedBytes > 0);
+      scheduler.pause(id);
+      await waitForStatus(scheduler, id, DownloadStatus.paused);
+      final subscription = scheduler.events.listen(seen.add);
+      addTearDown(subscription.cancel);
+      scheduler.enqueue(
+        url: 'http://example.test/fast',
+        fileName: 'f.bin',
+        maxConnections: 1,
+        id: 'dl-1',
+      );
+      await waitForStatus(scheduler, id, DownloadStatus.completed);
+      expect(
+        seen.whereType<DownloadStateChanged>().where(
+              (e) =>
+                  e.downloadId == id &&
+                  e.status == DownloadStatus.cancelled,
+            ),
+        isEmpty,
+        reason: 'the retry was announced as cancelled',
+      );
+    });
+
     test('a finishing attempt cannot settle the job that replaced it',
         () async {
       // The same window on the success side. The task reports completed

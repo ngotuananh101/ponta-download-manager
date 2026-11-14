@@ -200,6 +200,11 @@ class DownloadScheduler {
     // to.
     final replaced = _pausedRunning.remove(jobId);
     if (replaced != null) {
+      // Stop listening before cancelling the task. task.cancel() only
+      // raises a flag; the cancelled event it produces is delivered in
+      // a later microtask, and the UI learns state only from events —
+      // one delivered here would put the row on Cancelled while the
+      // new attempt is already transferring.
       unawaited(replaced.subscription.cancel());
       if (replaced.runStarted) {
         // run() is live: cancelling it ends the task, and its own
