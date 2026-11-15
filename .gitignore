@@ -25,3 +25,6 @@ dist/
 # Python (tools/ and packaging/ tests)
 __pycache__/
 .pytest_cache/
+
+# Superpowers skill scratch (ledger, briefs, review packages)
+.superpowers/
