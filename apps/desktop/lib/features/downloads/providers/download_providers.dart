@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:download_api/download_api.dart';
+import 'package:download_platform/download_platform.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
-import 'package:path/path.dart' as p;
 import 'package:pdm/app/engine_ipc_host.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
@@ -18,17 +17,17 @@ import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
 import 'package:pdm_engine/pdm_engine.dart';
 
-String _defaultDownloadDirectory() {
-  if (Platform.isWindows) {
-    return p.join(Platform.environment['USERPROFILE'] ?? '.', 'Downloads');
-  }
-  return p.join(Platform.environment['HOME'] ?? '.', 'Downloads');
-}
+/// Resolves the default download directory: whatever the OS reports as the
+/// user's Downloads folder (see `download_platform`). A separate provider so
+/// tests can answer it instead of depending on the machine's configuration.
+final downloadDirectoryResolverProvider = Provider<String Function()>(
+  (ref) => defaultDownloadDirectory,
+);
 
-/// The default download directory (~/Downloads). A separate provider
-/// so the screen can read it without opening the engine.
+/// The default download directory. A separate provider so the screen can read
+/// it without opening the engine.
 final downloadDirectoryProvider = Provider<String>(
-  (ref) => _defaultDownloadDirectory(),
+  (ref) => ref.watch(downloadDirectoryResolverProvider)(),
 );
 
 /// The engine, running in this process. Opening it runs startup
