@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:download_ipc/download_ipc.dart';
@@ -49,6 +48,17 @@ void main() {
       input: input.stream,
       output: output.sink,
       clientFactory: () async => client,
+      // A moved Downloads folder: the resolver answers this path, so the
+      // destination must follow it rather than re-derive %USERPROFILE%.
+      // Comparing against defaultDownloadDirectory() would be tautological —
+      // on this Linux host the pre-fix inline expression returns exactly the
+      // same path, so such a test could not fail (verified by reverting the
+      // implementation to it: the test still passed).
+      // The space and non-ASCII characters pin that the path survives intact.
+      // A POSIX shape is used because NativeHost joins with the host's path
+      // context; on Windows that context is windows, so the production shape
+      // is joined correctly there.
+      downloadDirectoryResolver: () => '/mnt/Ổ D/Tải xuống',
     );
     input.add(
       NativeMessageCodec.encode({
@@ -68,15 +78,7 @@ void main() {
     final captured =
         verify(() => client.createDownload(captureAny())).captured.single
             as CreateDownloadRequest;
-    expect(
-      captured.destination,
-      p.join(defaultDownloadDirectory(), 'f.bin'),
-    );
-    expect(
-      Directory(defaultDownloadDirectory()).isAbsolute,
-      isTrue,
-      reason: 'a relative default would write next to the host binary',
-    );
+    expect(captured.destination, '/mnt/Ổ D/Tải xuống/f.bin');
   });
 
   test('an explicit downloadDirectory overrides the OS folder', () async {
@@ -120,5 +122,50 @@ void main() {
         verify(() => client.createDownload(captureAny())).captured.single
             as CreateDownloadRequest;
     expect(captured.destination, '/tmp/dl/f.bin');
+  });
+
+  test('with neither seam set, the host asks the shared platform helper',
+      () async {
+    // Pins the wiring the other two tests bypass: no downloadDirectory, no
+    // resolver — the destination must still be an absolute path under the
+    // OS-reported Downloads folder, not a relative one beside the binary.
+    final client = MockIpcClient();
+    when(() => client.close()).thenAnswer((_) async {});
+    when(() => client.createDownload(any())).thenAnswer(
+      (_) async => const DownloadInfo(
+        id: 'dl-1',
+        url: 'http://127.0.0.1:9/f.bin',
+        fileName: 'f.bin',
+        status: DownloadStatus.queued,
+        totalBytes: 1000,
+      ),
+    );
+
+    final input = StreamController<List<int>>();
+    final output = StreamController<List<int>>();
+    final replySub = NativeMessageCodec.decode(output.stream).listen((_) {});
+    final run = runNativeHost(
+      input: input.stream,
+      output: output.sink,
+      clientFactory: () async => client,
+    );
+    input.add(
+      NativeMessageCodec.encode({
+        'type': 'download.create',
+        'id': 'r1',
+        'url': 'http://127.0.0.1:9/f.bin',
+      }),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await input.close();
+    await run;
+    await replySub.cancel();
+    await output.close();
+
+    final captured =
+        verify(() => client.createDownload(captureAny())).captured.single
+            as CreateDownloadRequest;
+    final resolved = defaultDownloadDirectory();
+    expect(captured.destination, p.posix.join(resolved, 'f.bin'));
   });
 }
