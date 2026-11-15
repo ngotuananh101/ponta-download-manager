@@ -104,6 +104,15 @@ void main() {
   });
 
   group('POSIX', () {
+    // These drive the POSIX parser through the isWindows seam, so they can run
+    // on any host — but their fixtures assume POSIX path semantics for $HOME,
+    // which a Windows host cannot provide (a temp path there is `C:\...`, and
+    // the parser resolves relative values with p.posix). The POSIX branch is
+    // never taken in production on Windows.
+    if (Platform.isWindows) {
+      return;
+    }
+
     late Directory temp;
 
     setUp(() {
@@ -247,5 +256,25 @@ void main() {
         p.posix.join('.', 'Downloads'),
       );
     });
+  });
+
+  group('Windows host smoke test', () {
+    // The only test that exercises the real FFI call. Every other Windows test
+    // goes through the windowsDownloads seam, so a broken SHGetKnownFolderPath
+    // binding (DLL resolution, GUID layout, COM apartment) would pass CI and
+    // then silently fall back on a user's machine.
+    test(
+      'windowsKnownDownloads resolves an absolute path',
+      () {
+        final resolved = windowsKnownDownloads();
+        expect(resolved, isNotNull);
+        expect(p.windows.isAbsolute(resolved!), isTrue);
+        expect(
+          defaultDownloadDirectory(),
+          p.windows.normalize(resolved),
+        );
+      },
+      testOn: 'windows',
+    );
   });
 }

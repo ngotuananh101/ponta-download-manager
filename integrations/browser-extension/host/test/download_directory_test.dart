@@ -78,7 +78,9 @@ void main() {
     final captured =
         verify(() => client.createDownload(captureAny())).captured.single
             as CreateDownloadRequest;
-    expect(captured.destination, '/mnt/Ổ D/Tải xuống/f.bin');
+    // Joined with the host's own path context: NativeHost uses p.join, so the
+    // separator must follow the platform this test runs on.
+    expect(captured.destination, p.join('/mnt/Ổ D/Tải xuống', 'f.bin'));
   });
 
   test('an explicit downloadDirectory overrides the OS folder', () async {
@@ -121,7 +123,7 @@ void main() {
     final captured =
         verify(() => client.createDownload(captureAny())).captured.single
             as CreateDownloadRequest;
-    expect(captured.destination, '/tmp/dl/f.bin');
+    expect(captured.destination, p.join('/tmp/dl', 'f.bin'));
   });
 
   test('with neither seam set, the host asks the shared platform helper',
@@ -166,6 +168,10 @@ void main() {
         verify(() => client.createDownload(captureAny())).captured.single
             as CreateDownloadRequest;
     final resolved = defaultDownloadDirectory();
-    expect(captured.destination, p.posix.join(resolved, 'f.bin'));
+    // The comment above says "absolute", so assert it: a relative resolved
+    // path would put downloads next to the host binary. Joining with the
+    // host's context matches what NativeHost does.
+    expect(p.isAbsolute(resolved), isTrue);
+    expect(captured.destination, p.join(resolved, 'f.bin'));
   });
 }

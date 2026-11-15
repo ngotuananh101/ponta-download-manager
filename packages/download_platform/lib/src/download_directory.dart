@@ -47,8 +47,8 @@ String defaultDownloadDirectory({
 }
 
 /// The Windows `Downloads` known folder, or null when it cannot be resolved.
-/// Only callable on Windows; the win32 DLLs are resolved lazily, so merely
-/// importing this library is safe on other platforms.
+/// Returns null off Windows: the win32 DLLs are resolved lazily, so the call
+/// throws there and the throw is caught.
 String? windowsKnownDownloads() {
   final id = FOLDERID_Downloads.toNative(allocator: calloc);
   try {
