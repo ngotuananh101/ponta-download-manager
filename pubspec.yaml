@@ -16,6 +16,7 @@ workspace:
   - packages/download_storage
   - packages/download_recovery
   - packages/download_limiter
+  - packages/download_platform
   - packages/download_integrity
   - packages/download_ipc
   - packages/download_external
