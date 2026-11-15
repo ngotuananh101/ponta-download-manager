@@ -1098,7 +1098,7 @@ separate daemon process (`serve`) with the UI talking to it over IPC.
 That was reworked to the IDM direction — a single process with the
 engine embedded in the desktop app — so the release bundle is one app,
 downloads survive closing the window via the tray, and the extension
-still works through the IPC server the app hosts. Steps 8–11 above
+still works through the IPC server the app hosts. Steps 9–12 above
 reflect the reworked order.
 
 ------------------------------------------------------------------------
