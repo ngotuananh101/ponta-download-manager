@@ -782,6 +782,7 @@ download-manager/
 │   ├── download_storage/
 │   ├── download_recovery/
 │   ├── download_limiter/
+│   ├── download_platform/
 │   ├── download_integrity/
 │   ├── download_ipc/
 │   └── download_external/
@@ -1079,13 +1080,15 @@ Implement in this order:
 5.  `download_scheduler`: per-file and global scheduling.
 6.  `download_recovery`: SQLite checkpoints and startup reconciliation.
 7.  `download_limiter`: global and per-task bandwidth limits.
-8.  `apps/engine`: in-process engine library + CLI `download`
+8.  `download_platform`: the OS-resolved Downloads directory shared by the
+    desktop app and the native host.
+9.  `apps/engine`: in-process engine library + CLI `download`
     subcommand (no daemon, no `serve`).
-9.  `download_ipc`: versioned local protocol, hosted by the desktop app
+10. `download_ipc`: versioned local protocol, hosted by the desktop app
     for the browser extension.
-10. `apps/desktop`: Flutter UI with the engine embedded and a system
+11. `apps/desktop`: Flutter UI with the engine embedded and a system
     tray.
-11. `integrations/browser-extension`: browser handoff.
+12. `integrations/browser-extension`: browser handoff.
 
 Do not start browser integration before the engine API and recovery
 behavior are stable.
@@ -1095,7 +1098,7 @@ separate daemon process (`serve`) with the UI talking to it over IPC.
 That was reworked to the IDM direction — a single process with the
 engine embedded in the desktop app — so the release bundle is one app,
 downloads survive closing the window via the tray, and the extension
-still works through the IPC server the app hosts. Steps 8–11 above
+still works through the IPC server the app hosts. Steps 9–12 above
 reflect the reworked order.
 
 ------------------------------------------------------------------------

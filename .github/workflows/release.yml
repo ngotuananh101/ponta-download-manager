@@ -87,6 +87,16 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      # The Windows branch of download_platform is the reason this fix
+      # exists: it calls SHGetKnownFolderPath through win32. The Linux test
+      # job can only reach it through the windowsDownloads seam, so the real
+      # FFI binding (DLL resolution, GUID layout) is only exercised here.
+      - name: Resolution tests (real win32 call)
+        run: |
+          cd packages/download_platform
+          dart test
+          dart analyze
+
       - name: Fetch external tools
         shell: bash
         run: bash tools/fetch_external_tools.sh windows

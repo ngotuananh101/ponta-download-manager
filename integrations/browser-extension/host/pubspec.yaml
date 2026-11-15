@@ -12,6 +12,8 @@ dependencies:
     path: ../../../packages/download_api
   download_ipc:
     path: ../../../packages/download_ipc
+  download_platform:
+    path: ../../../packages/download_platform
   logging: ^1.3.0
   path: ^1.9.1
 

@@ -23,4 +23,8 @@ flutter test
 flutter analyze
 ```
 
-Downloads default to `~/Downloads`.
+Downloads default to the folder the OS reports as the user's Downloads
+directory: `SHGetKnownFolderPath(FOLDERID_Downloads)` on Windows (so a folder
+moved via Properties → Location is followed), `XDG_DOWNLOAD_DIR` on Linux.
+Both the app and the browser-extension host resolve it through
+`packages/download_platform`.

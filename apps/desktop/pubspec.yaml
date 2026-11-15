@@ -28,6 +28,8 @@ dependencies:
     path: ../../packages/download_ipc
   download_external:
     path: ../../packages/download_external
+  download_platform:
+    path: ../../packages/download_platform
   pdm_engine:
     path: ../../apps/engine
   window_manager: ^0.7.0
