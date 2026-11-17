@@ -18,6 +18,18 @@ import 'package:window_manager/window_manager.dart';
 /// should use [whenCurrentWindow] instead of deciding from a single lookup.
 Window? currentWindow() => _currentWindow() ?? _adoptedWindow;
 
+/// TEMPORARY: whether the window came from nativeapi's own `WindowCreatedEvent`
+/// rather than from a single lookup.
+///
+/// This is the difference the tray bug turns on: the adopted window survives
+/// `hide()`, while `_currentWindow()` (`GetActiveWindow()`) answers nothing once
+/// the window is no longer active. See tray_diagnostics.dart.
+bool get debugHasAdoptedWindow => _adoptedWindow != null;
+
+/// TEMPORARY: what the single lookup answers on its own, without the adopted
+/// fallback.
+bool get debugRawLookupResolves => _currentWindow() != null;
+
 /// The window adopted from nativeapi's own `WindowCreatedEvent`.
 Window? _adoptedWindow;
 
