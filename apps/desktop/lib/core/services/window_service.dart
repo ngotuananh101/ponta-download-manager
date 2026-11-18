@@ -15,7 +15,6 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/downloads/domain/entities/download.dart';
 import '../../features/downloads/providers/download_providers.dart';
 import 'linux_desktop_service.dart';
-import 'tray_diagnostics.dart';
 import 'window_api.dart';
 
 part 'window_service.g.dart';
@@ -47,17 +46,6 @@ class WindowService extends _$WindowService {
     // is deferred until this callback finishes, so a cancelled request keeps the
     // window open and an accepted one closes it.
     whenCurrentWindow((window) {
-      // TEMPORARY: proves whether `_adoptedWindow` was ever filled in. If this
-      // never logs while the PDM header is still drawn, the window was resolved
-      // through `GetActiveWindow()` and the tray path has no window to work on.
-      unawaited(
-        trayDiag(
-          'startup: window adopted, isVisible=${window.isVisible} '
-          'isMinimized=${window.isMinimized} '
-          '(adoptedWindow=$debugHasAdoptedWindow '
-          'rawLookup=$debugRawLookupResolves)',
-        ),
-      );
       _windowListenerId = window.addListener(_onWindowEvent);
     });
 
@@ -135,8 +123,6 @@ class WindowService extends _$WindowService {
 
       // nativeapi reports whole clicks.
       _trayListenerId = icon.addListener((event) {
-        // TEMPORARY: proves which tray events actually reach Dart.
-        unawaited(trayDiag('tray: event ${event.runtimeType}'));
         switch (event) {
           case TrayIconClickedEvent():
             Timer.run(_showWindow);
@@ -148,11 +134,7 @@ class WindowService extends _$WindowService {
       });
 
       final menu = _TrayMenu();
-      menu.addAction('Show', () {
-        // TEMPORARY: menu "Show" and tray left-click must share one path.
-        unawaited(trayDiag('menu: Show clicked'));
-        _showWindow();
-      });
+      menu.addAction('Show', _showWindow);
       menu.addSeparator();
       menu.addAction('Pause all', () => unawaited(pauseAll()));
       menu.addSeparator();
@@ -202,50 +184,11 @@ class WindowService extends _$WindowService {
   /// `show()` alone leaves a minimized window minimized, so a window the user
   /// minimized rather than hid would stay out of sight.
   void _showWindow() {
-    // TEMPORARY: evidence for the Windows "tray click does not bring the window
-    // back" bug. See tray_diagnostics.dart.
-    unawaited(
-      trayDiag(
-        'show: entered (adoptedWindow=$debugHasAdoptedWindow '
-        'rawLookup=$debugRawLookupResolves)',
-      ),
-    );
     final window = currentWindow();
-    if (window == null) {
-      unawaited(trayDiag('show: currentWindow() == null, returning early'));
-      return;
-    }
-    try {
-      unawaited(
-        trayDiag(
-          'show: window resolved id=${window.id} hwnd=${window.nativeNumber} '
-          'isVisible=${window.isVisible} '
-          'isMinimized=${window.isMinimized} isMaximized=${window.isMaximized}',
-        ),
-      );
-      if (window.isMinimized) window.restore();
-      window.show();
-      window.focus();
-      unawaited(
-        trayDiag(
-          'show: right after show() isVisible=${window.isVisible} '
-          'isFocused=${window.isFocused}',
-        ),
-      );
-      // Something re-hiding the window right after the call would look exactly
-      // like the call doing nothing, and the two need distinct answers.
-      Timer(const Duration(milliseconds: 300), () {
-        unawaited(
-          trayDiag(
-            'show: 300ms later isVisible=${window.isVisible} '
-            'isFocused=${window.isFocused}',
-          ),
-        );
-      });
-    } catch (error) {
-      unawaited(trayDiag('show: threw $error'));
-      rethrow;
-    }
+    if (window == null) return;
+    if (window.isMinimized) window.restore();
+    window.show();
+    window.focus();
   }
 
   /// Closes the window for good, past the tray.
@@ -288,19 +231,7 @@ class WindowService extends _$WindowService {
   Future<void> _handleCloseRequest(EventRequest request) async {
     if (_isQuitting) return;
     request.cancel();
-    final window = currentWindow();
-    // TEMPORARY: a window that is destroyed instead of hidden cannot be shown
-    // again, which is one of the two candidates for this bug.
-    unawaited(
-      trayDiag(
-        'close: hiding, window resolved=${window != null} '
-        'isVisible=${window?.isVisible}',
-      ),
-    );
-    window?.hide();
-    unawaited(
-      trayDiag('close: after hide(), isVisible=${currentWindow()?.isVisible}'),
-    );
+    currentWindow()?.hide();
   }
 }
 

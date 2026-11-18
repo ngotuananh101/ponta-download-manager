@@ -12,25 +12,18 @@ import 'package:window_manager/window_manager.dart';
 /// take outside a real app, which is what the 0.5.x channel did by answering
 /// nothing.
 ///
-/// The answer can legitimately be null early in startup on Windows: the lookup
-/// there is `GetActiveWindow()`, and the runner creates its window hidden and
-/// only shows it on the first Flutter frame. Code that has to act on the window
-/// should use [whenCurrentWindow] instead of deciding from a single lookup.
-Window? currentWindow() => _currentWindow() ?? _adoptedWindow;
+/// The first window ever found is remembered and is what this returns from then
+/// on, because the lookup itself only answers for *the active window*, not for
+/// "this app's window". On Windows `WindowManager.getCurrent()` is
+/// `GetActiveWindow()`, which stops answering this app as soon as it hides to
+/// the tray — and, worse, starts answering some other window as soon as one
+/// becomes active. A native context menu is exactly that case: `Menu::Open()`
+/// calls `SetForegroundWindow()` on its own message-only host window before
+/// running `TrackPopupMenu`, so a Show action from the tray menu would act on a
+/// window that can never be shown again.
+Window? currentWindow() => _adoptedWindow ?? _currentWindow();
 
-/// TEMPORARY: whether the window came from nativeapi's own `WindowCreatedEvent`
-/// rather than from a single lookup.
-///
-/// This is the difference the tray bug turns on: the adopted window survives
-/// `hide()`, while `_currentWindow()` (`GetActiveWindow()`) answers nothing once
-/// the window is no longer active. See tray_diagnostics.dart.
-bool get debugHasAdoptedWindow => _adoptedWindow != null;
-
-/// TEMPORARY: what the single lookup answers on its own, without the adopted
-/// fallback.
-bool get debugRawLookupResolves => _currentWindow() != null;
-
-/// The window adopted from nativeapi's own `WindowCreatedEvent`.
+/// The window first resolved for this app, once one was found.
 Window? _adoptedWindow;
 
 /// The manager-level listener installed while waiting for that event.
@@ -50,9 +43,13 @@ final List<void Function(Window window)> _waitingForWindow =
 /// window hidden and only shows it on the first Flutter frame, which is the
 /// moment nativeapi turns into `WindowCreatedEvent`. The callback runs at most
 /// once.
+///
+/// Whatever this resolves is adopted, so every later caller sees that same
+/// window even after the lookup stops answering for it.
 void whenCurrentWindow(void Function(Window window) callback) {
   final window = currentWindow();
   if (window != null) {
+    _adopt(window);
     callback(window);
     return;
   }
