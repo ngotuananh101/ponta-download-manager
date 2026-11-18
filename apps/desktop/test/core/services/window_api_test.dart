@@ -70,6 +70,35 @@ void main() {
     expect(order, ['first', 'second', 'third']);
   });
 
+  test('keeps the window it found once the lookup stops answering', () {
+    // What Windows does once the window is hidden: `GetActiveWindow()` is the
+    // lookup there, and a hidden window is no longer the active one, so it
+    // answers nothing. The window the app found at startup must still be it.
+    var lookups = 0;
+    previousResolver = debugSetCurrentWindowResolver(
+      () => lookups++ == 0 ? window : null,
+    );
+
+    whenCurrentWindow((_) {});
+
+    expect(currentWindow(), same(window));
+  });
+
+  test('does not switch to another window the lookup reports later', () {
+    // A native context menu makes its own message-only host window the active
+    // one (`Menu::Open()` calls `SetForegroundWindow(host_window)`), so the
+    // lookup starts answering with that window — one that can never be shown.
+    final menuHostWindow = Window.borrowed(1);
+    var lookups = 0;
+    previousResolver = debugSetCurrentWindowResolver(
+      () => lookups++ == 0 ? window : menuHostWindow,
+    );
+
+    whenCurrentWindow((_) {});
+
+    expect(currentWindow(), same(window));
+  });
+
   test('a wait left by one test does not leak into the next', () {
     previousResolver = debugSetCurrentWindowResolver(() => null);
 
