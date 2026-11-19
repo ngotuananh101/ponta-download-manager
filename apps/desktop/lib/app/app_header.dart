@@ -14,7 +14,9 @@ const double kWindowCaptionButtonWidth = 46;
 /// and the window controls on the right. Ported from dev-stack's
 /// AppHeader, with Material icons instead of lucide.
 class AppHeader extends StatefulWidget {
-  const AppHeader({super.key});
+  const AppHeader({super.key, this.onMinimize});
+
+  final VoidCallback? onMinimize;
 
   @override
   State<AppHeader> createState() => _AppHeaderState();
@@ -73,7 +75,12 @@ class _AppHeaderState extends State<AppHeader> {
   }
 
   void _handleMinimize() {
-    currentWindow()?.minimize();
+    final handler = widget.onMinimize;
+    if (handler != null) {
+      handler();
+    } else {
+      currentWindow()?.minimize();
+    }
   }
 
   void _handleMaximizeToggle() {
@@ -103,13 +110,24 @@ class _AppHeaderState extends State<AppHeader> {
       color: colorScheme.surface,
       child: Row(
         children: [
-          _buildBrand(colorScheme),
+          // The brand shares the row with the drag area so it can shrink
+          // (the text ellipsizes) in a narrow window. It must not take a
+          // flex slot of its own next to the drag area: a loose flex slot
+          // keeps the space the brand does not paint, which pushed the
+          // window controls away from the right edge.
           Expanded(
-            child: DragToMoveArea(
-              child: SizedBox(
-                height: kAppHeaderHeight,
-                width: double.infinity,
-              ),
+            child: Row(
+              children: [
+                Flexible(child: _buildBrand(colorScheme)),
+                Expanded(
+                  child: DragToMoveArea(
+                    child: SizedBox(
+                      height: kAppHeaderHeight,
+                      width: double.infinity,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           _buildWindowControls(),
@@ -138,14 +156,14 @@ class _AppHeaderState extends State<AppHeader> {
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
-          Text(
+          Flexible(child: Text(
             'Ponta Download Manager',
             overflow: TextOverflow.ellipsis,
             style: AppTextSize.xs.textStyle(
               weight: AppFontWeight.bold,
               color: colorScheme.onSurface,
             ),
-          ),
+          )),
         ],
       ),
     );
