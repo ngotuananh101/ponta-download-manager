@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -96,6 +97,34 @@ void main() {
   });
 
   for (final windows in [false, true]) {
+    test('${windows ? 'zip' : 'tar.xz'} extraction does not send progress callback state to isolate', () async {
+      final name = windows ? 'ffmpeg.exe' : 'ffmpeg';
+      final archive = Archive()..add(ArchiveFile('distribution/bin/$name', 3, [1, 2, 3]));
+      final bytes = windows ? ZipEncoder().encode(archive)
+          : XZEncoder().encodeBytes(TarEncoder().encode(archive));
+      final client = ExternalToolReleaseClient(cacheDirectory: temp, request: (_, _) async =>
+        ToolHttpResponse(200, {}, Stream.value(bytes)));
+      final installer = ExternalToolInstaller(userToolsDirectory: temp, releases: client,
+        isWindows: windows, runProcess: (_, _) async => ProcessResult(1, 0, 'ffmpeg version 9.0', ''));
+      // A UI progress callback can retain unsendable Riverpod/Future state.
+      // ReceivePort provides a deterministic equivalent without a Flutter dependency.
+      final progressPort = ReceivePort();
+      addTearDown(progressPort.close);
+      final phases = <String>[];
+      final result = await installer.install(ExternalToolRelease(tool: ExternalTool.ffmpeg,
+        version: '9.0', url: Uri.https('github.com', '/archive'),
+        sha256: sha256.convert(bytes).toString(), sizeBytes: bytes.length,
+        archiveFormat: windows ? ToolArchiveFormat.zip : ToolArchiveFormat.tarXz, releaseId: '1'),
+        onProgress: (progress) {
+          progressPort.sendPort.send(progress.phase);
+          phases.add(progress.phase);
+        });
+      expect(result.error, isNull);
+      expect(result.changed, isTrue);
+      expect(await File('${temp.path}/$name').readAsBytes(), [1, 2, 3]);
+      expect(phases, containsAll(['Downloading', 'Verifying']));
+    });
+
     for (final unsafe in [false, true]) {
       test('${windows ? 'zip' : 'tar.xz'} extracts only ffmpeg and rejects traversal=$unsafe', () async {
         final name = windows ? 'ffmpeg.exe' : 'ffmpeg';

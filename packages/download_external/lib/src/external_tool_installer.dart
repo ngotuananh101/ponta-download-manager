@@ -74,11 +74,7 @@ class ExternalToolInstaller {
             (!isWindows && release.archiveFormat != ToolArchiveFormat.tarXz)) {
           throw const FormatException('Unsupported tool archive');
         }
-        final source = artifact.path;
-        final destination = executable.path;
-        final format = release.archiveFormat;
-        final windows = isWindows;
-        await Isolate.run(() => _extractExecutable(source, destination, format, windows));
+        await _extractInIsolate(artifact.path, executable.path, release.archiveFormat, isWindows);
       }
       if (!Platform.isWindows) {
         final chmod = await Process.run('chmod', ['700', executable.path]);
@@ -144,6 +140,11 @@ Future<ProcessResult> _runVersion(String executable, List<String> arguments) asy
     rethrow;
   }
 }
+
+// Create the worker closure outside install's lexical scope. Dart can share
+// closure contexts, inadvertently capturing progress callbacks and UI state.
+Future<void> _extractInIsolate(String source, String destination, ToolArchiveFormat format, bool windows) =>
+    Isolate.run(() => _extractExecutable(source, destination, format, windows));
 
 void _extractExecutable(String source, String destination, ToolArchiveFormat format, bool windows) {
   const expandedLimit = 2 * 1024 * 1024 * 1024;
