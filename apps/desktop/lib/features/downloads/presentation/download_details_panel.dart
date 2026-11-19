@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdm/core/services/external_tools_service.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 
 import '../domain/entities/download.dart';
@@ -45,7 +46,8 @@ class _DownloadDetailsPanelState
     extends ConsumerState<DownloadDetailsPanel> {
   DetailsTab _tab = DetailsTab.general;
   List<DownloadSegment> _segments = [];
-  final _thumbnails = ThumbnailService();
+  late final _thumbnails = ThumbnailService(
+    resolveTools: ref.read(externalToolsResolverProvider));
   String? _thumbPath;
 
   Future<void> _fetchSegments() async {

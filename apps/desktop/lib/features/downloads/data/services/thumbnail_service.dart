@@ -48,7 +48,11 @@ class ThumbnailService {
     this._ffmpegPath,
     this._cacheDir,
     ProcessRunner? runProcess,
-  })  : _runProcess = runProcess ?? _defaultRunProcess;
+    Future<ExternalTools> Function()? resolveTools,
+  })  : _runProcess = runProcess ?? _defaultRunProcess,
+        _resolveTools = resolveTools ?? ExternalTools.resolve;
+
+  final Future<ExternalTools> Function() _resolveTools;
 
   final String? _ffmpegPath;
   final String? _cacheDir;
@@ -94,7 +98,7 @@ class ThumbnailService {
   Future<String?> _resolveFfmpeg() async {
     if (_ffmpegPath != null) return _ffmpegPath;
     try {
-      final tools = await ExternalTools.resolve();
+      final tools = await _resolveTools();
       return tools.ffmpegPath;
     } catch (_) {
       return null;

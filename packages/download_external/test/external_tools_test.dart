@@ -28,6 +28,41 @@ void main() {
     return file.path;
   }
 
+  test('uses verified user binaries before bundle or PATH', () async {
+    final userDir = await Directory(p.join(tmp.path, 'user tools')).create();
+    final ffmpeg = await File(p.join(userDir.path, 'ffmpeg.exe')).create();
+    final ytDlp = await File(p.join(userDir.path, 'yt-dlp.exe')).create();
+    final bundled = await makeBundled('ffmpeg.exe', executable: false);
+    await File(p.join(userDir.path, 'qjs.exe')).create();
+    final tools = await ExternalTools.resolve(
+      executableDir: tmp.path,
+      userToolsDir: userDir.path,
+      isWindows: true,
+      pathLookup: (name) async => name == 'qjs' ? 'system/qjs.exe' : null,
+      versionCheck: (path) async => path != p.join(userDir.path, 'qjs.exe'),
+      jsRuntimeSupportCheck: (path) async {
+        expect(path, ytDlp.path);
+        return false;
+      },
+    );
+    expect(tools.ffmpegPath, ffmpeg.path);
+    expect(tools.originOf(ExternalTool.ffmpeg), ExternalToolOrigin.downloaded);
+    expect(tools.ytDlpPath, ytDlp.path);
+    expect(tools.ytDlpJsRuntimeArgs, isEmpty);
+    expect(tools.qjsPath, 'system/qjs.exe');
+    expect(tools.originOf(ExternalTool.quickjs), ExternalToolOrigin.system);
+    final fallback = await ExternalTools.resolve(
+      executableDir: tmp.path,
+      userToolsDir: userDir.path,
+      isWindows: true,
+      pathLookup: (_) async => null,
+      versionCheck: (path) async => path == bundled,
+    );
+    expect(fallback.ffmpegPath, bundled);
+    expect(fallback.originOf(ExternalTool.ffmpeg), ExternalToolOrigin.bundled);
+    expect(fallback.originOf(ExternalTool.quickjs), ExternalToolOrigin.missing);
+  });
+
   test('prefers the bundled binary over PATH', () async {
     final bundled = await makeBundled('ffmpeg');
     final tools = await ExternalTools.resolve(

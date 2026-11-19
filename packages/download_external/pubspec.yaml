@@ -8,6 +8,8 @@ environment:
   sdk: '>=3.10.0 <4.0.0'
 
 dependencies:
+  archive: ^4.7.1
+  crypto: ^3.0.8
   download_api:
     path: ../download_api
   path: ^1.9.0

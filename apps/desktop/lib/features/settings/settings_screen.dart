@@ -12,6 +12,9 @@ import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/pdm_dialog.dart';
 import 'app_settings.dart';
 import 'browser_integration.dart';
+import 'package:pdm/shared/widgets/update_dot.dart';
+import 'external_tools_providers.dart';
+import 'external_tools_section.dart';
 import 'settings_providers.dart';
 
 /// The Settings window: a section list on the left, the selected section on
@@ -28,7 +31,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 enum _Section {
   downloads('Downloads', Icons.download_outlined),
   system('System', Icons.desktop_windows_outlined),
-  browser('Browser integration', Icons.public);
+  browser('Browser integration', Icons.public),
+  tools('External tools', Icons.build_outlined);
 
   const _Section(this.label, this.icon);
 
@@ -176,6 +180,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           for (final section in _Section.values)
             _SidebarItem(section: section, selected: section == _section,
               expanded: expanded, enabled: !_saving,
+              hasUpdates: section == _Section.tools && ref.watch(externalToolsControllerProvider).hasUpdates,
               onTap: () => setState(() => _section = section)),
         ]),
     );
@@ -223,6 +228,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _Section.downloads => _buildDownloads(),
       _Section.system => _buildSystem(),
       _Section.browser => const BrowserIntegrationSection(),
+      _Section.tools => const ExternalToolsSection(),
     };
   }
 
@@ -344,7 +350,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 class _SidebarItem extends StatelessWidget {
   const _SidebarItem({required this.section, required this.selected,
-      required this.expanded, required this.enabled, required this.onTap});
+      required this.expanded, required this.enabled, required this.onTap,
+      this.hasUpdates = false});
+
+  final bool hasUpdates;
 
   final _Section section;
   final bool selected;
@@ -370,7 +379,11 @@ class _SidebarItem extends StatelessWidget {
                   Expanded(child: Text(section.label, overflow: TextOverflow.ellipsis,
                     style: AppTextSize.xs.textStyle(weight: AppFontWeight.medium,
                       color: foreground))),
+                  if (hasUpdates) const UpdateDot(),
                 ])
-              : Icon(section.icon, size: 16, color: foreground)))));
+              : Stack(clipBehavior: Clip.none, children: [
+                  Icon(section.icon, size: 16, color: foreground),
+                  if (hasUpdates) const Positioned(right: -5, top: -3, child: UpdateDot()),
+                ])))));
   }
 }

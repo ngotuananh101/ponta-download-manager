@@ -20,6 +20,7 @@ import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/features/settings/external_tools_providers.dart';
 import 'package:pdm/features/settings/browser_integration.dart';
 import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
@@ -57,6 +58,7 @@ Widget app({
 }) {
   return ProviderScope(
     overrides: [
+      externalToolsStartupCheckProvider.overrideWith((ref) async {}),
       downloadsProvider.overrideWith((ref) => Stream.value(downloads)),
       if (actions != null) downloadsActionsProvider.overrideWithValue(actions),
       if (settingsPath != null)

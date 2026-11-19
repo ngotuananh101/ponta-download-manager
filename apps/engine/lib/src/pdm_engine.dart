@@ -161,6 +161,70 @@ class PdmEngine implements DownloadEngine {
   final _events = StreamController<DownloadEvent>.broadcast();
   StreamSubscription<DownloadEvent>? _schedulerSub;
   final _ytDlpSubs = <String, StreamSubscription<DownloadEvent>>{};
+  final _toolsBusyEvents = StreamController<bool>.broadcast();
+  var _externalOperations = 0;
+  var _toolsMaintenance = false;
+
+  bool get isExternalToolsBusy => _toolsMaintenance || _externalOperations > 0 ||
+      _ytDlpSubs.isNotEmpty || (_ytDlp?.isRunning ?? false);
+
+  Stream<bool> get externalToolsBusyChanges => Stream<bool>.multi((sink) {
+    final subscription = _toolsBusyEvents.stream.listen(sink.add,
+      onError: sink.addError, onDone: sink.close);
+    sink.add(isExternalToolsBusy);
+    sink.onCancel = subscription.cancel;
+  });
+
+  void _notifyToolsBusy() {
+    if (!_toolsBusyEvents.isClosed) _toolsBusyEvents.add(isExternalToolsBusy);
+  }
+
+  Future<T> _withExternalOperation<T>(Future<T> Function() action) async {
+    _throwIfDisposed();
+    if (_toolsMaintenance) {
+      throw const DownloadError('external-tools-updating',
+        'External tools are being updated. Try again after the update finishes.');
+    }
+    _externalOperations++;
+    _notifyToolsBusy();
+    try {
+      return await action();
+    } finally {
+      _externalOperations--;
+      _notifyToolsBusy();
+    }
+  }
+
+  /// The scoped refresh capability is valid only while this action owns the
+  /// maintenance gate. No await separates the busy check from acquisition.
+  Future<T> withExternalToolsMaintenance<T>(
+      Future<T> Function(Future<void> Function() refresh) action) async {
+    _throwIfDisposed();
+    if (isExternalToolsBusy) throw StateError('External tools are busy');
+    _toolsMaintenance = true;
+    _notifyToolsBusy();
+    var ownsGate = true;
+    try {
+      return await action(() async {
+        if (!ownsGate || _disposed) throw StateError('Maintenance has ended');
+        await _refreshExternalTools();
+      });
+    } finally {
+      ownsGate = false;
+      _toolsMaintenance = false;
+      _notifyToolsBusy();
+    }
+  }
+
+  Future<void> refreshExternalTools() => withExternalToolsMaintenance((refresh) => refresh());
+
+  Future<void> _refreshExternalTools() async {
+    await _ytDlp?.shutdown();
+    _externalTools = null;
+    _ytDlpResolution = null;
+    _ytDlp = null;
+    _probeCache.clear();
+  }
 
   /// Monotonic per-download sequence of yt-dlp intents (pause, resume,
   /// cancel, retry, delete, startup recovery).
@@ -378,6 +442,7 @@ class PdmEngine implements DownloadEngine {
         )
         .listen(_onYtDlpEvent);
     _ytDlpSubs[record.id] = sub;
+    _notifyToolsBusy();
   }
 
   /// Forwards scheduler events to the engine stream and finalizes
@@ -492,6 +557,7 @@ class PdmEngine implements DownloadEngine {
   /// retain the engine and the stream forever (review item 17).
   void _pruneYtDlpSub(String downloadId) {
     final sub = _ytDlpSubs.remove(downloadId);
+    _notifyToolsBusy();
     if (sub != null) {
       unawaited(sub.cancel());
     }
@@ -636,7 +702,9 @@ class PdmEngine implements DownloadEngine {
     String url, {
     String? cookie,
     String? referrer,
-  }) async {
+  }) => _withExternalOperation(() => _probeYtDlp(url, cookie: cookie, referrer: referrer));
+
+  Future<YtDlpProbeResult> _probeYtDlp(String url, {String? cookie, String? referrer}) async {
     _throwIfDisposed();
     final uri = Uri.tryParse(url);
     if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -681,7 +749,12 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<DownloadInfo> createDownload(CreateDownloadRequest request) async {
+  Future<DownloadInfo> createDownload(CreateDownloadRequest request) =>
+      _isStreamingPlaylist(request.url) || request.ytDlpFormat != null
+          ? _withExternalOperation(() => _createDownload(request))
+          : _createDownload(request);
+
+  Future<DownloadInfo> _createDownload(CreateDownloadRequest request) async {
     _throwIfDisposed();
     final destination = request.destination;
     var directory = p.dirname(destination);
@@ -861,7 +934,14 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<void> resumeDownload(String downloadId) async {
+  Future<void> resumeDownload(String downloadId) {
+    final record = _store.getDownload(downloadId);
+    return record != null && _isYtDlpDownload(record)
+        ? _withExternalOperation(() => _resumeDownload(downloadId))
+        : _resumeDownload(downloadId);
+  }
+
+  Future<void> _resumeDownload(String downloadId) async {
     final record = _store.getDownload(downloadId);
     // Only a paused download can be resumed. Resuming a terminal
     // download must not re-queue it (or restart a finished playlist),
@@ -1018,7 +1098,14 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<void> retryDownload(String downloadId) async {
+  Future<void> retryDownload(String downloadId) {
+    final record = _store.getDownload(downloadId);
+    return record != null && _isYtDlpDownload(record)
+        ? _withExternalOperation(() => _retryDownload(downloadId))
+        : _retryDownload(downloadId);
+  }
+
+  Future<void> _retryDownload(String downloadId) async {
     _mirrorIndex.remove(downloadId);
     final record = _store.getDownload(downloadId);
     if (record == null) {
@@ -1154,10 +1241,14 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<void> deleteDownload(
-    String downloadId, {
-    bool deleteFile = false,
-  }) async {
+  Future<void> deleteDownload(String downloadId, {bool deleteFile = false}) {
+    final record = _store.getDownload(downloadId);
+    return record != null && _isYtDlpDownload(record)
+        ? _withExternalOperation(() => _deleteDownload(downloadId, deleteFile: deleteFile))
+        : _deleteDownload(downloadId, deleteFile: deleteFile);
+  }
+
+  Future<void> _deleteDownload(String downloadId, {bool deleteFile = false}) async {
     _requestHeaders.remove(downloadId);
     _ytDlpFormats.remove(downloadId);
     final record = _store.getDownload(downloadId);
@@ -1227,7 +1318,14 @@ class PdmEngine implements DownloadEngine {
   }
 
   @override
-  Future<void> deleteFile(String downloadId) async {
+  Future<void> deleteFile(String downloadId) {
+    final record = _store.getDownload(downloadId);
+    return record != null && _isYtDlpDownload(record)
+        ? _withExternalOperation(() => _deleteFile(downloadId))
+        : _deleteFile(downloadId);
+  }
+
+  Future<void> _deleteFile(String downloadId) async {
     final record = _store.getDownload(downloadId);
     if (record == null) {
       return;
@@ -1553,6 +1651,7 @@ class PdmEngine implements DownloadEngine {
     _probeCache.clear();
     await _writer.dispose();
     await _events.close();
+    await _toolsBusyEvents.close();
     for (final record in paused) {
       final current = _store.getDownload(record.id);
       if (current != null && current.status == DownloadStatus.cancelled) {
@@ -1689,6 +1788,11 @@ class PdmEngine implements DownloadEngine {
   /// before the user could act, so their later action is the intent
   /// that must stick.
   Future<void> _resumeYtDlp(DownloadRecord record) async {
+    if (_toolsMaintenance) return;
+    return _withExternalOperation(() => _resumeYtDlpOperation(record));
+  }
+
+  Future<void> _resumeYtDlpOperation(DownloadRecord record) async {
     // Claim the recovery's intent synchronously, before its first
     // await. Recovery starts on its own at open, before the user can
     // act; any later pause, cancel, delete or start bumps the sequence

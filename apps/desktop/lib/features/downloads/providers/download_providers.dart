@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pdm/app/engine_ipc_host.dart';
 import 'package:pdm/core/error/failures.dart';
+import 'package:pdm/core/services/external_tools_service.dart';
 import 'package:pdm/features/downloads/data/datasources/engine_download_datasource.dart';
 import 'package:pdm/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart';
@@ -34,7 +35,10 @@ final downloadDirectoryProvider = Provider<String>(
 
 /// Injectable engine construction keeps integration tests on temporary DBs.
 final engineFactoryProvider = Provider<PdmEngine Function(EngineConfig)>(
-  (ref) => (config) => PdmEngine.open(config: config),
+  (ref) {
+    final resolve = ref.watch(externalToolsResolverProvider);
+    return (config) => PdmEngine.open(config: config, resolveExternalTools: resolve);
+  },
 );
 
 /// Listeners update defaults without disposing a live engine or IPC host.

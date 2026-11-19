@@ -1,3 +1,9 @@
+export 'src/external_tool_installer.dart';
+export 'src/external_tool_process.dart';
+export 'src/external_tool_release.dart';
+export 'src/external_tool_release_client.dart';
+export 'src/external_tool_versions.dart';
+export 'src/external_tools_update.dart';
 export 'src/external_tools.dart';
 export 'src/yt_dlp_downloader.dart';
 export 'src/yt_dlp_progress.dart';

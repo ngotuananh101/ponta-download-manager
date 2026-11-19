@@ -50,6 +50,41 @@ each binary's version in a `<name>.version` file next to it.
 - **Optional at runtime:** PDM still downloads HLS/DASH and other
   sites when qjs is missing; only YouTube extraction degrades.
 
+## Optional runtime updates
+
+**Settings → External tools** checks GitHub releases on launch and downloads
+binaries only on request. Each tool has a separate card with its own update and
+removal actions; updating or removing one never changes the other tools. Runtime
+sources differ from the reproducible bundled versions above:
+
+- **ffmpeg:** https://github.com/BtbN/FFmpeg-Builds (GitHub may redirect to
+  `FFmpeg-Builds/FFmpeg-Builds`). Select the newest stable numeric `n` branch's
+  x64 **GPL, non-shared** distribution, currently the 9.0 naming family.
+  Extract only `bin/ffmpeg` / `bin/ffmpeg.exe`; no shared libraries or archive
+  scripts are installed. The selected distribution remains GPL-licensed; refer
+  to the upstream release and https://ffmpeg.org/legal.html for license/source
+  obligations. Version comparison uses the executable's reported numeric
+  version, not the rolling release timestamp; same-version rebuilds are not
+  offered as newer versions.
+- **yt-dlp:** https://github.com/yt-dlp/yt-dlp, latest standalone Linux x64 or
+  Windows executable; same upstream licensing as above.
+- **quickjs-ng:** https://github.com/quickjs-ng/quickjs, latest Linux/Windows x64
+  executable; MIT.
+
+The GitHub release asset's `sha256:` digest is required and verified before
+executing the staged version check. Missing digests, mismatches, incompatible
+executables and unsafe archives are rejected. SHA-256 verifies integrity
+against GitHub metadata, not an independent publisher signature. Runtime
+requests use GitHub directly (no CI mirrors); metadata uses conditional ETag
+requests with a small separate cache.
+
+Updates are stored per user under `%LOCALAPPDATA%\\pdm\\bin` or
+`$XDG_DATA_HOME/pdm/bin` (default `~/.local/share/pdm/bin`). Desktop resolution
+prefers verified user copies over bundle and PATH. Removing downloaded updates
+removes only the managed executables, falling back without altering bundled
+binaries or the native messaging host. The bundle fetch script/release pipeline
+is unchanged.
+
 ## Mirrors
 
 Anonymous GitHub downloads from CI runners are throttled and can

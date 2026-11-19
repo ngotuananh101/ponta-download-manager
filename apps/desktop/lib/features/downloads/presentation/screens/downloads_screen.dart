@@ -25,6 +25,8 @@ import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
 import 'package:pdm/features/downloads/presentation/new_download_dialog.dart';
 import 'package:pdm/features/downloads/presentation/text_input_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/shared/widgets/update_dot.dart';
+import 'package:pdm/features/settings/external_tools_providers.dart';
 import 'package:pdm/features/settings/settings_screen.dart';
 import 'package:pdm/features/settings/settings_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
@@ -98,6 +100,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(externalToolsStartupCheckProvider);
     final downloads = ref.watch(downloadsProvider);
     return Scaffold(
       body: Column(
@@ -369,7 +372,13 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       enabled: enabled,
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
-      child: Text(label, style: AppTextSize.xs.textStyle()),
+      child: value == 'settings' ? Consumer(builder: (context, ref, _) => Row(
+        mainAxisSize: MainAxisSize.min, children: [
+          Text(label, style: AppTextSize.xs.textStyle()),
+          if (ref.watch(externalToolsControllerProvider).hasUpdates) ...[
+            const SizedBox(width: AppSpacing.s2), const UpdateDot(),
+          ],
+        ])) : Text(label, style: AppTextSize.xs.textStyle()),
     );
   }
 

@@ -1,9 +1,13 @@
 import 'dart:io';
 
+import 'external_tool_process.dart';
+
 import 'package:path/path.dart' as p;
 
-/// Where the bundled ffmpeg, yt-dlp and quickjs binaries live, and
-/// whether they actually run.
+import 'external_tool_release.dart';
+import 'external_tool_versions.dart';
+
+/// Resolves usable tools from an optional user directory, the bundle, then PATH.
 ///
 /// Resolution order per tool: (1) bundled next to the app executable
 /// (`<exe_dir>/bin/ffmpeg`, `<exe_dir>/bin/yt-dlp`, `.exe` on
@@ -23,7 +27,22 @@ class ExternalTools {
     required this.ytDlpPath,
     this.qjsPath,
     this.ytDlpSupportsJsRuntimes = true,
-  });
+  }) : _origins = const {};
+
+  ExternalTools._({required this.ffmpegPath, required this.ytDlpPath,
+    required this.qjsPath, required this.ytDlpSupportsJsRuntimes,
+    required Map<ExternalTool, ExternalToolOrigin> origins}) : _origins = origins;
+
+  final Map<ExternalTool, ExternalToolOrigin> _origins;
+
+  String? pathOf(ExternalTool tool) => switch (tool) {
+    ExternalTool.ffmpeg => ffmpegPath,
+    ExternalTool.ytDlp => ytDlpPath,
+    ExternalTool.quickjs => qjsPath,
+  };
+
+  ExternalToolOrigin originOf(ExternalTool tool) => _origins[tool] ??
+      (pathOf(tool) == null ? ExternalToolOrigin.missing : ExternalToolOrigin.system);
 
   final String? ffmpegPath;
   final String? ytDlpPath;
@@ -57,15 +76,11 @@ class ExternalTools {
     return [if (qjsPath != null) 'quickjs:$qjsPath', 'node', 'bun'];
   }
 
-  /// Resolves both tools. [executableDir] defaults to the directory
-  /// holding the current executable. [pathLookup] finds a tool on
-  /// PATH (defaults to `which` / `where`). [versionCheck] runs the
-  /// tool's version flag and returns true when it exits 0.
-  /// [jsRuntimeSupportCheck] reports whether a yt-dlp found on PATH
-  /// understands `--js-runtimes`; it is not called for the bundled
-  /// binary.
+  /// Resolves tools, preferring verified files in [userToolsDir] when supplied.
   static Future<ExternalTools> resolve({
     String? executableDir,
+    String? userToolsDir,
+    bool? isWindows,
     Future<String?> Function(String name)? pathLookup,
     Future<bool> Function(String path)? versionCheck,
     Future<bool> Function(String path)? jsRuntimeSupportCheck,
@@ -73,39 +88,37 @@ class ExternalTools {
     final dir = executableDir ?? p.dirname(Platform.resolvedExecutable);
     final lookup = pathLookup ?? _defaultPathLookup;
     final check = versionCheck ?? _defaultVersionCheck;
-    final ffmpeg = await _resolveOne('ffmpeg', dir, lookup, check);
-    final ytDlp = await _resolveOne('yt-dlp', dir, lookup, check);
-    final qjs = await _resolveOne('qjs', dir, lookup, check);
-    final supportsJsRuntimes = ytDlp == null || _isBundled(ytDlp, dir)
-        ? true
-        : await (jsRuntimeSupportCheck ?? _defaultJsRuntimeSupportCheck)(ytDlp);
-    return ExternalTools(
-      ffmpegPath: ffmpeg,
+    final results = <ExternalTool, (String?, ExternalToolOrigin)>{};
+    for (final tool in ExternalTool.values) {
+      final name = tool.executableName(isWindows: isWindows ?? Platform.isWindows);
+      if (userToolsDir != null) {
+        final user = p.join(userToolsDir, name);
+        if (await FileSystemEntity.type(user, followLinks: false) ==
+            FileSystemEntityType.file && await check(user)) {
+          results[tool] = (user, ExternalToolOrigin.downloaded);
+          continue;
+        }
+      }
+      final bundled = p.join(dir, 'bin', name);
+      if (await File(bundled).exists() && await check(bundled)) {
+        results[tool] = (bundled, ExternalToolOrigin.bundled);
+        continue;
+      }
+      final system = await lookup(tool.executable);
+      results[tool] = system != null && await check(system)
+          ? (system, ExternalToolOrigin.system)
+          : (null, ExternalToolOrigin.missing);
+    }
+    final (ytDlp, ytDlpOrigin) = results[ExternalTool.ytDlp]!;
+    return ExternalTools._(
+      ffmpegPath: results[ExternalTool.ffmpeg]!.$1,
       ytDlpPath: ytDlp,
-      qjsPath: qjs,
-      ytDlpSupportsJsRuntimes: supportsJsRuntimes,
+      qjsPath: results[ExternalTool.quickjs]!.$1,
+      ytDlpSupportsJsRuntimes: ytDlp == null ||
+          ytDlpOrigin == ExternalToolOrigin.bundled ||
+          await (jsRuntimeSupportCheck ?? _defaultJsRuntimeSupportCheck)(ytDlp),
+      origins: Map.unmodifiable(results.map((tool, result) => MapEntry(tool, result.$2))),
     );
-  }
-
-  static bool _isBundled(String path, String executableDir) =>
-      p.equals(p.dirname(path), p.join(executableDir, 'bin'));
-
-  static Future<String?> _resolveOne(
-    String name,
-    String executableDir,
-    Future<String?> Function(String name) lookup,
-    Future<bool> Function(String path) check,
-  ) async {
-    final exeName = Platform.isWindows ? '$name.exe' : name;
-    final bundled = p.join(executableDir, 'bin', exeName);
-    if (await File(bundled).exists() && await check(bundled)) {
-      return bundled;
-    }
-    final onPath = await lookup(name);
-    if (onPath != null && await check(onPath)) {
-      return onPath;
-    }
-    return null;
   }
 
   static Future<String?> _defaultPathLookup(String name) async {
@@ -129,7 +142,7 @@ class ExternalTools {
         ? ['-version']
         : ['--version'];
     try {
-      final result = await Process.run(path, args);
+      final result = await runExternalToolProcess(path, args);
       return result.exitCode == 0;
     } catch (_) {
       return false;
@@ -141,7 +154,7 @@ class ExternalTools {
   /// still exits 0.
   static Future<bool> _defaultJsRuntimeSupportCheck(String path) async {
     try {
-      final result = await Process.run(path, ['--help']);
+      final result = await runExternalToolProcess(path, ['--help']);
       return '${result.stdout}${result.stderr}'.contains('--js-runtimes');
     } catch (_) {
       return false;

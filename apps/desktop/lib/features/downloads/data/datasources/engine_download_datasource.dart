@@ -33,6 +33,13 @@ class EngineDownloadDatasource {
   final PdmEngine engine;
   String downloadDirectory;
 
+  bool get isExternalToolsBusy => engine.isExternalToolsBusy;
+  Stream<bool> get externalToolsBusyChanges => engine.externalToolsBusyChanges;
+  Future<T> withExternalToolsMaintenance<T>(
+      Future<T> Function(Future<void> Function() refresh) action) =>
+      engine.withExternalToolsMaintenance(action);
+  Future<void> refreshExternalTools() => engine.refreshExternalTools();
+
   void updateConfig(EngineConfig config) {
     engine.updateConfig(config);
     downloadDirectory = config.downloadDirectory;

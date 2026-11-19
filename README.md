@@ -115,8 +115,9 @@ shows a SmartScreen warning on first run.
 
 Open **Menu → Settings** to edit download and system preferences. The screen
 lists its sections on the left (**Downloads**, **System**, **Browser
-integration**) and shows the selected section on the right. Changes are saved
-only with **Save**; **Cancel** or **Back** discards the draft.
+integration**, **External tools**) and shows the selected section on the right.
+Preference changes are saved only with **Save**; **Cancel** or **Back** discards
+the draft. External-tool install/remove actions take effect immediately.
 
 - **Download folder:** defaults to the OS Downloads folder; use **Browse** for
   a custom absolute path or **Use system Downloads folder** to restore it.
@@ -141,6 +142,20 @@ only with **Save**; **Cancel** or **Back** discards the draft.
   section — native host registration and the extension state per browser
   profile — with **Check again** to re-run the install after closing a browser.
   See [Browser integration](#browser-integration) for platform limits.
+
+- **External tools:** every desktop launch checks GitHub release metadata for
+  ffmpeg, yt-dlp and quickjs without blocking the window or downloading binaries.
+  A yellow dot beside **Settings** in the menu and **External tools** in the
+  sidebar indicates a confirmed newer version. **Check now** retries a check.
+  Each tool has its own card: **Update** verifies SHA-256 and installs only that
+  tool; **Remove downloaded version** removes only its downloaded copy.
+  Install/remove is unavailable during external downloads, probes or maintenance.
+  New tools apply to the next probe/download or thumbnail extraction, without a
+  restart. Removing a downloaded version returns to bundled/PATH tools; it never
+  modifies the bundle. Updates live in `%LOCALAPPDATA%\\pdm\\bin` on Windows or
+  `$XDG_DATA_HOME/pdm/bin` (default `~/.local/share/pdm/bin`) on Linux. Runtime
+  updates support x64 Linux and Windows only. Unknown/missing local versions do
+  not produce update offers; check errors are shown in the section, not as dots.
 
 Preferences share the existing app-data `settings.json` with recent save
 folders. Existing files remain compatible. **Export settings** includes these
