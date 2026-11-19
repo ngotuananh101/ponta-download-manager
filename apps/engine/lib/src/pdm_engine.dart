@@ -65,7 +65,7 @@ class _CachedProbe {
 /// limiter. Created with [PdmEngine.open]; shut down with [dispose].
 class PdmEngine implements DownloadEngine {
   PdmEngine._({
-    required this.config,
+    required EngineConfig config,
     required DownloadStore store,
     required DownloadScheduler scheduler,
     required CheckpointWriter writer,
@@ -74,7 +74,8 @@ class PdmEngine implements DownloadEngine {
     ExternalTools? externalTools,
     Future<ExternalTools> Function()? resolveExternalTools,
     YtDlpDownloader? ytDlpDownloader,
-  })  : _store = store,
+  })  : _config = config,
+        _store = store,
         _scheduler = scheduler,
         _writer = writer,
         _limiter = limiter,
@@ -120,7 +121,20 @@ class PdmEngine implements DownloadEngine {
     return engine;
   }
 
-  final EngineConfig config;
+  EngineConfig get config => _config;
+  late EngineConfig _config;
+
+  /// Applies defaults without recreating the engine or interrupting transfers.
+  /// Existing records retain their destination and connection count.
+  void updateConfig(EngineConfig value) {
+    _throwIfDisposed();
+    if (value.maxConcurrentDownloads < 1 || value.maxConnectionsPerDownload < 1 ||
+        value.downloadDirectory.trim().isEmpty) {
+      throw ArgumentError('Engine defaults require positive limits and a directory');
+    }
+    _scheduler.setMaxConcurrent(value.maxConcurrentDownloads);
+    _config = value;
+  }
   final DownloadStore _store;
   final DownloadScheduler _scheduler;
   final CheckpointWriter _writer;

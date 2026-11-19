@@ -15,6 +15,7 @@ import 'package:pdm/features/downloads/data/services/file_conflict_settings.dart
 import 'package:pdm/features/downloads/data/services/file_opener.dart';
 import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/domain/repositories/download_repository.dart';
+import 'package:pdm/features/settings/settings_providers.dart';
 import 'package:pdm_engine/pdm_engine.dart';
 
 /// Resolves the default download directory: whatever the OS reports as the
@@ -27,16 +28,31 @@ final downloadDirectoryResolverProvider = Provider<String Function()>(
 /// The default download directory. A separate provider so the screen can read
 /// it without opening the engine.
 final downloadDirectoryProvider = Provider<String>(
-  (ref) => ref.watch(downloadDirectoryResolverProvider)(),
+  (ref) => ref.watch(appSettingsProvider).downloadDirectory ??
+      ref.watch(downloadDirectoryResolverProvider)(),
 );
 
-/// The engine, running in this process. Opening it runs startup
-/// recovery; disposing the datasource disposes the engine.
+/// Injectable engine construction keeps integration tests on temporary DBs.
+final engineFactoryProvider = Provider<PdmEngine Function(EngineConfig)>(
+  (ref) => (config) => PdmEngine.open(config: config),
+);
+
+/// Listeners update defaults without disposing a live engine or IPC host.
 final downloadDatasourceProvider = Provider<EngineDownloadDatasource>((ref) {
+  EngineConfig config() {
+    final settings = ref.read(appSettingsProvider);
+    return EngineConfig(
+      downloadDirectory: ref.read(downloadDirectoryProvider),
+      maxConcurrentDownloads: settings.maxConcurrentDownloads,
+      maxConnectionsPerDownload: settings.maxConnectionsPerDownload,
+    );
+  }
+  final initial = config();
   final datasource = EngineDownloadDatasource(
-    engine: PdmEngine.open(),
-    downloadDirectory: ref.watch(downloadDirectoryProvider),
+    engine: ref.read(engineFactoryProvider)(initial),
+    downloadDirectory: initial.downloadDirectory,
   );
+  ref.listen(appSettingsProvider, (_, _) => datasource.updateConfig(config()));
   ref.onDispose(() => unawaited(datasource.dispose()));
   return datasource;
 });

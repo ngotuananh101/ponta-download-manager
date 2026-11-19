@@ -111,6 +111,43 @@ Artifacts (all for x64):
 The installers are unsigned (no code signing certificate yet): Windows
 shows a SmartScreen warning on first run.
 
+## Settings
+
+Open **Menu → Settings** to edit download and system preferences. The screen
+lists its sections on the left (**Downloads**, **System**, **Browser
+integration**) and shows the selected section on the right. Changes are saved
+only with **Save**; **Cancel** or **Back** discards the draft.
+
+- **Download folder:** defaults to the OS Downloads folder; use **Browse** for
+  a custom absolute path or **Use system Downloads folder** to restore it.
+- **Concurrent downloads:** 1–32, default 3. Changes apply without restarting
+  the engine; lowering the limit does not interrupt running downloads.
+- **Connections per download:** 1–32, default 8. New downloads use the new
+  value; existing/queued downloads keep their saved connection count.
+- **File conflicts:** ask every time, rename automatically, or overwrite.
+- **When deleting a download:** ask every time (default), remove the row only,
+  or delete the finished file from disk too. "Ask every time" applies to a whole
+  selection as well: one answer covers every download in it.
+- **Launch at system startup:** current-user registration (Linux XDG autostart
+  or Windows Run key). Enabling requires a packaged release. AppImages register
+  the persistent AppImage path, not the temporary mount. Moving a portable
+  installation requires disabling and re-enabling this preference.
+- **When minimizing or closing:** hide to the tray (default) or gracefully quit
+  the application. Explicit **Quit** always exits.
+- **Initial window state:** normal (default) or minimized to tray. `--minimized`
+  also requests tray startup. If tray initialization fails, startup remains
+  visible, minimize uses the taskbar, and close quits.
+- **Browser integration:** the same status list as the Browser integration
+  section — native host registration and the extension state per browser
+  profile — with **Check again** to re-run the install after closing a browser.
+  See [Browser integration](#browser-integration) for platform limits.
+
+Preferences share the existing app-data `settings.json` with recent save
+folders. Existing files remain compatible. **Export settings** includes these
+preferences; **Import settings** validates and applies them through the same
+save path, reporting disk or startup-registration failures. Ordinary app startup
+never rewrites autostart registration. Snail mode remains session-only.
+
 ## Browser integration
 
 Release bundles ship the extension and native messaging host. On first
@@ -119,8 +156,8 @@ no `install.sh` or extension-id copying is needed. On Linux it can also
 add the unpacked extension while a Chromium browser is closed, provided the
 user has already enabled Developer mode. PDM never enables Developer mode
 or re-enables a disabled extension. If the browser is running, quit it and
-choose **Menu → Browser integration → Check again**. This profile-based
-setup is best-effort; **Load unpacked** may still be needed.
+choose **Menu → Settings → Browser integration → Check again**. This
+profile-based setup is best-effort; **Load unpacked** may still be needed.
 Windows still requires enabling Developer mode and **Load unpacked** once;
 Firefox requires a signed add-on (not yet published). PDM does not bypass
 browser authentication or install force policies. See

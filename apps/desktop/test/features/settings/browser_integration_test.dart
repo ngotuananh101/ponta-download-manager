@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:pdm/app/browser_integration_dialog.dart';
+import 'package:pdm/features/settings/browser_integration.dart';
 import 'package:pdm/core/services/browser_extension_installer.dart';
 import 'package:pdm/core/services/browser_integration_service.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
@@ -37,7 +37,7 @@ void makeExtension(Directory home) {
   manifest.writeAsStringSync('{"manifest_version": 3}');
 }
 
-Future<void> pumpDialog(
+Future<void> pumpSection(
   WidgetTester tester, {
   required BrowserIntegrationSnapshot snapshot,
 }) async {
@@ -51,7 +51,10 @@ Future<void> pumpDialog(
         // in the default Material 3 theme loads the ink-sparkle shader,
         // which is not in the test asset bundle.
         theme: AppTheme.light,
-        home: const Scaffold(body: BrowserIntegrationDialog()),
+        // Settings hosts the section inside its scrolling content area; the
+        // section itself is a plain column and relies on that.
+        home: const Scaffold(body: SingleChildScrollView(
+          child: BrowserIntegrationSection())),
       ),
     ),
   );
@@ -156,7 +159,7 @@ void main() {
   testWidgets('many profiles remain scrollable without overflowing', (
     tester,
   ) async {
-    await pumpDialog(
+    await pumpSection(
       tester,
       snapshot: BrowserIntegrationSnapshot(
         statuses: [
@@ -178,7 +181,7 @@ void main() {
   testWidgets('shows failed native host registration instead of success', (
     tester,
   ) async {
-    await pumpDialog(
+    await pumpSection(
       tester,
       snapshot: const BrowserIntegrationSnapshot(
         statuses: [],
@@ -217,7 +220,7 @@ void main() {
           ),
         ],
         child: const MaterialApp(
-          home: Scaffold(body: BrowserIntegrationDialog()),
+          home: Scaffold(body: BrowserIntegrationSection()),
         ),
       ),
     );
@@ -253,7 +256,7 @@ void main() {
           ),
         ],
         child: const MaterialApp(
-          home: Scaffold(body: BrowserIntegrationDialog()),
+          home: Scaffold(body: BrowserIntegrationSection()),
         ),
       ),
     );
@@ -300,7 +303,7 @@ void main() {
           }),
         ],
         child: const MaterialApp(
-          home: Scaffold(body: BrowserIntegrationDialog()),
+          home: Scaffold(body: BrowserIntegrationSection()),
         ),
       ),
     );
@@ -316,7 +319,7 @@ void main() {
   });
 
   testWidgets('shows the native host state', (tester) async {
-    await pumpDialog(
+    await pumpSection(
       tester,
       snapshot: const BrowserIntegrationSnapshot(
         statuses: [],

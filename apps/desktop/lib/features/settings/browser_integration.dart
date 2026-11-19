@@ -6,9 +6,8 @@ import 'package:path/path.dart' as p;
 import 'package:pdm/core/services/browser_extension_installer.dart';
 import 'package:pdm/core/services/browser_integration_service.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
-import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
-/// Everything the browser-integration dialog shows: what each browser
+/// Everything the Browser integration section shows: what each browser
 /// profile looks like, plus the instructions that only a user can follow.
 class BrowserIntegrationSnapshot {
   const BrowserIntegrationSnapshot({
@@ -39,7 +38,7 @@ class BrowserIntegrationSnapshot {
 
 /// Reads every Chromium profile and the native host state.
 ///
-/// A FutureProvider so the dialog can refresh it: after the user quits a
+/// A FutureProvider so the section can refresh it: after the user quits a
 /// browser and taps "Check again", the install runs once more and the list
 /// re-renders from the new state.
 final browserIntegrationStatusProvider =
@@ -138,65 +137,57 @@ String? manualInstallSteps(String extensionDirectory, {bool? isWindows}) {
       '(not yet published). Temporary loading in about:debugging is for development.';
 }
 
-/// Shows the browser-integration dialog: which browsers have the extension,
-/// which still need a step, and what to do about it.
-Future<void> showBrowserIntegrationDialog({required BuildContext context}) {
-  return showDialog<void>(
-    context: context,
-    builder: (context) => const BrowserIntegrationDialog(),
-  );
-}
-
-/// The dialog body. Riverpod-backed so it works both inside the app and in a
-/// widget test with an overridden status provider.
-class BrowserIntegrationDialog extends ConsumerWidget {
-  const BrowserIntegrationDialog({super.key});
+/// Settings → Browser integration: which browsers have the extension, which
+/// still need a step, and what to do about it. The install is re-run by
+/// "Check again" instead of only on the next app start.
+class BrowserIntegrationSection extends ConsumerWidget {
+  const BrowserIntegrationSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(browserIntegrationStatusProvider);
-    return PdmDialog(
-      title: 'Browser integration',
-      width: 520,
-      actions: [
-        PdmDialogButton.secondary(
-          label: 'Check again',
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Text(
+          'The extension sends downloads to PDM through the native host (com.ponta.pdm).',
+          style: AppTextSize.xs.textStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        const SizedBox(width: AppSpacing.s3),
+        TextButton(
           onPressed: () => ref.invalidate(browserIntegrationStatusProvider),
+          child: const Text('Check again'),
         ),
-        PdmDialogButton.primary(
-          label: 'Close',
-          onPressed: () => Navigator.of(context).pop(),
+      ]),
+      const SizedBox(height: AppSpacing.s2),
+      async.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: AppSpacing.s5),
+          child: Center(child: CircularProgressIndicator()),
         ),
-      ],
-      child: Flexible(
-        child: SingleChildScrollView(
-          child: async.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.s5),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (error, _) => Text(
-              'Could not read the browser profiles: $error',
-              style: AppTextSize.xs.textStyle(),
-            ),
-            data: (snapshot) => _body(context, snapshot),
-          ),
+        error: (error, _) => Text(
+          'Could not read the browser profiles: $error',
+          style: AppTextSize.xs.textStyle(),
         ),
+        data: (snapshot) => BrowserIntegrationSnapshotView(snapshot: snapshot),
       ),
-    );
+    ]);
   }
+}
 
-  Widget _body(BuildContext context, BrowserIntegrationSnapshot snapshot) {
+/// The status list itself, separated from the section's header so a test can
+/// render one snapshot directly.
+class BrowserIntegrationSnapshotView extends StatelessWidget {
+  const BrowserIntegrationSnapshotView({super.key, required this.snapshot});
+
+  final BrowserIntegrationSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'The extension sends downloads to PDM through the native host (com.ponta.pdm).',
-          style: AppTextSize.xs.textStyle(color: colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: AppSpacing.s2),
         Text(
           snapshot.hostRegistration == null
               ? 'Native host registration has not been checked.'

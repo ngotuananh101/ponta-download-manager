@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <cstdint>
+#include <flutter/standard_method_codec.h>
 
 #include "drop_target.h"
 #include "flutter/generated_plugin_registrant.h"
@@ -27,14 +29,27 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "pdm/window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "getHandle") {
+          result->Success(flutter::EncodableValue(
+              static_cast<int64_t>(reinterpret_cast<intptr_t>(GetHandle()))));
+        } else {
+          result->NotImplemented();
+        }
+      });
 
   // Window-wide drag-and-drop: OLE walks up from the window under the
   // cursor, so registering the top-level window covers the Flutter child.
   drop_target_attach(flutter_controller_->engine()->messenger(), GetHandle());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
+  // Dart owns startup visibility after loading preferences and initializing
+  // the tray. A first-frame Show() would override start-in-tray preferences.
+  flutter_controller_->engine()->SetNextFrameCallback([]() {});
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
@@ -45,6 +60,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  window_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

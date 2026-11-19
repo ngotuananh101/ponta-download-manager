@@ -31,7 +31,12 @@ class EngineDownloadDatasource {
   }
 
   final PdmEngine engine;
-  final String downloadDirectory;
+  String downloadDirectory;
+
+  void updateConfig(EngineConfig config) {
+    engine.updateConfig(config);
+    downloadDirectory = config.downloadDirectory;
+  }
   final Duration progressEmitInterval;
 
   static final _log = Logger('EngineDownloadDatasource');

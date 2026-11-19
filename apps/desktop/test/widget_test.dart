@@ -11,7 +11,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdm/app/app.dart';
-import 'package:pdm/app/browser_integration_dialog.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/core/services/window_service.dart';
@@ -21,6 +20,7 @@ import 'package:pdm/features/downloads/domain/entities/download.dart';
 import 'package:pdm/features/downloads/presentation/download_details_panel.dart';
 import 'package:pdm/features/downloads/presentation/downloads_filtering.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/features/settings/browser_integration.dart';
 import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
 class MockDownloadsActions extends Mock implements DownloadsActions {}
@@ -1660,6 +1660,69 @@ void main() {
     verifyNever(() => actions.deleteDownload(any()));
   });
 
+  /// A real file on disk, so the delete dialog would otherwise ask whether
+  /// to delete it.
+  ({Download download, Directory dir}) deleteFixture() {
+    final dir = Directory.systemTemp.createTempSync('pdm-delete-');
+    final filePath = p.join(dir.path, 'f.bin');
+    File(filePath).writeAsStringSync('x');
+    return (download: completedWithFile(filePath), dir: dir);
+  }
+
+  testWidgets('the delete action can remove the row without asking',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    final fixture = deleteFixture();
+    addTearDown(() => fixture.dir.deleteSync(recursive: true));
+    final settingsPath = p.join(fixture.dir.path, 'settings.json');
+    File(settingsPath).writeAsStringSync('{"deleteAction":"removeOnly"}');
+    await pumpApp(
+      tester,
+      downloads: [fixture.download],
+      actions: actions,
+      settingsPath: settingsPath,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete download'), findsNothing);
+    verify(() => actions.deleteDownload('dl-1', deleteFile: false)).called(1);
+  });
+
+  testWidgets('the delete action can delete the file without asking',
+      (tester) async {
+    final actions = MockDownloadsActions();
+    when(
+      () => actions.deleteDownload(
+        any(),
+        deleteFile: any(named: 'deleteFile'),
+      ),
+    ).thenAnswer((_) async => const Right(unit));
+    final fixture = deleteFixture();
+    addTearDown(() => fixture.dir.deleteSync(recursive: true));
+    final settingsPath = p.join(fixture.dir.path, 'settings.json');
+    File(settingsPath).writeAsStringSync('{"deleteAction":"deleteFile"}');
+    await pumpApp(
+      tester,
+      downloads: [fixture.download],
+      actions: actions,
+      settingsPath: settingsPath,
+    );
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete download'), findsNothing);
+    verify(() => actions.deleteDownload('dl-1', deleteFile: true)).called(1);
+  });
+
   testWidgets('bulk delete asks once for the whole selection',
       (tester) async {
     final actions = MockDownloadsActions();
@@ -1908,7 +1971,7 @@ void main() {
     expect(find.text('Paste urls from clipboard'), findsOneWidget);
     expect(find.text('Paste urls from file'), findsOneWidget);
     expect(find.text('Export/Import'), findsOneWidget);
-    expect(find.text('Browser integration'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Quit'), findsOneWidget);
     final menuText = tester.widget<Text>(find.text('Pause all'));
@@ -1918,8 +1981,7 @@ void main() {
     );
     expect(items.length, 8);
     expect(items.every((item) => item.height == 32), isTrue);
-    // Pause/Resume | paste actions | Export/Import | Browser
-    // integration, About, Quit.
+    // Pause/Resume | paste actions | Export/Import | Settings, About, Quit.
     final dividers = find.byType(PopupMenuDivider);
     expect(dividers, findsNWidgets(2));
     expect(
@@ -1936,10 +1998,6 @@ void main() {
     );
     expect(
       tester.getCenter(dividers.at(1)).dy,
-      lessThan(tester.getCenter(find.text('Browser integration')).dy),
-    );
-    expect(
-      tester.getCenter(find.text('Browser integration')).dy,
       lessThan(tester.getCenter(find.text('About')).dy),
     );
   });
@@ -2286,24 +2344,6 @@ void main() {
     expect(find.byType(PdmDialog), findsNothing);
   });
 
-  testWidgets('Browser integration opens the status dialog', (tester) async {
-    // The dialog re-reads the profiles, so stub the provider instead of
-    // letting it walk the real home directory.
-    await pumpApp(
-      tester,
-      browserIntegration: const BrowserIntegrationSnapshot(statuses: []),
-    );
-    await tester.tap(find.byTooltip('Menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Browser integration'));
-    await tester.pumpAndSettle();
-    final dialog = find.byType(PdmDialog);
-    expect(dialog, findsOneWidget);
-    expect(
-      find.descendant(of: dialog, matching: find.text('Browser integration')),
-      findsWidgets,
-    );
-  });
 
   testWidgets('Quit calls the quit action', (tester) async {
     var quitCalls = 0;

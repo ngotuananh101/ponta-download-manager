@@ -3,96 +3,73 @@ import 'dart:io';
 
 import 'package:download_api/download_api.dart';
 import 'package:path/path.dart' as p;
-
 import 'package:pdm/core/app_data_dir.dart';
+import 'package:pdm/features/settings/app_settings.dart';
 
-/// The remembered file-conflict choice and recently used save
-/// directories, persisted as JSON (`{"fileConflictPolicy":
-/// "overwrite"|"rename", "recentSaveDirectories": [...]}`) under the
-/// app data dir. A missing, corrupt or unknown policy means "ask every
-/// time"; missing directories mean none were picked yet. There is no
-/// Settings screen yet, so clearing the choice means deleting the file.
+/// Shared JSON preference storage. Legacy conflict/recent-folder writes
+/// preserve every other preference, including keys from future versions.
 class FileConflictSettings {
   FileConflictSettings({String? filePath})
     : _filePath = filePath ?? p.join(defaultAppDataDir(), 'settings.json');
 
   final String _filePath;
 
-  FileConflictPolicy? load() {
-    return switch (_readJson()['fileConflictPolicy']) {
-      'overwrite' => FileConflictPolicy.overwrite,
-      'rename' => FileConflictPolicy.rename,
-      _ => null,
-    };
-  }
+  AppSettings loadSettings() => AppSettings.fromJson(_readJson());
+  FileConflictPolicy? load() => loadSettings().fileConflictPolicy;
 
-  /// Recently used save directories, most recent first. Empty when
-  /// none were picked yet.
   List<String> loadRecentDirectories() {
     final list = _readJson()['recentSaveDirectories'];
-    if (list is List) {
-      return list.whereType<String>().toList();
-    }
-    return const [];
+    return list is List ? list.whereType<String>().toList() : const [];
   }
 
-  /// Synchronous: the write is one small JSON line, and an async
-  /// save would never complete inside a widget test's FakeAsync zone.
-  /// Saving one half keeps the other: the file always holds both keys.
-  void save(FileConflictPolicy? policy) {
+  /// Synchronous small writes also work in widget tests' FakeAsync zone.
+  void save(FileConflictPolicy? policy) => _write({
+    ..._readJson(),
+    'fileConflictPolicy': policy?.name,
+  });
+
+  void saveRecentDirectories(List<String> directories) => _write({
+    ..._readJson(),
+    'recentSaveDirectories': directories,
+  });
+
+  void saveSettings(AppSettings settings, {List<String>? recentDirectories}) {
+    settings.validate();
     _write({
-      'fileConflictPolicy': policy?.name,
-      'recentSaveDirectories': loadRecentDirectories(),
+      ..._readJson(),
+      ...settings.toJson(),
+      'recentSaveDirectories': recentDirectories ?? loadRecentDirectories(),
     });
   }
 
-  /// Persists the recent save directories, most recent first.
-  void saveRecentDirectories(List<String> directories) {
-    _write({
-      'fileConflictPolicy': load()?.name,
-      'recentSaveDirectories': directories,
-    });
-  }
+  String exportJson() => jsonEncode({
+    ...loadSettings().toJson(),
+    'recentSaveDirectories': loadRecentDirectories(),
+  });
 
-  /// The current settings as a JSON string, for Export settings.
-  String exportJson() {
-    return jsonEncode({
-      'fileConflictPolicy': load()?.name,
-      'recentSaveDirectories': loadRecentDirectories(),
-    });
-  }
-
-  /// Replaces the settings from a JSON string (Import settings).
-  /// Returns false when the text is not a JSON object; an unknown
-  /// policy value is dropped and non-string directories are ignored.
-  bool importJson(String text) {
-    final Object? decoded;
+  static Map<String, Object?>? decodeSettings(String text) {
     try {
-      decoded = jsonDecode(text);
+      final decoded = jsonDecode(text);
+      return decoded is Map<String, Object?> ? decoded : null;
     } catch (_) {
-      return false;
+      return null;
     }
-    if (decoded is! Map<String, Object?>) return false;
-    final policy = switch (decoded['fileConflictPolicy']) {
-      'overwrite' => FileConflictPolicy.overwrite,
-      'rename' => FileConflictPolicy.rename,
-      _ => null,
-    };
-    final directories = decoded['recentSaveDirectories'];
-    save(policy);
-    saveRecentDirectories(
-      directories is List
-          ? directories.whereType<String>().toList()
-          : const [],
-    );
+  }
+
+  /// Storage-only compatibility API. The UI uses the settings notifier to
+  /// apply runtime/OS changes as well as persisting imported preferences.
+  bool importJson(String text) {
+    final json = decodeSettings(text);
+    if (json == null) return false;
+    final directories = json['recentSaveDirectories'];
+    saveSettings(AppSettings.fromJson(json), recentDirectories:
+      directories is List ? directories.whereType<String>().toList() : const []);
     return true;
   }
 
   Map<String, Object?> _readJson() {
     try {
-      final json = jsonDecode(File(_filePath).readAsStringSync());
-      if (json is Map<String, Object?>) return json;
-      return const {};
+      return decodeSettings(File(_filePath).readAsStringSync()) ?? const {};
     } catch (_) {
       return const {};
     }
@@ -101,6 +78,14 @@ class FileConflictSettings {
   void _write(Map<String, Object?> json) {
     final file = File(_filePath);
     file.parent.createSync(recursive: true);
-    file.writeAsStringSync(jsonEncode(json));
+    // Write beside the destination then rename: a failed write cannot leave
+    // a half-serialized preference file behind.
+    final temporary = File('$_filePath.tmp');
+    try {
+      temporary.writeAsStringSync(jsonEncode(json), flush: true);
+      temporary.renameSync(_filePath);
+    } finally {
+      if (temporary.existsSync()) temporary.deleteSync();
+    }
   }
 }

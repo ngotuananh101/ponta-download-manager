@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/scheduler.dart';
 import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // window_manager 0.6 re-exports nativeapi's windowing API; the tray and window
@@ -14,6 +15,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../features/downloads/domain/entities/download.dart';
 import '../../features/downloads/providers/download_providers.dart';
+import '../../features/settings/settings_providers.dart';
+import 'window_preferences.dart';
+import 'window_restore.dart';
 import 'linux_desktop_service.dart';
 import 'window_api.dart';
 
@@ -38,6 +42,30 @@ class WindowService extends _$WindowService {
   /// True while a quit this app started is closing the window, so the close
   /// listener lets the request through instead of hiding to the tray.
   bool _isQuitting = false;
+  bool _allowClose = false;
+  Future<void>? _quitFuture;
+  bool trayAvailable = false;
+
+  /// The show/nudge sequence shared by every Dart-initiated tray restore.
+  TrayRestore? _trayRestore;
+
+  /// Shared by the custom minimize button and native minimize events.
+  Future<void> minimizeWindow() => _applyWindowPreference(closing: false);
+
+  Future<void> _applyWindowPreference({required bool closing}) async {
+    if (_isQuitting) return;
+    await applyWindowAction(
+      action: ref.read(appSettingsProvider).windowAction,
+      trayAvailable: trayAvailable,
+      closing: closing,
+      hide: () => currentWindow()?.hide(),
+      minimize: () {
+        final window = currentWindow();
+        if (window != null && !window.isMinimized) window.minimize();
+      },
+      quit: quit,
+    );
+  }
 
   @override
   Future<void> build() async {
@@ -69,6 +97,9 @@ class WindowService extends _$WindowService {
       _trayIcon = null;
       _trayIconImage?.dispose();
       _trayIconImage = null;
+
+      _trayRestore?.dispose();
+      _trayRestore = null;
     });
 
     _initSystemTray();
@@ -119,7 +150,7 @@ class WindowService extends _$WindowService {
       if (Platform.isLinux) {
         icon.setContextMenuTrigger(ContextMenuTrigger.clicked);
       }
-      icon.setVisible(true);
+      final visible = icon.setVisible(true);
 
       // nativeapi reports whole clicks.
       _trayListenerId = icon.addListener((event) {
@@ -141,7 +172,9 @@ class WindowService extends _$WindowService {
       menu.addAction('Quit', () => unawaited(quit()));
       _trayMenu = menu;
       icon.setContextMenu(menu.root);
+      trayAvailable = visible && image != null;
     } catch (e) {
+      trayAvailable = false;
       _log.severe('Tray initialization failed: $e');
     }
   }
@@ -160,8 +193,13 @@ class WindowService extends _$WindowService {
 
   /// Quits for real: stops the engine + the IPC host, then closes
   /// the window. Called from the tray menu.
-  Future<void> quit() async {
+  Future<void> quit() {
+    if (_quitFuture != null) return _quitFuture!;
     _isQuitting = true;
+    return _quitFuture = _finishQuit();
+  }
+
+  Future<void> _finishQuit() async {
     await _stopEngine();
     _closeWindow();
   }
@@ -181,14 +219,13 @@ class WindowService extends _$WindowService {
 
   /// Brings the window back from the tray.
   ///
-  /// `show()` alone leaves a minimized window minimized, so a window the user
-  /// minimized rather than hid would stay out of sight.
+  /// Show, focus, and the frame/size work that makes a restored window
+  /// actually paint live in [TrayRestore].
   void _showWindow() {
-    final window = currentWindow();
-    if (window == null) return;
-    if (window.isMinimized) window.restore();
-    window.show();
-    window.focus();
+    if (currentWindow() == null) return;
+    final restore = _trayRestore ??=
+        TrayRestore(_WindowRestoreHost(currentWindow), log: _log.info);
+    restore.showFromTray();
   }
 
   /// Closes the window for good, past the tray.
@@ -197,6 +234,7 @@ class WindowService extends _$WindowService {
   /// close listeners, so [_isQuitting] is what makes [_onWindowEvent] accept it.
   void _closeWindow() {
     _isQuitting = true;
+    _allowClose = true;
     final window = currentWindow();
     if (window == null) {
       // No native window to close (nothing to put the request through); end the
@@ -217,22 +255,59 @@ class WindowService extends _$WindowService {
     switch (event) {
       case WindowCloseRequestedEvent():
         return _handleCloseRequest(event.request);
+      case WindowMinimizedEvent():
+        return minimizeWindow();
       default:
         break;
     }
   }
 
-  /// Decides what the title bar's close button does.
-  ///
-  /// PDM always minimizes to the tray on close: the request is
-  /// cancelled and the window is hidden. A close this app started
-  /// itself (`_closeWindow`) is already the decision, so it is
-  /// accepted by simply returning.
+  /// Defer native close until the chosen hide or graceful quit has completed.
   Future<void> _handleCloseRequest(EventRequest request) async {
-    if (_isQuitting) return;
+    if (_isQuitting) {
+      // Only the close issued after cleanup may pass through. A second user
+      // close during shutdown must not destroy the window before cleanup.
+      if (!_allowClose) request.cancel();
+      return;
+    }
     request.cancel();
-    currentWindow()?.hide();
+    await _applyWindowPreference(closing: true);
   }
+}
+
+/// Adapts the app's window (resolved through [currentWindow]) to the small
+/// surface [TrayRestore] needs. Every member re-resolves the window so a
+/// lookup that answers nothing degrades to a no-op instead of throwing.
+class _WindowRestoreHost implements TrayRestoreHost {
+  _WindowRestoreHost(this._resolve);
+
+  final Window? Function() _resolve;
+
+  @override
+  bool get isMinimized => _resolve()?.isMinimized ?? false;
+  @override
+  bool get isMaximized => _resolve()?.isMaximized ?? false;
+  @override
+  bool get isFullScreen => _resolve()?.isFullScreen ?? false;
+  @override
+  double get width => _resolve()?.size.width ?? 0;
+  @override
+  double get height => _resolve()?.size.height ?? 0;
+
+  @override
+  void restore() => _resolve()?.restore();
+  @override
+  void show() => _resolve()?.show();
+  @override
+  void focus() => _resolve()?.focus();
+  @override
+  void setSize(double width, double height) => _resolve()
+      ?.setSize(Size(width: width, height: height), false);
+  @override
+  void scheduleFrame() => SchedulerBinding.instance.scheduleFrame();
+  @override
+  void scheduleForcedFrame() =>
+      SchedulerBinding.instance.scheduleForcedFrame();
 }
 
 /// Quits the app for real, through the [WindowService].
@@ -240,6 +315,10 @@ class WindowService extends _$WindowService {
 /// A plain provider (not generated) so widget tests can override it
 /// with a recording stub: building the real service starts the tray,
 /// which cannot run in a widget test.
+final minimizeAppProvider = Provider<Future<void> Function()>(
+  (ref) => () => ref.read(windowServiceProvider.notifier).minimizeWindow(),
+);
+
 final quitAppProvider = Provider<Future<void> Function()>(
   (ref) => () => ref.read(windowServiceProvider.notifier).quit(),
 );

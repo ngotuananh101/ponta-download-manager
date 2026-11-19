@@ -15,6 +15,26 @@ void main() {
     debugSetCurrentWindowResolver(previousResolver);
   });
 
+  test('adopts the hidden runner window before any show event', () async {
+    previousResolver = debugSetCurrentWindowResolver(() => null);
+    final seen = <Window>[];
+    whenCurrentWindow(seen.add);
+    await initializeRunnerWindow(
+      readHandle: () async => 123,
+      wrapHandle: (handle) {
+        expect(handle, 123);
+        return window;
+      },
+    );
+    expect(currentWindow(), same(window));
+    expect(seen, [same(window)]);
+  });
+
+  test('a missing runner handle reports startup failure instead of waiting forever', () async {
+    previousResolver = debugSetCurrentWindowResolver(() => null);
+    await expectLater(initializeRunnerWindow(readHandle: () async => null), throwsStateError);
+  });
+
   test('runs the callback at once when the window is already known', () {
     previousResolver = debugSetCurrentWindowResolver(() => window);
 

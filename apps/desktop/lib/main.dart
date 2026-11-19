@@ -10,17 +10,24 @@ import 'package:pdm/core/services/browser_integration_service.dart';
 import 'package:pdm/core/services/linux_desktop_service.dart';
 import 'package:pdm/core/services/window_api.dart';
 import 'package:pdm/core/services/window_service.dart';
+import 'package:pdm/core/services/window_preferences.dart';
+import 'package:pdm/features/settings/settings_providers.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
 import 'package:window_manager/window_manager.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
+    if (Platform.isWindows) await initializeRunnerWindow();
     await _startApp(args);
   } catch (e) {
     // Startup failed before the first frame (engine, IPC server, or
     // window setup): show the error instead of dying silently.
     runApp(StartupErrorApp(message: e.toString()));
+    whenCurrentWindow((window) {
+      window.show();
+      window.focus();
+    });
   }
 }
 
@@ -45,7 +52,7 @@ Future<void> _startApp(List<String> args) async {
   final container = ProviderContainer();
   container.read(downloadDatasourceProvider);
   await container.read(engineIpcHostProvider.future);
-  container.read(windowServiceProvider);
+  await container.read(windowServiceProvider.future);
 
   // The app draws its own header bar (AppHeader), so the window
   // carries no native title bar. On Linux the runner already created
@@ -54,7 +61,10 @@ Future<void> _startApp(List<String> args) async {
   // custom-shadow mode, which 0.5.10 gets the geometry of wrong).
   // The Dart side must also honour --minimized: the runner alone
   // cannot stop this show() from presenting the window on auto-start.
-  final isMinimized = args.contains('--minimized');
+  final isMinimized = shouldStartHidden(
+    container.read(appSettingsProvider), args,
+    container.read(windowServiceProvider.notifier).trayAvailable,
+  );
   whenCurrentWindow((window) {
     if (!Platform.isLinux) {
       window.titleBarStyle = TitleBarStyle.hidden;
@@ -65,10 +75,8 @@ Future<void> _startApp(List<String> args) async {
     window.minimumSize = const Size(950, 650).toNative();
     window.backgroundColor = Colors.transparent.toNative();
     window.center();
-    if (!isMinimized) {
-      window.show();
-      window.focus();
-    }
+    applyStartupVisibility(hidden: isMinimized,
+      hide: window.hide, show: window.show, focus: window.focus);
   });
 
   runApp(

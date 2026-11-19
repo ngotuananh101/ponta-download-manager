@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pdm/features/downloads/presentation/delete_download_dialog.dart';
+import 'package:pdm/features/settings/app_settings.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 
 Future<void> openDialog(
@@ -87,5 +88,19 @@ void main() {
     expect(find.text('Delete 3 downloads?'), findsOneWidget);
     expect(find.text('Also delete the files from disk'), findsOneWidget);
     expect(decision, isNull);
+  });
+
+  test('a saved action answers for the batch unless it asks', () {
+    // Nothing on disk to delete: every mode keeps the file quietly.
+    for (final action in DeleteAction.values) {
+      expect(deleteFileWithoutAsking(action, hasFinishedFile: false), isFalse);
+    }
+    expect(deleteFileWithoutAsking(DeleteAction.removeOnly,
+      hasFinishedFile: true), isFalse);
+    expect(deleteFileWithoutAsking(DeleteAction.deleteFile,
+      hasFinishedFile: true), isTrue);
+    // Only "ask" leaves the decision to the dialog.
+    expect(deleteFileWithoutAsking(DeleteAction.ask,
+      hasFinishedFile: true), isNull);
   });
 }

@@ -9,7 +9,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdm/app/about_dialog.dart';
 import 'package:pdm/app/app_header.dart';
-import 'package:pdm/app/browser_integration_dialog.dart';
 import 'package:pdm/app/snail_icon.dart';
 import 'package:pdm/core/error/failures.dart';
 import 'package:pdm/core/services/drop_target_channel.dart';
@@ -26,6 +25,8 @@ import 'package:pdm/features/downloads/presentation/file_conflict_dialog.dart';
 import 'package:pdm/features/downloads/presentation/new_download_dialog.dart';
 import 'package:pdm/features/downloads/presentation/text_input_dialog.dart';
 import 'package:pdm/features/downloads/providers/download_providers.dart';
+import 'package:pdm/features/settings/settings_screen.dart';
+import 'package:pdm/features/settings/settings_providers.dart';
 import 'package:pdm/shared/theme/app_theme.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/dashed_border.dart';
@@ -101,7 +102,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return Scaffold(
       body: Column(
         children: [
-          const AppHeader(),
+          AppHeader(onMinimize: () => unawaited(ref.read(minimizeAppProvider)())),
           Expanded(
             child: downloads.when(
               data: (items) => _buildContent(items),
@@ -326,7 +327,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 _menuItem('paste-file', 'Paste urls from file'),
                 _exportImportSubmenu(),
                 const PopupMenuDivider(),
-                _menuItem('browser-integration', 'Browser integration'),
+                _menuItem('settings', 'Settings'),
                 _menuItem('about', 'About'),
                 _menuItem('quit', 'Quit'),
               ],
@@ -473,8 +474,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         await _pasteUrlsFromClipboard();
       case 'paste-file':
         await _pasteUrlsFromFile();
-      case 'browser-integration':
-        await showBrowserIntegrationDialog(context: context);
+      case 'settings':
+        await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => const SettingsScreen(),
+        ));
       case 'about':
         await showPdmAboutDialog(context: context);
       case 'quit':
@@ -573,21 +576,28 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     return path != null && File(path).existsSync();
   }
 
-  /// Deletes [items], asking first when any of them has a finished
-  /// file on disk. The dialog's choice applies to the whole batch;
-  /// cancelling deletes nothing. A failed delete shows its error
-  /// and leaves the row selected.
+  /// Deletes [items]. The saved delete action decides whether the finished
+  /// files go too; with "ask" (the default) the dialog asks once for the
+  /// whole batch. Cancelling the dialog deletes nothing. A failed delete
+  /// shows its error and leaves the row selected.
   Future<void> _deleteDownloads(List<Download> items) async {
     if (items.isEmpty) return;
     var deleteFile = false;
     if (items.any(_hasFinishedFile)) {
-      final decision = await showDeleteDownloadDialog(
-        context: context,
-        count: items.length,
-        fileName: items.length == 1 ? items.first.fileName : null,
-      );
-      if (decision == null) return;
-      deleteFile = decision.deleteFile;
+      final action = ref.read(appSettingsProvider).deleteAction;
+      final decided =
+          deleteFileWithoutAsking(action, hasFinishedFile: true);
+      if (decided == null) {
+        final decision = await showDeleteDownloadDialog(
+          context: context,
+          count: items.length,
+          fileName: items.length == 1 ? items.first.fileName : null,
+        );
+        if (decision == null) return;
+        deleteFile = decision.deleteFile;
+      } else {
+        deleteFile = decided;
+      }
     }
     if (!mounted) return;
     final actions = ref.read(downloadsActionsProvider);
@@ -1872,11 +1882,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       _showMessage('Could not import settings');
       return;
     }
-    final settings = ref.read(fileConflictSettingsProvider);
-    if (settings.importJson(text)) {
-      _showMessage('Settings imported');
-    } else {
-      _showMessage('Could not import settings');
+    try {
+      final imported = await ref.read(appSettingsProvider.notifier).importJson(text);
+      _showMessage(imported ? 'Settings imported' : 'Could not import settings');
+    } catch (error) {
+      _showMessage('Could not import settings: $error');
     }
   }
 

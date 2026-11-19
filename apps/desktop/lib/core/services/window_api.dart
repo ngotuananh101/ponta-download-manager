@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:ffi';
+
+import 'package:flutter/services.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
@@ -21,6 +24,23 @@ import 'package:window_manager/window_manager.dart';
 /// calls `SetForegroundWindow()` on its own message-only host window before
 /// running `TrackPopupMenu`, so a Show action from the tray menu would act on a
 /// window that can never be shown again.
+/// Adopt the runner's HWND while it is still hidden. Windows getCurrent()
+/// cannot find it on the Dart isolate and waiting for Show creates a cycle.
+Future<void> initializeRunnerWindow({
+  Future<int?> Function()? readHandle,
+  Window? Function(int)? wrapHandle,
+}) async {
+  final handle = await (readHandle ?? () =>
+    const MethodChannel('pdm/window').invokeMethod<int>('getHandle'))();
+  if (handle == null || handle == 0) {
+    throw StateError('The runner did not provide its application window');
+  }
+  final window = (wrapHandle ?? (address) =>
+    Window.createWithNativeWindow(Pointer<Void>.fromAddress(address)))(handle);
+  if (window == null) throw StateError('Cannot adopt the runner application window');
+  _adopt(window);
+}
+
 Window? currentWindow() => _adoptedWindow ?? _currentWindow();
 
 /// The window first resolved for this app, once one was found.

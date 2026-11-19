@@ -23,14 +23,11 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
-  // `--minimized` means "start in the tray": showing the window here (as the
-  // template does unconditionally) made auto-start pop the full window over
-  // whatever the user was doing, even though the Dart side deliberately does
-  // not call show() in that case.
-  if (self->start_minimized) {
-    return;
-  }
-  gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+  // Dart owns startup visibility after loading settings and initializing the
+  // tray. Showing here would override a persisted start-in-tray preference.
+  // The callback is retained to keep the first-frame rendering lifecycle.
+  (void)self;
+  (void)view;
 }
 
 // The radius Flutter rounds the window frame with (the ClipRRect in

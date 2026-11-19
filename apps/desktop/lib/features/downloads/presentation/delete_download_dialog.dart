@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:pdm/features/settings/app_settings.dart';
 import 'package:pdm/shared/theme/app_tokens.dart';
 import 'package:pdm/shared/widgets/pdm_dialog.dart';
 
@@ -8,6 +9,23 @@ class DeleteDownloadDecision {
   const DeleteDownloadDecision({required this.deleteFile});
 
   final bool deleteFile;
+}
+
+/// The batch's delete-file choice when the preference answers for the user.
+///
+/// Returns null only when the dialog has to ask. A batch with no finished
+/// file on disk never asks: "delete the file too" has nothing to delete, and
+/// the safe answer (keep) is the same in every mode.
+bool? deleteFileWithoutAsking(
+  DeleteAction action, {
+  required bool hasFinishedFile,
+}) {
+  if (!hasFinishedFile) return false;
+  return switch (action) {
+    DeleteAction.removeOnly => false,
+    DeleteAction.deleteFile => true,
+    DeleteAction.ask => null,
+  };
 }
 
 /// Asks whether the file on disk should be deleted along with the
