@@ -60,6 +60,34 @@ Pushing a tag `v*` runs the tests, builds all 7 artifacts and creates a
 GitHub Release; a manual run (`workflow_dispatch`) builds the same
 artifacts without creating a release.
 
+### Build provenance
+
+**Menu → About** shows project/developer information and two build fields:
+**Commit** and **Build time**. CI embeds the full Git commit SHA and the UTC
+start time of the Flutter release build into the binary.
+
+For a local release with the same metadata, put Flutter and Git on `PATH`,
+prepare the bundled tools/native host as described above, then run from the
+repository root (use the target matching your build host):
+
+```sh
+python3 tools/build_desktop.py linux
+# On Windows:
+python tools/build_desktop.py windows
+```
+
+The wrapper can also be invoked by absolute path from another directory.
+Modified tracked files and non-ignored untracked files add ` (dirty)` to the
+commit value; ignored build outputs (such as `build/` and `dist/`) do not.
+This identifies the base commit without claiming that local modifications
+came from it. Metadata is captured at build time, not at app
+startup, and no Git checkout or network access is needed to display it.
+
+`flutter run` (debug mode) shows **Development mode** in both build fields,
+even when Dart defines are supplied. A direct `flutter build ... --release`
+without the wrapper shows **Unavailable** for unstamped fields rather than
+inventing build metadata.
+
 ```sh
 # 1. Bump the version in apps/desktop/pubspec.yaml (e.g. 0.1.0+1 -> 0.2.0+1)
 #    and keep kAppVersion in apps/desktop/lib/app/app_info.dart in sync.

@@ -109,8 +109,7 @@ jobs:
         run: bash tools/build_native_host.sh windows
 
       - name: Build Windows
-        working-directory: apps/desktop
-        run: flutter build windows --release
+        run: python tools/build_desktop.py windows
 
       - name: Install Inno Setup
         shell: pwsh
@@ -205,8 +204,7 @@ jobs:
         run: bash tools/build_native_host.sh linux
 
       - name: Build Linux
-        working-directory: apps/desktop
-        run: flutter build linux --release
+        run: python3 tools/build_desktop.py linux
 
       - name: Build DEB and RPM
         run: |
