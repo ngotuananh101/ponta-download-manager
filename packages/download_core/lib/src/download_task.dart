@@ -132,7 +132,14 @@ class DownloadTask {
   // waiting on the token bucket wakes up instead of sitting in
   // the queue until tokens arrive. Reset by resume().
   Completer<void>? _cancelGate;
-  final _iterators = <StreamIterator<List<int>>>[];
+  final _iterators = <StreamIterator<List<int>>, Future<void>?>{};
+  // Segment boundaries are fixed for checkpoints. Only request admission
+  // changes, and successful streams are allowed to finish at the old limit.
+  var _connectionLimit = 1;
+  var _activeRequests = 0;
+  Completer<void>? _requestChanged;
+  final _requestClock = Stopwatch()..start();
+  var _cooldownUntil = Duration.zero;
   var _sinkClosed = false;
 
   /// Starts the download. Subscribe to [events] before calling this.
@@ -189,26 +196,17 @@ class DownloadTask {
             0,
             (sum, s) => sum + s.downloaded,
           );
-          await Future.wait(
-            _segmentStates.map((s) => _runSegment(s.segment, s)),
-          );
+          _connectionLimit = _segmentStates.length;
+          await Future.wait(_segmentStates.map(_runSegment));
         } else {
           const single = Segment(id: 0, start: 0, end: null);
           _segmentStates.clear();
           _segmentStates.add(_stateFor(single));
           _downloaded = _segmentStates.first.downloaded;
-          await _runSegment(single, _segmentStates.first);
+          await _runSegment(_segmentStates.first);
         }
       } on _RangeIgnored {
-        _log.info(
-          'Server ignored Range for $url; falling back to single-stream',
-        );
-        _aborted = false;
-        _downloaded = 0;
-        const single = Segment(id: 0, start: 0, end: null);
-        _segmentStates.clear();
-        _segmentStates.add(_SegmentState(single));
-        await _runSegment(single, _segmentStates.first);
+        await _fallbackToSingleStream();
       }
       if (_cancelled) {
         return _finish(DownloadStatus.cancelled);
@@ -269,6 +267,7 @@ class DownloadTask {
     _setStatus(DownloadStatus.paused);
     _completeCancelGate();
     _cancelIterators();
+    _notifyRequestChanged();
   }
 
   void resume() {
@@ -281,6 +280,7 @@ class DownloadTask {
     final gate = _resumeGate;
     _resumeGate = null;
     gate?.complete();
+    _notifyRequestChanged();
   }
 
   void cancel() {
@@ -296,6 +296,7 @@ class DownloadTask {
     _resumeGate = null;
     gate?.complete();
     _cancelIterators();
+    _notifyRequestChanged();
   }
 
   DownloadInfo _finish(DownloadStatus status) {
@@ -382,27 +383,49 @@ class DownloadTask {
     return state;
   }
 
-  Future<void> _runSegment(Segment segment, _SegmentState state) async {
+  Future<void> _fallbackToSingleStream() async {
+    if (_cancelled) {
+      return;
+    }
+    _log.info(
+      'Server ignored Range for $url; falling back to single-stream',
+    );
+    _abort();
+    _aborted = false;
+    if (!_paused) {
+      _cancelGate = null;
+    }
+    _connectionLimit = 1;
+    _downloaded = 0;
+    const single = Segment(id: 0, start: 0, end: null);
+    _segmentStates.clear();
+    _segmentStates.add(_SegmentState(single));
+    await _runSegment(_segmentStates.first);
+  }
+
+  Future<void> _runSegment(_SegmentState state) async {
+    final segment = state.segment;
     var attempts = 0;
+    var retryAt = Duration.zero;
     while (!state.isComplete) {
-      if (_cancelled || _aborted) {
+      final admittedLimit = await _admitRequest(retryAt);
+      if (admittedLimit == null) {
         return;
       }
-      await _waitIfPaused();
-      if (_cancelled || _aborted) {
-        return;
-      }
+      _cancelGate ??= Completer<void>();
+      final interrupted = _cancelGate!;
       try {
-        final streamEnded = await _pumpSegment(segment, state, () {
-          attempts = 0;
-        });
         if (_cancelled || _aborted) {
           return;
         }
         if (_paused) {
           continue;
         }
-        if (state.isComplete || streamEnded) {
+        await _pumpSegment(segment, state, interrupted, () => attempts = 0);
+        if (interrupted.isCompleted) {
+          continue;
+        }
+        if (state.isComplete || segment.length == null) {
           return;
         }
         throw DownloadError(
@@ -410,35 +433,109 @@ class DownloadTask {
           'Stream ended before segment ${segment.id} was complete',
         );
       } on _RangeIgnored {
+        if (_aborted) {
+          return;
+        }
+        _abort();
         rethrow;
-      } on DownloadError catch (e) {
-        if (e.code == 'range-ignored') {
-          // The transport detected a 200 answer to a Range request
-          // before any body was read: fall back to single-stream the
-          // same way as the late _RangeIgnored detection.
+      } on DownloadError catch (error) {
+        if (interrupted.isCompleted) {
+          continue;
+        }
+        if (error.code == 'range-ignored') {
+          _abort();
           throw const _RangeIgnored();
         }
         if (_cancelled || _aborted) {
           return;
         }
-        if (_isTransient(e) && attempts < maxRetries) {
+        final overloaded = error.code == 'http-429' || error.code == 'http-503';
+        final shouldBackOffConnections = maxRetries > 0 && admittedLimit > 1 &&
+            (overloaded || (attempts > 0 &&
+                (error.code == 'network' || error.code == 'timeout')));
+        if (!_isTransient(error) ||
+            (!shouldBackOffConnections && attempts >= maxRetries)) {
+          _abort();
+          rethrow;
+        }
+        final backoff = _backoffDelay(attempts + 1);
+        if (shouldBackOffConnections) {
+          // A rejected request gets a chance at the lower limit without
+          // spending a retry. Late errors from the same burst share that
+          // reduction; every subsequent burst can only step down to one.
+          if (admittedLimit == _connectionLimit) {
+            _connectionLimit ~/= 2;
+            _log.fine('Reducing download request limit to $_connectionLimit');
+          }
+        } else {
           attempts++;
-          _log.fine(
-            'Segment ${segment.id} failed (${e.code}); '
-            'retry $attempts/$maxRetries',
-          );
-          await Future<void>.delayed(_backoffDelay(attempts));
-          continue;
+        }
+        final now = _requestClock.elapsed;
+        retryAt = now + backoff;
+        if (overloaded) {
+          final serverDelay = error.retryAfter;
+          final until = serverDelay != null && serverDelay > backoff
+              ? now + serverDelay
+              : retryAt;
+          if (until > _cooldownUntil) {
+            _cooldownUntil = until;
+          }
+        }
+        _log.fine('Segment ${segment.id} failed (${error.code}); '
+            'retry budget used: $attempts/$maxRetries');
+      } catch (_) {
+        if (_cancelled || _aborted) {
+          return;
         }
         _abort();
         rethrow;
+      } finally {
+        _activeRequests--;
+        _notifyRequestChanged();
       }
     }
   }
 
-  Future<bool> _pumpSegment(
+  Future<int?> _admitRequest(Duration retryAt) async {
+    while (!_cancelled && !_aborted) {
+      await _waitIfPaused();
+      if (_cancelled || _aborted || _paused) {
+        continue;
+      }
+      final available = _activeRequests < _connectionLimit;
+      final readyAt = retryAt > _cooldownUntil ? retryAt : _cooldownUntil;
+      final remaining = readyAt - _requestClock.elapsed;
+      if (available && remaining <= Duration.zero) {
+        _activeRequests++;
+        return _connectionLimit;
+      }
+      _requestChanged ??= Completer<void>();
+      final changed = _requestChanged!.future;
+      if (!available) {
+        await changed;
+      } else {
+        final elapsed = Completer<void>();
+        final timer = Timer(remaining, elapsed.complete);
+        try {
+          await Future.any([changed, elapsed.future]);
+        } finally {
+          timer.cancel();
+        }
+      }
+    }
+    return null;
+  }
+
+  void _notifyRequestChanged() {
+    final changed = _requestChanged;
+    _requestChanged = null;
+    changed?.complete();
+  }
+
+  Future<void> _pumpSegment(
     Segment segment,
     _SegmentState state,
+    Completer<void> interrupted,
     void Function() onProgress,
   ) async {
     final start = segment.start + state.downloaded;
@@ -450,7 +547,7 @@ class DownloadTask {
       headers: _headers,
     );
     final iterator = StreamIterator<List<int>>(stream);
-    _iterators.add(iterator);
+    _iterators[iterator] = null;
     try {
       while (await iterator.moveNext()) {
         final chunk = iterator.current;
@@ -460,24 +557,31 @@ class DownloadTask {
         if (remaining != null && chunk.length > remaining) {
           throw const _RangeIgnored();
         }
+        if (chunk.isEmpty) {
+          continue;
+        }
+        if (interrupted.isCompleted) {
+          return;
+        }
         final throttle = limiter;
         if (throttle != null) {
           await _acquireOrCancel(throttle, chunk.length);
+        }
+        if (interrupted.isCompleted) {
+          return;
         }
         await sink.write(segment.start + state.downloaded, chunk);
         state.downloaded += chunk.length;
         _downloaded += chunk.length;
         onProgress();
         _emitProgress();
-        if (_cancelled || _paused || _aborted) {
-          await iterator.cancel();
-          return false;
+        if (interrupted.isCompleted) {
+          return;
         }
       }
-      return true;
     } finally {
-      _iterators.remove(iterator);
-      await iterator.cancel();
+      final cancellation = _iterators.remove(iterator);
+      await (cancellation ?? iterator.cancel());
     }
   }
 
@@ -517,11 +621,20 @@ class DownloadTask {
     _aborted = true;
     _completeCancelGate();
     _cancelIterators();
+    _notifyRequestChanged();
   }
 
   void _cancelIterators() {
-    for (final iterator in _iterators.toList()) {
-      unawaited(iterator.cancel());
+    for (final iterator in _iterators.keys.toList()) {
+      // Keep the first cancellation future: a second cancel() does not
+      // wait for cleanup. Late errors from an interrupted stream belong
+      // to that request and must not escape as unhandled async errors.
+      _iterators[iterator] ??= iterator.cancel().then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          _log.fine('Interrupted stream closed with an error', error, stack);
+        },
+      );
     }
   }
 

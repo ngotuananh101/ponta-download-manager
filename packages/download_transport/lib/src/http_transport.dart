@@ -39,8 +39,13 @@ class HttpTransport implements DownloadTransport {
         return await _probeWithRange(url, headers: headers);
       }
       if (response.statusCode >= HttpStatus.badRequest) {
+        final retryAfterHeader = response.headers.value('retry-after');
         await response.drain<void>();
-        _throwForStatus(url, response.statusCode);
+        _throwForStatus(
+          url,
+          response.statusCode,
+          retryAfterHeader: retryAfterHeader,
+        );
       }
       final info = _resourceInfo(url, response);
       await response.drain<void>();
@@ -83,7 +88,11 @@ class HttpTransport implements DownloadTransport {
           );
         }
         if (response.statusCode != HttpStatus.partialContent) {
-          _throwForStatus(url, response.statusCode);
+          _throwForStatus(
+            url,
+            response.statusCode,
+            retryAfterHeader: response.headers.value('retry-after'),
+          );
         }
         final contentRange = response.headers.value('content-range');
         final parsed = _parseContentRange(contentRange);
@@ -156,7 +165,9 @@ class HttpTransport implements DownloadTransport {
         // to 0). An open `bytes=0-` request is excluded: a 200 there
         // is the full file, which is exactly what a single-stream
         // download (and the fallback) wants.
-        await response.drain<void>();
+        // Discard the response without reading the entire file before
+        // allowing the task to restart at offset zero.
+        await response.listen(null).cancel();
         throw const DownloadError(
           'range-ignored',
           'Server ignored Range and returned 200',
@@ -164,8 +175,13 @@ class HttpTransport implements DownloadTransport {
       }
       yield* _withNetworkErrors(response);
     } else {
+      final retryAfterHeader = response.headers.value('retry-after');
       await response.drain<void>();
-      _throwForStatus(url, response.statusCode);
+      _throwForStatus(
+        url,
+        response.statusCode,
+        retryAfterHeader: retryAfterHeader,
+      );
     }
   }
 
@@ -264,7 +280,11 @@ class HttpTransport implements DownloadTransport {
         if (response.statusCode == HttpStatus.ok) {
           return _resourceInfo(url, response);
         }
-        _throwForStatus(url, response.statusCode);
+        _throwForStatus(
+          url,
+          response.statusCode,
+          retryAfterHeader: response.headers.value('retry-after'),
+        );
       } finally {
         await response.drain<void>();
       }
@@ -362,7 +382,54 @@ class HttpTransport implements DownloadTransport {
     return _parseContentRange(contentRange)?.$3;
   }
 
-  Never _throwForStatus(Uri url, int statusCode) {
-    throw DownloadError('http-$statusCode', 'HTTP $statusCode for $url');
+  Never _throwForStatus(
+    Uri url,
+    int statusCode, {
+    String? retryAfterHeader,
+  }) {
+    throw DownloadError(
+      'http-$statusCode',
+      'HTTP $statusCode for $url',
+      retryAfter: _retryAfterFor(statusCode, retryAfterHeader),
+    );
+  }
+
+  Duration? _retryAfterFor(int statusCode, String? retryAfterHeader) {
+    if (statusCode != HttpStatus.tooManyRequests &&
+        statusCode != HttpStatus.serviceUnavailable) {
+      return null;
+    }
+    if (retryAfterHeader == null) {
+      return null;
+    }
+    final value = retryAfterHeader.trim();
+    if (value.isEmpty) {
+      return null;
+    }
+
+    // Use the HTTP delta-seconds overflow sentinel (2^31 seconds) as
+    // the scheduling ceiling. Bound the value before converting to
+    // microseconds, and leave room for the task to add its elapsed time.
+    const maxDelay = Duration(seconds: 2147483648);
+    if (RegExp(r'^\d+$').hasMatch(value)) {
+      final seconds = int.tryParse(value);
+      return seconds == null || seconds > maxDelay.inSeconds
+          ? maxDelay
+          : Duration(seconds: seconds);
+    }
+
+    // HTTP-date
+    try {
+      final date = HttpDate.parse(value).toUtc();
+      final delta = date.difference(DateTime.now().toUtc());
+      if (delta.isNegative) {
+        return Duration.zero;
+      }
+      return delta > maxDelay ? maxDelay : delta;
+    } on FormatException {
+      return null;
+    } on HttpException {
+      return null;
+    }
   }
 }
